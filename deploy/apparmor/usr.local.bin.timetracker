@@ -1,0 +1,93 @@
+# AppArmor profile for TimeTracker.
+#
+# AppArmor is path-based mandatory access control, standard on Debian, Ubuntu and
+# openSUSE. It confines the process even when it runs as root, and it applies
+# whether the binary is started by systemd, by hand, or by anything else - which
+# is what makes it worth having in addition to the systemd hardening.
+#
+# Install:
+#   sudo install -m 0644 deploy/apparmor/usr.local.bin.timetracker /etc/apparmor.d/
+#   sudo apparmor_parser -r /etc/apparmor.d/usr.local.bin.timetracker
+#   sudo aa-status | grep timetracker
+#
+# Test it in complain mode first, which logs violations instead of blocking:
+#   sudo aa-complain /usr/local/bin/timetracker
+#   # exercise the application, then:
+#   sudo journalctl -k | grep apparmor
+#   sudo aa-enforce /usr/local/bin/timetracker
+
+abi <abi/3.0>,
+
+include <tunables/global>
+
+/usr/local/bin/timetracker {
+  include <abstractions/base>
+  include <abstractions/nameservice>      # /etc/resolv.conf, nsswitch, hosts
+  include <abstractions/openssl>          # the system trust store, for OIDC
+
+  # The binary itself.
+  /usr/local/bin/timetracker mr,
+
+  # Data. This is the only place the service may write, and the wildcard covers
+  # the SQLite WAL and shared-memory sidecar files.
+  owner /var/lib/timetracker/ rw,
+  owner /var/lib/timetracker/** rwk,
+
+  # TLS material: read only, and never written by the service.
+  /etc/timetracker/*.crt r,
+  /etc/timetracker/*.key r,
+
+  # Temporary files. systemd's PrivateTmp gives the service its own /tmp; this
+  # covers a run without systemd. Multipart uploads above the memory limit spill
+  # here.
+  owner /tmp/** rwk,
+
+  # The syslog socket.
+  /dev/log w,
+  /run/systemd/journal/dev-log w,
+  /run/systemd/journal/socket w,
+  /run/systemd/journal/stdout w,
+
+  # Time zone data is embedded in the binary, so /usr/share/zoneinfo is not
+  # needed. /etc/localtime is still read by some libc paths.
+  /etc/localtime r,
+
+  # Go's runtime reads these at start-up to size its scheduler and heap.
+  @{PROC}/sys/kernel/osrelease r,
+  @{PROC}/sys/net/core/somaxconn r,
+  @{PROC}/@{pid}/maps r,
+  @{PROC}/@{pid}/cgroup r,
+  @{PROC}/@{pid}/task/ r,
+  @{PROC}/@{pid}/task/** r,
+  /sys/kernel/mm/transparent_hugepage/hpage_pmd_size r,
+  /sys/devices/system/cpu/ r,
+  /sys/devices/system/cpu/** r,
+  /sys/fs/cgroup/** r,
+
+  # Networking: listen for clients, and reach the identity provider and the
+  # syslog collector.
+  network inet stream,
+  network inet6 stream,
+  network unix stream,
+  network unix dgram,
+
+  # No capabilities are granted. The service binds a port above 1024 and needs
+  # none; to bind 443 directly, add:
+  #   capability net_bind_service,
+
+  # Deny outright, so a violation is logged loudly rather than silently failing
+  # some other way.
+  deny /etc/shadow r,
+  deny /etc/gshadow r,
+  deny /root/** rw,
+  deny /home/** rw,
+  deny @{PROC}/*/mem rw,
+  deny /sys/kernel/security/** rw,
+
+  # No executing anything else. The application never spawns a subprocess -
+  # document generation is in-process precisely so it does not have to
+  # (docs/adr/0007-pure-go-document-generation.md).
+  deny /bin/** x,
+  deny /usr/bin/** x,
+  deny /usr/local/bin/** x,
+}

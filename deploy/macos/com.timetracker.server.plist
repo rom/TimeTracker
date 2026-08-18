@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd job for TimeTracker on macOS.
+
+  Install:
+    sudo install -m 0755 bin/timetracker /usr/local/bin/timetracker
+    sudo install -d -m 0700 -o _timetracker /usr/local/var/timetracker
+    sudo install -m 0644 deploy/macos/com.timetracker.server.plist /Library/LaunchDaemons/
+    sudo launchctl load -w /Library/LaunchDaemons/com.timetracker.server.plist
+
+  Create the service user first:
+    sudo dscl . -create /Users/_timetracker UserShell /usr/bin/false
+    sudo dscl . -create /Users/_timetracker UniqueID 401
+    sudo dscl . -create /Users/_timetracker PrimaryGroupID 401
+    sudo dscl . -create /Users/_timetracker NFSHomeDirectory /var/empty
+
+  macOS applies confinement from outside the process: launchd sets the user and
+  the resource limits, and the sandbox profile in timetracker.sb restricts
+  filesystem and network access. There is no in-process equivalent of Landlock,
+  which is why internal/hardening reports nothing applied on this platform.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.timetracker.server</string>
+
+    <!--
+      sandbox-exec applies the profile before the binary starts. It is formally
+      deprecated by Apple but remains the only way to sandbox an arbitrary
+      executable that is not distributed through the App Store, and it is what
+      Apple's own daemons still use. Drop the first two arguments to run without
+      it.
+    -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/sandbox-exec</string>
+        <string>-f</string>
+        <string>/usr/local/etc/timetracker/timetracker.sb</string>
+        <string>/usr/local/bin/timetracker</string>
+        <string>--mode=server</string>
+        <string>--addr=127.0.0.1:8420</string>
+        <string>--data-dir=/usr/local/var/timetracker</string>
+    </array>
+
+    <!-- An unprivileged, non-interactive account. -->
+    <key>UserName</key>
+    <string>_timetracker</string>
+    <key>GroupName</key>
+    <string>_timetracker</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>/usr/local/var/timetracker</string>
+
+    <!-- Secrets belong in a file readable only by root, not in this plist,
+         which is world-readable in /Library/LaunchDaemons. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>TT_LOG_FORMAT</key>
+        <string>json</string>
+    </dict>
+
+    <!-- Bounds, so a runaway cannot take the machine down with it. -->
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>8192</integer>
+        <key>NumberOfProcesses</key>
+        <integer>128</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/usr/local/var/log/timetracker.log</string>
+    <key>StandardErrorPath</key>
+    <string>/usr/local/var/log/timetracker.log</string>
+
+    <!-- Deny the process any ability to be debugged by a non-root user. -->
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

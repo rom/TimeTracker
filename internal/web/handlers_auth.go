@@ -10,12 +10,22 @@ import (
 
 	"github.com/rom/timetracker/internal/auth"
 	"github.com/rom/timetracker/internal/domain"
+	"github.com/rom/timetracker/internal/i18n"
 	"github.com/rom/timetracker/internal/service"
 )
 
 // Authentication endpoints. Present only in server mode; the routes are
 // registered but every one of them short-circuits when there is no account
 // service, so a local instance cannot be talked into a login flow.
+
+// tr returns a printer for a request that may have no identity yet, which is the
+// case on every authentication route.
+func (s *Server) tr(r *http.Request) *i18n.Printer {
+	if user, ok := auth.UserFrom(r.Context()); ok {
+		return printerFor(r, user)
+	}
+	return i18n.NewPrinter(i18n.Negotiate(r.Header.Get("Accept-Language")))
+}
 
 // sessionKey carries the resolved session, so the CSRF middleware and the
 // sign-out handler can reach it.
@@ -54,12 +64,18 @@ func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
 
 // renderLogin draws the login page, optionally with an error.
 func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, message string, status int) {
+	// No identity yet, so the language comes entirely from the browser.
+	printer := i18n.NewPrinter(i18n.Negotiate(r.Header.Get("Accept-Language")))
+
 	data := pageData{
-		Title:  "Sign in",
-		Active: "login",
-		Now:    s.svc.Now(),
-		Themes: availableThemes,
-		Error:  message,
+		Title:     printer.T("login.title"),
+		Active:    "login",
+		Now:       s.svc.Now(),
+		Themes:    availableThemes,
+		Printer:   printer,
+		Lang:      printer.Code(),
+		Languages: languageOptions(),
+		Error:     message,
 		Login: &loginData{
 			OIDCEnabled:  s.oidc != nil,
 			OIDCLabel:    s.cfg.OIDCLabel,
@@ -115,7 +131,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			// One message for every failure - wrong password, unknown account,
 			// disabled account, rate limited. Distinguishing them would turn the
 			// login form into an account enumeration tool.
-			s.renderLogin(w, r, "Those credentials were not accepted.", http.StatusUnauthorized)
+			s.renderLogin(w, r, s.tr(r).T("login.failed"), http.StatusUnauthorized)
 			return
 		}
 		s.serverError(w, r, err)
@@ -189,14 +205,13 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("error") != "" {
 		s.log.WarnContext(r.Context(), "OIDC provider returned an error",
 			"error", r.URL.Query().Get("error"))
-		s.renderLogin(w, r, "The identity provider declined the sign-in.", http.StatusUnauthorized)
+		s.renderLogin(w, r, s.tr(r).T("login.denied"), http.StatusUnauthorized)
 		return
 	}
 
 	cookie, err := r.Cookie(oidcStateCookie)
 	if err != nil {
-		s.renderLogin(w, r, "That sign-in attempt has expired. Please try again.",
-			http.StatusBadRequest)
+		s.renderLogin(w, r, s.tr(r).T("login.expired"), http.StatusBadRequest)
 		return
 	}
 	// The cookie is single-use: clearing it here stops a replayed callback from
@@ -205,7 +220,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 
 	parts := strings.SplitN(cookie.Value, ".", 3)
 	if len(parts) != 3 {
-		s.renderLogin(w, r, "That sign-in attempt could not be verified.", http.StatusBadRequest)
+		s.renderLogin(w, r, s.tr(r).T("login.unverified"), http.StatusBadRequest)
 		return
 	}
 	request := auth.AuthRequest{State: parts[0], Nonce: parts[1], Verifier: parts[2]}
@@ -214,14 +229,13 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	// actually started.
 	if r.URL.Query().Get("state") != request.State {
 		s.log.WarnContext(r.Context(), "OIDC state mismatch on callback")
-		s.renderLogin(w, r, "That sign-in attempt could not be verified.", http.StatusBadRequest)
+		s.renderLogin(w, r, s.tr(r).T("login.unverified"), http.StatusBadRequest)
 		return
 	}
 
 	code := r.URL.Query().Get("code")
 	if code == "" {
-		s.renderLogin(w, r, "The identity provider returned no authorisation code.",
-			http.StatusBadRequest)
+		s.renderLogin(w, r, s.tr(r).T("login.ssofailed"), http.StatusBadRequest)
 		return
 	}
 
@@ -231,7 +245,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		// the reason a token failed validation, neither of which belongs on a
 		// public error page.
 		s.log.ErrorContext(r.Context(), "OIDC exchange failed", "error", err.Error())
-		s.renderLogin(w, r, "Single sign-on failed. Please try again.", http.StatusUnauthorized)
+		s.renderLogin(w, r, s.tr(r).T("login.ssofailed"), http.StatusUnauthorized)
 		return
 	}
 
@@ -239,7 +253,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		s.oidc.MappedRole(claims), s.clientIP(r), r.UserAgent())
 	if err != nil {
 		if errors.Is(err, auth.ErrInvalidCredentials) {
-			s.renderLogin(w, r, "That account is not permitted to sign in.", http.StatusForbidden)
+			s.renderLogin(w, r, s.tr(r).T("login.denied"), http.StatusForbidden)
 			return
 		}
 		s.serverError(w, r, err)

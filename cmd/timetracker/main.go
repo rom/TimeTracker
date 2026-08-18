@@ -11,12 +11,15 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -29,6 +32,7 @@ import (
 	"github.com/rom/timetracker/internal/auth"
 	"github.com/rom/timetracker/internal/config"
 	"github.com/rom/timetracker/internal/domain"
+	"github.com/rom/timetracker/internal/hardening"
 	"github.com/rom/timetracker/internal/logging"
 	"github.com/rom/timetracker/internal/service"
 	"github.com/rom/timetracker/internal/store"
@@ -79,6 +83,16 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Sandbox the process before it serves anything. It happens after the data
+	// directory exists and after the TLS files have been located, because those
+	// paths go into the policy - and it cannot be undone afterwards, which is
+	// the point.
+	hardeningResult, err := applyHardening(cfg)
+	if err != nil {
+		return err
+	}
+	hardeningResult.Log(log)
+
 	db, err := store.Open(ctx, cfg.DatabasePath)
 	if err != nil {
 		return err
@@ -102,6 +116,7 @@ func run() error {
 		return err
 	}
 	defer cleanup()
+	opts.Hardening = hardeningResult.Summary()
 
 	server, err := web.New(svc, cfg, log, opts)
 	if err != nil {
@@ -114,9 +129,15 @@ func run() error {
 		go pruneSessions(ctx, opts.Accounts, log)
 	}
 
+	tlsConfig, err := buildTLS(cfg)
+	if err != nil {
+		return err
+	}
+
 	httpServer := &http.Server{
-		Addr:    cfg.Addr,
-		Handler: server,
+		Addr:      cfg.Addr,
+		Handler:   server,
+		TLSConfig: tlsConfig,
 		// Timeouts are set explicitly: Go's defaults are none at all, which
 		// leaves a server vulnerable to a client that opens a connection and
 		// never finishes its request.
@@ -126,18 +147,39 @@ func run() error {
 		IdleTimeout:       120 * time.Second,
 	}
 
+	scheme := "http"
+	if tlsConfig != nil {
+		scheme = "https"
+	}
+
 	// Serve in the background so the main goroutine can wait for a signal.
 	serverErrors := make(chan error, 1)
 	go func() {
-		log.Info("listening", "addr", cfg.Addr, "url", "http://"+cfg.Addr)
-		if listenErr := httpServer.ListenAndServe(); listenErr != nil &&
-			!errors.Is(listenErr, http.ErrServerClosed) {
+		log.Info("listening", "addr", cfg.Addr, "url", scheme+"://"+cfg.Addr)
+
+		var listenErr error
+		if tlsConfig != nil {
+			// The paths are already in TLSConfig.Certificates; passing empty
+			// strings tells Go to use them.
+			listenErr = httpServer.ListenAndServeTLS("", "")
+		} else {
+			listenErr = httpServer.ListenAndServe()
+		}
+		if listenErr != nil && !errors.Is(listenErr, http.ErrServerClosed) {
 			serverErrors <- listenErr
 		}
 	}()
 
+	// An optional plain-HTTP listener that does nothing but redirect. It exists
+	// so a user who types the bare hostname is not met with a connection error,
+	// and it serves no content of its own - there is nothing on it to attack.
+	var redirectServer *http.Server
+	if cfg.RedirectHTTPFrom != "" {
+		redirectServer = startHTTPRedirect(cfg, log, serverErrors)
+	}
+
 	if cfg.Mode == config.ModeLocal && cfg.OpenBrowser {
-		go openBrowser("http://" + cfg.Addr)
+		go openBrowser(scheme + "://" + cfg.Addr)
 	}
 
 	select {
@@ -152,11 +194,95 @@ func run() error {
 	// stopped.
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+	if redirectServer != nil {
+		_ = redirectServer.Shutdown(shutdownCtx)
+	}
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("graceful shutdown: %w", err)
 	}
 	log.Info("stopped")
 	return nil
+}
+
+// applyHardening restricts the process to the files it actually needs.
+//
+// The policy is the complete inventory of the application's filesystem needs:
+// its data directory and the temporary directory for writing, the system
+// directories and any TLS material for reading. Everything else becomes
+// inaccessible, so a defect that yields arbitrary file access still cannot read
+// /etc/shadow or write outside the data directory.
+func applyHardening(cfg config.Config) (hardening.Result, error) {
+	readOnly := hardening.DefaultReadOnlyPaths()
+	// The certificate and key live wherever the operator put them, so their
+	// directories join the read-only set rather than being assumed.
+	for _, file := range []string{cfg.TLSCertFile, cfg.TLSKeyFile} {
+		if file != "" {
+			readOnly = append(readOnly, filepath.Dir(file))
+		}
+	}
+
+	return hardening.Apply(hardening.Mode(cfg.Hardening), hardening.Policy{
+		DataDir: cfg.DataDir,
+		// Multipart uploads above the memory limit spill here, so it needs the
+		// same access as the data directory.
+		TempDir:       os.TempDir(),
+		ReadOnlyPaths: readOnly,
+	})
+}
+
+// buildTLS prepares the TLS configuration, or returns nil for plain HTTP.
+func buildTLS(cfg config.Config) (*tls.Config, error) {
+	if !cfg.TLSConfigured() {
+		return nil, nil
+	}
+	return cfg.BuildTLSConfig()
+}
+
+// startHTTPRedirect runs the plain-HTTP listener that redirects to HTTPS.
+//
+// It handles nothing else: every request, whatever its path, gets a 308 to the
+// same path on the HTTPS address. A permanent redirect rather than a temporary
+// one so browsers stop trying the plain port. The method and body are preserved
+// by 308, which matters for a form post that arrived on the wrong scheme.
+func startHTTPRedirect(cfg config.Config, log *slog.Logger, errs chan<- error) *http.Server {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := hostWithoutPort(r.Host)
+		if host == "" {
+			http.Error(w, "This service is available over HTTPS.", http.StatusBadRequest)
+			return
+		}
+		target := "https://" + net.JoinHostPort(host, portOf(cfg.Addr)) + r.URL.RequestURI()
+		http.Redirect(w, r, target, http.StatusPermanentRedirect)
+	})
+
+	server := &http.Server{
+		Addr:              cfg.RedirectHTTPFrom,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	go func() {
+		log.Info("redirecting plain HTTP to HTTPS", "from", cfg.RedirectHTTPFrom)
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errs <- fmt.Errorf("HTTP redirect listener: %w", err)
+		}
+	}()
+	return server
+}
+
+// hostWithoutPort strips a port from a Host header, leaving IPv6 brackets alone.
+func hostWithoutPort(host string) string {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		return h
+	}
+	return host
+}
+
+// portOf returns the port part of a listen address, defaulting to the HTTPS port.
+func portOf(addr string) string {
+	if _, port, err := net.SplitHostPort(addr); err == nil && port != "" {
+		return port
+	}
+	return "443"
 }
 
 // buildLogger sets up logging, adding rsyslog forwarding in server mode.

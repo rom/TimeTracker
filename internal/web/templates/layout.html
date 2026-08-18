@@ -1,36 +1,47 @@
 {{/*
-  The page shell. Every screen renders inside it.
+  The page shell.
 
-  Two details here are load-bearing rather than cosmetic:
+  Three details here are load-bearing rather than cosmetic:
 
   * data-theme on <html> is the entire theme mechanism. Themes redefine CSS
     custom properties and nothing else, so switching one changes no markup.
     See docs/adr/0011-theming-via-css-custom-properties.md.
-  * the theme is written by the server into the attribute, so the correct
-    colours are present in the first byte of the response. Applying it from
-    JavaScript would show a flash of the wrong theme on every page load.
+  * the theme and the language are written by the server into the document, so
+    the correct colours and the correct language are present in the first byte
+    of the response. Applying either from JavaScript would show a flash of the
+    wrong theme, and would leave assistive technology reading the wrong language
+    until the script ran.
+  * lang is not decoration: a screen reader picks its voice and its pronunciation
+    rules from it. Claiming Swedish while rendering English is worse than
+    claiming nothing.
 */}}
 <!DOCTYPE html>
-<html lang="en" data-theme="{{if .User.Theme}}{{.User.Theme}}{{else}}light{{end}}">
+<html lang="{{if .Lang}}{{.Lang}}{{else}}en{{end}}"
+      data-theme="{{if .User.Theme}}{{.User.Theme}}{{else}}light{{end}}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{.Title}} · TimeTracker</title>
+  <title>{{.Title}} · {{.T "app.name"}}</title>
   <link rel="stylesheet" href="/static/css/app.css">
   <link rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml">
   <script src="/static/js/app.js" defer></script>
 </head>
 <body>
 
+{{/* The skip link is the first thing in the tab order. Someone navigating by
+     keyboard should not have to tab through the whole navigation on every page
+     to reach the content. It is visually hidden until focused. */}}
+<a class="skip-link" href="#main">{{.T "nav.skip"}}</a>
+
 {{if eq .Active "login"}}
 <header class="topbar topbar-plain">
-  <a class="brand" href="/login">
+  <span class="brand">
     <span class="brand-mark" aria-hidden="true">◷</span>
-    TimeTracker
-  </a>
+    {{.T "app.name"}}
+  </span>
 </header>
 
-<main class="content content-narrow">
+<main id="main" class="content content-narrow">
   {{if .Error}}<div class="banner banner-error" role="alert">{{.Error}}</div>{{end}}
   {{template "content" .}}
 </main>
@@ -40,38 +51,62 @@
 <header class="topbar">
   <a class="brand" href="/today">
     <span class="brand-mark" aria-hidden="true">◷</span>
-    TimeTracker
+    {{.T "app.name"}}
   </a>
 
-  <nav class="mainnav" aria-label="Main">
-    <a href="/today"   class="{{if eq .Active "today"}}active{{end}}">Today</a>
-    <a href="/week"    class="{{if eq .Active "week"}}active{{end}}">Week</a>
-    <a href="/entries" class="{{if eq .Active "entries"}}active{{end}}">Entries</a>
-    <a href="/admin"   class="{{if eq .Active "admin"}}active{{end}}">Admin</a>
+  <nav class="mainnav" aria-label="{{.T "nav.main"}}">
+    {{/* aria-current tells assistive technology which page this is, which the
+         colour alone cannot convey. */}}
+    <a href="/today"   {{if eq .Active "today"}}class="active" aria-current="page"{{end}}>{{.T "nav.today"}}</a>
+    <a href="/week"    {{if eq .Active "week"}}class="active" aria-current="page"{{end}}>{{.T "nav.week"}}</a>
+    <a href="/entries" {{if eq .Active "entries"}}class="active" aria-current="page"{{end}}>{{.T "nav.entries"}}</a>
+    <a href="/admin"   {{if eq .Active "admin"}}class="active" aria-current="page"{{end}}>{{.T "nav.admin"}}</a>
     {{if .ServerMode}}
-      <a href="/users" class="{{if eq .Active "users"}}active{{end}}">Users</a>
+      <a href="/users" {{if eq .Active "users"}}class="active" aria-current="page"{{end}}>{{.T "nav.users"}}</a>
     {{end}}
   </nav>
 
   <div class="topbar-right">
+    {{if .HasHelp}}
+      {{/* A real link, so it works with JavaScript disabled: the browser simply
+           navigates to the help page. With script it is swapped into a panel. */}}
+      <a class="btn btn-quiet btn-small help-button"
+         href="/help/{{.HelpScreen}}"
+         hx-get="/help/{{.HelpScreen}}"
+         aria-label="{{.T "nav.help"}}"
+         title="{{.T "nav.help"}}">?</a>
+    {{end}}
+
+    <label class="picker">
+      <span class="visually-hidden">{{.T "nav.language"}}</span>
+      <select id="language-select" aria-label="{{.T "nav.language"}}">
+        {{$lang := .Lang}}
+        {{range .Languages}}
+          <option value="{{.Code}}" {{if eq .Code $lang}}selected{{end}}>{{.Name}}</option>
+        {{end}}
+      </select>
+    </label>
+
     {{/* The theme picker is a plain <select> so it works without JavaScript;
          app.js upgrades it to apply instantly and persist the choice. */}}
-    <label class="theme-picker">
-      <span class="visually-hidden">Theme</span>
-      <select id="theme-select" aria-label="Colour theme">
+    <label class="picker">
+      <span class="visually-hidden">{{.T "nav.theme"}}</span>
+      <select id="theme-select" aria-label="{{.T "nav.theme"}}">
         {{$current := .User.Theme}}
         {{range .Themes}}
           <option value="{{.}}" {{if eq . $current}}selected{{end}}>{{.}}</option>
         {{end}}
       </select>
     </label>
-    <span class="whoami" title="Signed in as">{{.User.DisplayName}}</span>
+
+    <span class="whoami" title="{{.T "nav.signedin"}}">{{.User.DisplayName}}</span>
+
     {{if .ServerMode}}
       {{/* Sign-out is a POST: a GET that ends a session can be triggered by any
            page that embeds an image pointing at it. */}}
       <form method="post" action="/logout">
         {{template "csrf" .CSRFToken}}
-        <button type="submit" class="btn btn-quiet btn-small">Sign out</button>
+        <button type="submit" class="btn btn-quiet btn-small">{{.T "nav.signout"}}</button>
       </form>
     {{end}}
   </div>
@@ -84,17 +119,25 @@
   {{template "running-timers" .}}
 </div>
 
-<main class="content">
+<main id="main" class="content">
   {{if .Error}}<div class="banner banner-error" role="alert">{{.Error}}</div>{{end}}
   {{template "content" .}}
 </main>
 
+{{/* The help panel. Empty until something is loaded into it, and marked as a
+     dialog so assistive technology announces it as one. */}}
+<aside id="help-panel" class="help-panel" hidden
+       role="dialog" aria-modal="false" aria-label="{{.T "help.title"}}"></aside>
+
 {{end}}
 
 <footer class="footer">
-  <span>TimeTracker</span>
+  <span>{{.T "app.name"}}</span>
   <span class="footer-hint">
-    Press <kbd>?</kbd> for keyboard shortcuts
+    {{/* The key is rendered as a <kbd>, and the surrounding sentence comes from
+         the catalogue with a placeholder, so a translation can put the key
+         wherever its grammar needs it. */}}
+    {{.T "footer.shortcuts" "?"}}
   </span>
 </footer>
 

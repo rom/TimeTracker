@@ -4,11 +4,13 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/rom/timetracker/internal/auth"
@@ -139,8 +141,29 @@ func (s *Server) withSecurityHeaders(next http.Handler) http.Handler {
 				"frame-ancestors 'none'")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "same-origin")
+
+		// HSTS only over HTTPS, and only when the operator asked for it. Sending
+		// it over plain HTTP is meaningless, and enabling it by default is
+		// hostile: a browser that has seen the header refuses plain HTTP to that
+		// host for the whole max-age, which can make a misconfigured deployment
+		// unreachable for months with no way to clear it remotely.
+		if s.cfg.HSTSMaxAgeSeconds > 0 && s.isHTTPS(r) {
+			w.Header().Set("Strict-Transport-Security",
+				fmt.Sprintf("max-age=%d", s.cfg.HSTSMaxAgeSeconds))
+		}
+
 		next.ServeHTTP(w, r)
 	})
+}
+
+// isHTTPS reports whether the request reached us over TLS, directly or through
+// a proxy we trust to say so.
+func (s *Server) isHTTPS(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return s.isTrustedProxy(hostOnly(r.RemoteAddr)) &&
+		strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
 // withIdentity resolves the acting user and puts them in the request context.

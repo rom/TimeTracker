@@ -52,10 +52,30 @@ type Config struct {
 
 	// ---- server mode only ----
 
+	// TLSCertFile and TLSKeyFile make the server terminate TLS itself. Leave
+	// them empty when a reverse proxy does it instead.
+	TLSCertFile string
+	TLSKeyFile  string
+	// RedirectHTTPFrom, when set to an address, runs a second tiny listener that
+	// answers plain HTTP with a permanent redirect to the HTTPS address. Nothing
+	// else is served there.
+	RedirectHTTPFrom string
+	// HSTSMaxAgeSeconds sets Strict-Transport-Security. Zero disables it.
+	// Deliberately not enabled by default: HSTS is hard to undo, and a
+	// misconfigured header can make a host unreachable in a browser for months.
+	HSTSMaxAgeSeconds int
+
 	// ForceSecureCookies sets the Secure attribute regardless of how the request
 	// arrived. Needed when TLS terminates somewhere that does not set
 	// X-Forwarded-Proto.
 	ForceSecureCookies bool
+	// Hardening selects how hard to try to sandbox the process: off, auto or
+	// enforce. It defaults to off, because silently restricting a process's
+	// filesystem access and breaking it in a way nobody can diagnose is worse
+	// than requiring one flag. The systemd unit in deploy/ turns it on, which is
+	// where hardening belongs.
+	Hardening string
+
 	// AllowInsecure acknowledges binding a non-loopback address without TLS.
 	// Without it the server refuses, because serving a login form over plain
 	// HTTP puts passwords on the wire.
@@ -102,6 +122,7 @@ func Parse(args []string) (Config, error) {
 		LogLevel:    "info",
 		LogFormat:   "text",
 		OpenBrowser: false,
+		Hardening:   "off",
 	}
 
 	defaultDataDir, err := DefaultDataDir()
@@ -129,8 +150,19 @@ func Parse(args []string) (Config, error) {
 	// which is what a systemd unit or a container orchestrator will use - a
 	// password on a command line is visible in the process list to every other
 	// user on the machine.
+	fs.StringVar(&cfg.TLSCertFile, "tls-cert", cfg.TLSCertFile,
+		"PEM certificate chain; enables HTTPS when given with -tls-key")
+	fs.StringVar(&cfg.TLSKeyFile, "tls-key", cfg.TLSKeyFile,
+		"PEM private key for -tls-cert")
+	fs.StringVar(&cfg.RedirectHTTPFrom, "redirect-http-from", cfg.RedirectHTTPFrom,
+		"also listen here and redirect plain HTTP to the HTTPS address, e.g. :8080")
+	fs.IntVar(&cfg.HSTSMaxAgeSeconds, "hsts-max-age", cfg.HSTSMaxAgeSeconds,
+		"Strict-Transport-Security max-age in seconds (0 disables; only sent over HTTPS)")
 	fs.BoolVar(&cfg.ForceSecureCookies, "secure-cookies", cfg.ForceSecureCookies,
 		"always set the Secure cookie attribute (use when TLS terminates upstream)")
+	fs.StringVar(&cfg.Hardening, "hardening", cfg.Hardening,
+		"process sandboxing: off, auto (apply what the kernel supports), "+
+			"or enforce (refuse to start without it)")
 	fs.BoolVar(&cfg.AllowInsecure, "allow-insecure", cfg.AllowInsecure,
 		"permit binding a public address without TLS in front (not for production)")
 	fs.StringVar(&cfg.SyslogNetwork, "syslog-network", cfg.SyslogNetwork,
@@ -204,6 +236,9 @@ func applyEnv(cfg *Config) {
 	cfg.AdminEmail = envOr("TT_ADMIN_EMAIL", cfg.AdminEmail)
 	cfg.AdminPassword = envOr("TT_ADMIN_PASSWORD", cfg.AdminPassword)
 	cfg.AdminName = envOr("TT_ADMIN_NAME", cfg.AdminName)
+	cfg.TLSCertFile = envOr("TT_TLS_CERT", cfg.TLSCertFile)
+	cfg.TLSKeyFile = envOr("TT_TLS_KEY", cfg.TLSKeyFile)
+	cfg.Hardening = envOr("TT_HARDENING", cfg.Hardening)
 
 	if v := os.Getenv("TT_OIDC_ROLE_MAPPING"); v != "" {
 		// "group-name=role,other-group=role"
@@ -247,6 +282,13 @@ func (c Config) validate() error {
 		return fmt.Errorf("unknown log format %q: expected 'text' or 'json'", c.LogFormat)
 	}
 
+	switch c.Hardening {
+	case "off", "auto", "enforce", "":
+	default:
+		return fmt.Errorf("unknown hardening mode %q: expected 'off', 'auto' or 'enforce'",
+			c.Hardening)
+	}
+
 	if c.Addr == "" {
 		return fmt.Errorf("listen address is required")
 	}
@@ -261,13 +303,23 @@ func (c Config) validate() error {
 				"%q is not loopback - use --mode=server for a shared instance", c.Addr)
 	}
 
+	// Half a TLS configuration is a configuration error, not a reason to fall
+	// back to plain HTTP silently.
+	if (c.TLSCertFile == "") != (c.TLSKeyFile == "") {
+		return fmt.Errorf("TLS needs both a certificate and a key; only one was given")
+	}
+	if c.RedirectHTTPFrom != "" && !c.TLSConfigured() {
+		return fmt.Errorf("-redirect-http-from only makes sense when this process serves HTTPS")
+	}
+
 	if c.Mode == ModeServer {
 		// A login form served over plain HTTP puts every password on the wire in
 		// clear. Refusing is the only defensible default; an operator who really
 		// is terminating TLS somewhere this cannot detect says so explicitly.
-		if !isLoopback(c.Addr) && !c.AllowInsecure && !c.ForceSecureCookies {
+		if !isLoopback(c.Addr) && !c.AllowInsecure && !c.ForceSecureCookies && !c.TLSConfigured() {
 			return fmt.Errorf(
-				"refusing to serve %q without TLS: terminate TLS in front of this "+
+				"refusing to serve %q without TLS: pass --tls-cert and --tls-key "+
+					"(see scripts/gen-cert.sh), or terminate TLS in front of this "+
 					"process and pass --secure-cookies, or pass --allow-insecure "+
 					"if you accept sending passwords in clear", c.Addr)
 		}
@@ -282,6 +334,10 @@ func (c Config) validate() error {
 	}
 	return nil
 }
+
+// isWindows is a variable rather than a direct runtime check so tests can
+// exercise both branches of the key-permission check.
+var isWindows = func() bool { return runtime.GOOS == "windows" }
 
 // isLoopback reports whether the address binds only the loopback interface.
 func isLoopback(addr string) bool {

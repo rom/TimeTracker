@@ -52,6 +52,9 @@ type Server struct {
 	accounts *service.Accounts
 	// oidc is nil unless single sign-on is configured.
 	oidc *auth.OIDCProvider
+	// hardening summarises the sandboxing that took effect, for the health
+	// endpoint.
+	hardening string
 }
 
 // Options are the collaborators the run mode selects at start-up.
@@ -62,6 +65,8 @@ type Options struct {
 	Accounts *service.Accounts
 	// OIDC enables the single sign-on routes. Nil unless configured.
 	OIDC *auth.OIDCProvider
+	// Hardening summarises what the sandbox applied, for the health endpoint.
+	Hardening string
 }
 
 // New builds the HTTP server.
@@ -69,9 +74,14 @@ func New(svc *service.Service, cfg config.Config, log *slog.Logger, opts Options
 	if opts.Identity == nil {
 		return nil, fmt.Errorf("an identity resolver is required")
 	}
+	hardeningSummary := opts.Hardening
+	if hardeningSummary == "" {
+		hardeningSummary = "none"
+	}
 	s := &Server{
 		svc: svc, cfg: cfg, log: log,
 		identity: opts.Identity, accounts: opts.Accounts, oidc: opts.OIDC,
+		hardening: hardeningSummary,
 	}
 
 	var err error

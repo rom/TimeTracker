@@ -67,9 +67,14 @@
 
       var body = new URLSearchParams();
       body.set("theme", theme);
+      body.set("csrf_token", currentCSRFToken());
+
       fetch("/preferences/theme", {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-CSRF-Token": currentCSRFToken(),
+        },
         body: body.toString(),
         credentials: "same-origin",
       }).catch(function () {
@@ -180,6 +185,119 @@
     banner.scrollIntoView({ block: "nearest" });
   }
 
+  /* ------------------------------------------------------------ language --- */
+
+  /*
+   * Changing language reloads the page rather than translating the DOM in
+   * place: doing it client-side would mean shipping the whole catalogue to the
+   * browser and re-rendering every string, for no benefit over a round trip
+   * that the server already knows how to do.
+   */
+  function initLanguagePicker() {
+    var select = document.getElementById("language-select");
+    if (!select) return;
+
+    select.addEventListener("change", function () {
+      var body = new URLSearchParams();
+      body.set("language", select.value);
+      body.set("csrf_token", currentCSRFToken());
+
+      fetch("/preferences/language", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-CSRF-Token": currentCSRFToken(),
+        },
+        body: body.toString(),
+        credentials: "same-origin",
+      })
+        .then(function () {
+          window.location.reload();
+        })
+        .catch(function () {
+          showError("Could not change the language.");
+        });
+    });
+  }
+
+  /* Any form on the page carries the session's token; they are all the same. */
+  function currentCSRFToken() {
+    var field = document.querySelector('input[name="csrf_token"]');
+    return field ? field.value : "";
+  }
+
+  /* ---------------------------------------------------------------- help --- */
+
+  /*
+   * The help control is a real link, so with JavaScript disabled the browser
+   * navigates to /help/<screen> and gets a whole page. Here we intercept it and
+   * load the same fragment into a panel instead, which keeps the user's place.
+   *
+   * Focus is moved into the panel when it opens and returned to the control
+   * when it closes: a panel that appears without focus is invisible to a screen
+   * reader user, and one that closes without returning focus loses their place
+   * entirely.
+   */
+  var helpOpener = null;
+
+  function initHelp() {
+    document.addEventListener("click", function (event) {
+      var trigger = event.target.closest("[hx-get]");
+      if (trigger) {
+        event.preventDefault();
+        openHelp(trigger.getAttribute("hx-get"), trigger);
+        return;
+      }
+      if (event.target.closest(".help-close")) {
+        event.preventDefault();
+        closeHelp();
+      }
+    });
+  }
+
+  function openHelp(url, trigger) {
+    var panel = document.getElementById("help-panel");
+    if (!panel) {
+      window.location.href = url;
+      return;
+    }
+    helpOpener = trigger || null;
+
+    fetch(url, { headers: { "HX-Request": "true" }, credentials: "same-origin" })
+      .then(function (response) {
+        return response.text();
+      })
+      .then(function (html) {
+        /* The fragment comes from our own server and is already escaped by the
+           template layer; nothing here concatenates user input. */
+        panel.innerHTML = html;
+        panel.hidden = false;
+
+        var heading = panel.querySelector("h1");
+        if (heading) {
+          /* tabindex -1 makes a heading focusable without putting it in the tab
+             order, which is the conventional way to move focus to a region. */
+          heading.setAttribute("tabindex", "-1");
+          heading.focus();
+        }
+      })
+      .catch(function () {
+        window.location.href = url;
+      });
+  }
+
+  function closeHelp() {
+    var panel = document.getElementById("help-panel");
+    if (!panel || panel.hidden) return;
+
+    panel.hidden = true;
+    panel.innerHTML = "";
+    if (helpOpener) {
+      helpOpener.focus();
+      helpOpener = null;
+    }
+  }
+
   /* --------------------------------------------------------- shortcuts ---- */
 
   /*
@@ -195,8 +313,18 @@
         target instanceof HTMLTextAreaElement ||
         target instanceof HTMLSelectElement;
 
-      if (event.key === "Escape" && typing) {
-        target.blur();
+      if (event.key === "Escape") {
+        /* Escape closes the help panel first, then leaves the current field.
+           Ordering matters: someone who opened help from a field expects one
+           press to close the panel, not to lose their place in the form. */
+        var panel = document.getElementById("help-panel");
+        if (panel && !panel.hidden) {
+          closeHelp();
+          return;
+        }
+        if (typing) {
+          target.blur();
+        }
         return;
       }
       if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
@@ -219,11 +347,16 @@
         case "e":
           window.location.href = "/entries";
           break;
-        case "?":
-          showError(
-            "Shortcuts: n new entry · t today · w week · e entries · Esc leave a field"
-          );
+        case "?": {
+          /* The shortcut list lives in the help panel, translated, rather than
+             in a hard-coded English string here. */
+          event.preventDefault();
+          var helpLink = document.querySelector(".help-button");
+          if (helpLink) {
+            openHelp(helpLink.getAttribute("hx-get"), helpLink);
+          }
           break;
+        }
       }
     });
   }
@@ -235,7 +368,9 @@
     /* One second is the natural cadence for a clock showing seconds. */
     window.setInterval(updateClocks, 1000);
     initThemePicker();
+    initLanguagePicker();
     initAjaxForms();
+    initHelp();
     initShortcuts();
   }
 

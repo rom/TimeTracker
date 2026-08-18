@@ -1,0 +1,102 @@
+;; Sandbox profile for TimeTracker on macOS.
+;;
+;; Applied by sandbox-exec from the launchd job. The default is to deny
+;; everything and allow back only what the application demonstrably needs, which
+;; is the same shape as the Landlock policy on Linux and the AppArmor profile:
+;; the data directory for writing, the system directories for reading, and
+;; nothing else.
+;;
+;; Install:
+;;   sudo install -d -m 0755 /usr/local/etc/timetracker
+;;   sudo install -m 0644 deploy/macos/timetracker.sb /usr/local/etc/timetracker/
+;;
+;; Test it before relying on it:
+;;   sandbox-exec -f deploy/macos/timetracker.sb ./bin/timetracker --data-dir /tmp/tt
+;;
+;; Violations are logged to the unified log:
+;;   log stream --predicate 'senderImagePath contains "Sandbox"' --info
+
+(version 1)
+
+;; Deny by default. Everything below is an explicit exception.
+(deny default)
+
+;; Log what would have been denied, which makes the profile debuggable rather
+;; than merely restrictive.
+(deny default (with report))
+
+;; ---- process ---------------------------------------------------------------
+
+(allow process-info-pidinfo (target self))
+(allow signal (target self))
+
+;; The application never spawns a subprocess: document generation is in-process
+;; precisely so that it does not have to
+;; (docs/adr/0007-pure-go-document-generation.md). So process execution is not
+;; allowed at all, beyond the initial exec of the binary itself.
+(allow process-exec (literal "/usr/local/bin/timetracker"))
+
+;; ---- filesystem ------------------------------------------------------------
+
+;; System libraries, the dynamic loader, and the certificate trust store.
+(allow file-read*
+    (subpath "/usr/lib")
+    (subpath "/usr/share")
+    (subpath "/System/Library")
+    (subpath "/Library/Keychains")
+    (literal "/etc/hosts")
+    (literal "/etc/resolv.conf")
+    (literal "/etc/localtime")
+    (literal "/private/etc/hosts")
+    (literal "/private/etc/resolv.conf")
+    (literal "/private/etc/localtime"))
+
+;; Randomness and the null device.
+(allow file-read* file-write-data
+    (literal "/dev/urandom")
+    (literal "/dev/random")
+    (literal "/dev/null"))
+
+;; The data directory: the database, its WAL sidecars, and the attachment blobs.
+;; This is the only place the process may write.
+(allow file* (subpath "/usr/local/var/timetracker"))
+
+;; The log file launchd opens for us.
+(allow file-write* (subpath "/usr/local/var/log"))
+
+;; TLS material, read only.
+(allow file-read* (subpath "/usr/local/etc/timetracker"))
+
+;; Temporary files: multipart uploads above the memory limit spill here.
+(allow file* (subpath (param "TMPDIR")))
+(allow file* (subpath "/private/var/folders"))
+
+;; ---- network ---------------------------------------------------------------
+
+;; Listen for clients.
+(allow network-bind (local tcp))
+(allow network-inbound (local tcp))
+
+;; Reach the identity provider for single sign-on, and a remote syslog
+;; collector. Remove both lines if neither is in use: the service then needs no
+;; outbound network access at all.
+(allow network-outbound (remote tcp))
+
+;; Local syslog.
+(allow network-outbound (literal "/var/run/syslog"))
+
+;; ---- system information ----------------------------------------------------
+
+;; What the Go runtime reads at start-up to size its scheduler.
+(allow sysctl-read)
+(allow mach-lookup
+    (global-name "com.apple.system.notification_center")
+    (global-name "com.apple.system.logger"))
+
+;; ---- explicitly not granted ------------------------------------------------
+;;
+;;   no access to user home directories
+;;   no access to the keychain beyond the system trust store
+;;   no camera, microphone, location, contacts or calendar
+;;   no ability to execute any other program
+;;   no ability to modify anything outside the data directory

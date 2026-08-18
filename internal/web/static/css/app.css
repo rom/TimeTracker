@@ -476,6 +476,99 @@ kbd {
   background: var(--surface-sunken);
 }
 
+/* -------------------------------------------------- skip link and help ---- */
+
+/* The skip link is the first thing in the tab order and invisible until it has
+   focus, so it costs sighted users nothing and saves keyboard users the whole
+   navigation on every page. It must not be display:none - a hidden element is
+   not focusable, which would defeat the point. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  padding: 10px 16px;
+  background: var(--accent);
+  color: var(--accent-text);
+  border-radius: 0 0 var(--radius) 0;
+  text-decoration: none;
+}
+.skip-link:focus {
+  left: 0;
+}
+
+.help-button {
+  font-weight: 700;
+  min-width: 2em;
+  justify-content: center;
+}
+
+/* The help panel slides in from the right on a wide screen and covers the page
+   on a narrow one. */
+.help-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(30rem, 100vw);
+  overflow-y: auto;
+  z-index: 50;
+  background: var(--surface-raised);
+  border-left: 1px solid var(--border);
+  box-shadow: -4px 0 16px rgba(16, 20, 28, 0.12);
+}
+.help-panel[hidden] { display: none; }
+
+.help { padding: var(--gap-lg); }
+.help-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--gap);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: var(--gap-sm);
+  margin-bottom: var(--gap);
+}
+.help-header h1 { font-size: 1.2rem; }
+.help-close { font-size: 1.4rem; line-height: 1; padding: 0 8px; }
+
+.help-topic { margin-bottom: var(--gap-lg); }
+.help-topic h2 {
+  font-size: 1rem;
+  margin: 0 0 var(--gap-sm);
+  border-bottom: none;
+}
+.help-topic p { margin: 0 0 0.7em; }
+.help-topic code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--surface-sunken);
+}
+
+.help-footer { border-top: 1px solid var(--border); padding-top: var(--gap); }
+.help-footer h2 { font-size: 0.95rem; margin: 0 0 var(--gap-sm); border-bottom: none; }
+
+.shortcuts { margin: 0; }
+.shortcuts > div {
+  display: flex;
+  gap: var(--gap);
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+.shortcuts dt { min-width: 3.5em; }
+.shortcuts dd { margin: 0; color: var(--text-muted); }
+
+/* Field-level help, associated with its input by aria-describedby. */
+.field-help {
+  margin: 0 0 var(--gap-lg);
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+
+.picker select { max-width: 8rem; }
+
 /* -------------------------------------------------------------- login ----- */
 
 .content-narrow { max-width: 380px; }
@@ -508,6 +601,7 @@ kbd {
 /* --------------------------------------------------------- responsive ----- */
 
 @media (max-width: 700px) {
+  .help-panel { width: 100vw; border-left: none; }
   .topbar { flex-wrap: wrap; gap: var(--gap); }
   .mainnav { order: 3; width: 100%; }
   .entry-form, .filter { flex-direction: column; align-items: stretch; }

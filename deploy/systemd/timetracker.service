@@ -1,0 +1,123 @@
+# systemd unit for TimeTracker, hardened.
+#
+# Install:
+#   sudo useradd --system --home-dir /var/lib/timetracker --shell /usr/sbin/nologin timetracker
+#   sudo install -o timetracker -g timetracker -m 0700 -d /var/lib/timetracker
+#   sudo install -m 0755 bin/timetracker /usr/local/bin/timetracker
+#   sudo install -m 0644 deploy/systemd/timetracker.service /etc/systemd/system/
+#   sudo install -m 0600 deploy/systemd/timetracker.env /etc/timetracker.env   # then edit
+#   sudo systemctl daemon-reload && sudo systemctl enable --now timetracker
+#
+# Verify what actually took effect:
+#   systemd-analyze security timetracker
+#
+# Every directive below is a privilege the service does not need. The comments
+# say what each one removes, because a hardening block nobody understands is a
+# hardening block someone deletes the first time something breaks.
+
+[Unit]
+Description=TimeTracker time tracking service
+Documentation=https://github.com/rom/timetracker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=timetracker
+Group=timetracker
+
+ExecStart=/usr/local/bin/timetracker --mode=server --hardening=enforce
+EnvironmentFile=/etc/timetracker.env
+Restart=on-failure
+RestartSec=5s
+
+# ---- filesystem -------------------------------------------------------------
+
+# StateDirectory creates and owns /var/lib/timetracker with mode 0700, so the
+# database and attachments are unreadable to other users on the host.
+StateDirectory=timetracker
+StateDirectoryMode=0700
+WorkingDirectory=/var/lib/timetracker
+
+# The entire filesystem is read-only except the state directory. This is the
+# single most valuable line here: a defect that yields arbitrary file writes has
+# nowhere outside the data directory to write to.
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/timetracker
+
+# Deny access to everything the service has no business reading, one class at a
+# time.
+ProtectProc=invisible          # cannot see other processes in /proc
+ProcSubset=pid                 # and cannot read /proc/sys, /proc/kallsyms...
+ProtectKernelTunables=yes      # no writes to /proc/sys, /sys
+ProtectKernelModules=yes       # cannot load kernel modules
+ProtectKernelLogs=yes          # cannot read dmesg
+ProtectControlGroups=yes
+ProtectClock=yes               # cannot change the system clock
+ProtectHostname=yes
+PrivateDevices=yes             # only /dev/null, zero, random, urandom, tty
+PrivateMounts=yes
+
+# ---- privileges -------------------------------------------------------------
+
+# The service binds a port above 1024 and needs no capabilities at all. An empty
+# bounding set means it cannot acquire any, even if the binary were replaced with
+# one carrying file capabilities.
+#
+# If you bind port 443 directly, replace both lines with:
+#   AmbientCapabilities=CAP_NET_BIND_SERVICE
+#   CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+# Putting a reverse proxy in front is usually the better answer.
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+NoNewPrivileges=yes            # setuid binaries cannot raise privilege
+RestrictSUIDSGID=yes           # and none can be created
+RestrictRealtime=yes
+RestrictNamespaces=yes         # cannot create namespaces to escape these limits
+LockPersonality=yes            # cannot switch execution domain
+MemoryDenyWriteExecute=yes     # no W^X pages: blocks a large class of exploits
+
+# ---- seccomp ----------------------------------------------------------------
+
+# The system call filter. @system-service is systemd's curated set for ordinary
+# services; the exclusions below are groups this application demonstrably never
+# uses, and each is a family of escalation techniques removed.
+#
+# Note the interaction with MemoryDenyWriteExecute: Go's runtime does not need
+# W+X mappings, so both can be applied. If a future cgo dependency needs a
+# trampoline, MemoryDenyWriteExecute is the line that will break first.
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources @obsolete @cpu-emulation @debug @mount @swap @reboot @raw-io @module
+SystemCallArchitectures=native
+SystemCallErrorNumber=EPERM
+
+# ---- network ----------------------------------------------------------------
+
+# Only the address families the service uses: IPv4, IPv6, and Unix sockets for
+# the syslog connection. AF_NETLINK, AF_PACKET and the rest are denied.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+# Uncomment to restrict which networks the service may reach at all. Useful when
+# single sign-on is not in use, since the service then needs no outbound access.
+# IPAddressDeny=any
+# IPAddressAllow=localhost
+
+# ---- resources --------------------------------------------------------------
+
+# Bounds, so a runaway or an attack cannot take the host down with it.
+LimitNOFILE=8192
+LimitNPROC=128
+TasksMax=128
+MemoryMax=1G
+
+# ---- logging ----------------------------------------------------------------
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=timetracker
+
+[Install]
+WantedBy=multi-user.target

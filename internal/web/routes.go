@@ -62,6 +62,11 @@ func (s *Server) routes() {
 	// Preferences. The theme is stored per user rather than only in the browser,
 	// so it follows a person between devices in server mode.
 	mux.HandleFunc("POST /preferences/theme", s.handleSetTheme)
+	mux.HandleFunc("POST /preferences/language", s.handleSetLanguage)
+
+	// Context-sensitive help. A plain link, so it works without JavaScript; with
+	// script it is swapped into a panel instead of navigating.
+	mux.HandleFunc("GET /help/{screen}", s.handleHelp)
 
 	// Exports.
 	mux.HandleFunc("GET /export/{format}", s.handleExport)

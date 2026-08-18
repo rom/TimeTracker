@@ -40,10 +40,36 @@ make check                        # format, vet, lint and the full test suite
   (assignment → project → customer → default), and the rate and rounding rule
   stored on each entry — so changing a rate tomorrow cannot alter what was
   invoiced today.
-* **Seven themes:** light, dark, gold, sand, spring, autumn, high contrast.
+* **Seven themes:** light, dark, gold, sand, spring, autumn, high contrast — the
+  last verified against WCAG 2.1 AA by computing real contrast ratios.
+* **English and Swedish**, localised rather than merely translated: `1 234,50`
+  and `1 tim 30 min` where English says `1,234.50` and `1h 30m`.
+* **Context-sensitive help** on every screen, translated, and working without
+  JavaScript.
 * **CSV and JSON export** of any filtered range.
 * **Audit trail.** Every mutation records who did what, when, in the same
   transaction as the change itself.
+
+## HTTPS
+
+```sh
+./scripts/gen-cert.sh ca -h timetracker.internal
+./bin/timetracker --mode=server --addr=0.0.0.0:8443 \
+    --tls-cert certs/server.crt --tls-key certs/server.key
+```
+
+TLS 1.2 floor, forward-secret AEAD suites only. See
+[scripts/README.md](scripts/README.md).
+
+## Hardening
+
+Landlock on Linux (`--hardening=enforce`), plus a hardened systemd unit, an
+AppArmor profile, an SELinux module, a macOS launchd job with a sandbox profile,
+and a Windows service installer — all in [deploy/](deploy/README.md).
+
+```sh
+./scripts/harden-check.sh    # what is actually active, not what was configured
+```
 
 ## Shared server
 

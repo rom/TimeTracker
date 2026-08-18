@@ -36,6 +36,9 @@ Status legend: **A** = accepted, **P** = proposed, **R** = retired.
 | [ASR-012](#asr-012) | Performance | Interactive operations feel instantaneous | A |
 | [ASR-013](#asr-013) | Suitability | Rich capture: paste, attachments, expenses | A |
 | [ASR-014](#asr-014) | Correctness | Money and duration arithmetic is exact | A |
+| [ASR-015](#asr-015) | Security / Least privilege | The process runs with the least privilege each platform allows | A |
+| [ASR-016](#asr-016) | Internationalisation | The interface is fully localisable, not merely translated | A |
+| [ASR-017](#asr-017) | Learnability | Deliberate but surprising behaviour is explained in context | A |
 
 ---
 
@@ -327,3 +330,83 @@ including boundary values.
 invoice is disputed. Making it a structural rule is cheaper than finding it later.
 
 *Addressed by:* [ADR-0014](adr/0014-exact-money-and-duration.md)
+
+---
+
+### ASR-015
+**The process runs with the least privilege each platform allows.**
+
+*Quality attribute:* Security / Least privilege
+
+*Requirement:* A defect in the application must not give an attacker the machine.
+The running process must be able to reach its own data and the few system paths
+it needs, and nothing else, on all three supported platforms.
+
+*Fit criterion:* The process holds no capabilities, cannot execute another
+program, cannot write outside its data directory and temporary directory, and
+cannot read another user's files. `scripts/harden-check.sh` reports the active
+mechanisms for a running instance, and `systemd-analyze security timetracker`
+scores the shipped unit. Where a platform offers no in-process mechanism, the
+deployment configuration in `deploy/` supplies an equivalent and the application
+reports honestly that nothing was applied in-process.
+
+*Rationale:* Every other control in this system is application code, and
+application code has defects. This is the layer that decides whether a defect
+becomes an incident. It also constrains the design directly: the application
+never spawns a subprocess, which is why PDF and DOCX generation had to be
+in-process ([ADR-0007](adr/0007-pure-go-document-generation.md)), and it is why
+document generation, SQLite and TLS all had to be dependency-free.
+
+*Addressed by:* [ADR-0017](adr/0017-defence-in-depth-hardening.md), [ADR-0018](adr/0018-tls-termination.md)
+
+---
+
+### ASR-016
+**The interface is fully localisable, not merely translated.**
+
+*Quality attribute:* Internationalisation
+
+*Requirement:* Every user-visible string, and every formatted number, duration,
+amount and date, must follow the reader's language and its conventions. English
+and Swedish ship; adding a third language must not require touching application
+code.
+
+*Fit criterion:* A parity test fails the build when any catalogue lacks a key
+present in the default one. Every screen renders in every catalogued language
+with no untranslated key reaching the page, asserted by scanning the rendered
+output. Swedish renders `1 234,50` and `1 tim 30 min` where English renders
+`1,234.50` and `1h 30m`. The document's `lang` attribute matches the language
+actually rendered, in the first byte of the response.
+
+*Rationale:* Translating words while still rendering `1.50` produces an
+interface that reads as broken rather than foreign - and on a timesheet a
+decimal point where a comma belongs is a different number, not a style choice.
+Requiring the `lang` attribute to be correct from the first byte rules out
+client-side translation, because a screen reader picks its voice from it.
+
+*Addressed by:* [ADR-0019](adr/0019-message-catalogues-and-server-side-localisation.md)
+
+---
+
+### ASR-017
+**Deliberate but surprising behaviour is explained in context.**
+
+*Quality attribute:* Learnability / Usability
+
+*Requirement:* Where the application does something defensible but unexpected -
+overlapping timers, two disagreeing totals, a quick-add parser that refuses to
+guess, rates frozen onto an entry - the explanation must be reachable from the
+screen where the surprise happens.
+
+*Fit criterion:* Every screen has help specific to it, reachable in one action
+and in one keystroke. The help is translated by the same mechanism as the rest
+of the interface. It works with JavaScript disabled, by navigating to a page.
+Opening it moves focus into the panel and closing it returns focus to the
+control that opened it.
+
+*Rationale:* A manual in a repository does not help someone looking at two
+different totals and wondering which is wrong. Requiring the help to work
+without JavaScript and to manage focus is what stops it from being a decorative
+panel that only some users can actually reach.
+
+*Addressed by:* [ADR-0020](adr/0020-context-sensitive-help.md)

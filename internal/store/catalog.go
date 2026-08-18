@@ -22,9 +22,10 @@ var ErrNotFound = errors.New("not found")
 func (db *DB) CreateUser(ctx context.Context, u domain.User) (domain.User, error) {
 	now := time.Now()
 	res, err := db.write.ExecContext(ctx, `
-		INSERT INTO users (display_name, email, role, time_zone, theme, active, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		u.DisplayName, u.Email, string(u.Role), u.TimeZone, u.Theme, boolToInt(u.Active), formatTime(now))
+		INSERT INTO users (display_name, email, role, time_zone, theme, language, active, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		u.DisplayName, u.Email, string(u.Role), u.TimeZone, u.Theme, u.Language,
+		boolToInt(u.Active), formatTime(now))
 	if err != nil {
 		return domain.User{}, fmt.Errorf("create user: %w", err)
 	}
@@ -40,7 +41,7 @@ func (db *DB) CreateUser(ctx context.Context, u domain.User) (domain.User, error
 // GetUser loads one user by id.
 func (db *DB) GetUser(ctx context.Context, id int64) (domain.User, error) {
 	row := db.read.QueryRowContext(ctx, `
-		SELECT id, display_name, email, role, time_zone, theme, active, created_at
+		SELECT id, display_name, email, role, time_zone, theme, language, active, created_at
 		FROM users WHERE id = ?`, id)
 	return scanUser(row)
 }
@@ -49,15 +50,16 @@ func (db *DB) GetUser(ctx context.Context, id int64) (domain.User, error) {
 // one. It is how the single-user identity is resolved at startup.
 func (db *DB) FirstUser(ctx context.Context) (domain.User, error) {
 	row := db.read.QueryRowContext(ctx, `
-		SELECT id, display_name, email, role, time_zone, theme, active, created_at
+		SELECT id, display_name, email, role, time_zone, theme, language, active, created_at
 		FROM users ORDER BY id LIMIT 1`)
 	return scanUser(row)
 }
 
 // UpdateUserPreferences saves the display settings a user can change themselves.
-func (db *DB) UpdateUserPreferences(ctx context.Context, id int64, theme, timeZone string) error {
+func (db *DB) UpdateUserPreferences(ctx context.Context, id int64, theme, timeZone, language string) error {
 	_, err := db.write.ExecContext(ctx,
-		`UPDATE users SET theme = ?, time_zone = ? WHERE id = ?`, theme, timeZone, id)
+		`UPDATE users SET theme = ?, time_zone = ?, language = ? WHERE id = ?`,
+		theme, timeZone, language, id)
 	return err
 }
 
@@ -71,7 +73,8 @@ func scanUser(row rowScanner) (domain.User, error) {
 	var u domain.User
 	var role, createdAt string
 	var active int
-	err := row.Scan(&u.ID, &u.DisplayName, &u.Email, &role, &u.TimeZone, &u.Theme, &active, &createdAt)
+	err := row.Scan(&u.ID, &u.DisplayName, &u.Email, &role, &u.TimeZone, &u.Theme,
+		&u.Language, &active, &createdAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.User{}, ErrNotFound
 	}

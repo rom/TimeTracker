@@ -29,7 +29,7 @@ type Account struct {
 }
 
 const userSelect = `
-	SELECT id, display_name, email, role, time_zone, theme, active, created_at,
+	SELECT id, display_name, email, role, time_zone, theme, language, active, created_at,
 	       password_hash, oidc_subject, oidc_issuer, totp_secret, client_customer_id
 	FROM users`
 
@@ -67,7 +67,7 @@ func scanAccount(row rowScanner) (Account, error) {
 	var role, createdAt string
 	var active int
 	err := row.Scan(&a.User.ID, &a.User.DisplayName, &a.User.Email, &role,
-		&a.User.TimeZone, &a.User.Theme, &active, &createdAt,
+		&a.User.TimeZone, &a.User.Theme, &a.User.Language, &active, &createdAt,
 		&a.PasswordHash, &a.OIDCSubject, &a.OIDCIssuer, &a.TOTPSecret, &a.User.ClientCustomerID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Account{}, ErrNotFound
@@ -87,13 +87,13 @@ func scanAccount(row rowScanner) (Account, error) {
 func (db *DB) CreateAccount(ctx context.Context, a Account) (domain.User, error) {
 	now := time.Now()
 	res, err := db.write.ExecContext(ctx, `
-		INSERT INTO users (display_name, email, role, time_zone, theme, active, created_at,
-		                   password_hash, oidc_subject, oidc_issuer, totp_secret,
+		INSERT INTO users (display_name, email, role, time_zone, theme, language, active,
+		                   created_at, password_hash, oidc_subject, oidc_issuer, totp_secret,
 		                   password_set_at, client_customer_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		a.User.DisplayName, a.User.Email, string(a.User.Role), a.User.TimeZone, a.User.Theme,
-		boolToInt(a.User.Active), formatTime(now), a.PasswordHash, a.OIDCSubject, a.OIDCIssuer,
-		a.TOTPSecret, a.PasswordSetAt, a.User.ClientCustomerID)
+		a.User.Language, boolToInt(a.User.Active), formatTime(now), a.PasswordHash,
+		a.OIDCSubject, a.OIDCIssuer, a.TOTPSecret, a.PasswordSetAt, a.User.ClientCustomerID)
 	if err != nil {
 		return domain.User{}, fmt.Errorf("create account: %w", err)
 	}
@@ -153,7 +153,7 @@ func (db *DB) UpdateUserAdmin(ctx context.Context, u domain.User) error {
 // ListUsers returns every user, for the administration screen.
 func (db *DB) ListUsers(ctx context.Context) ([]domain.User, error) {
 	rows, err := db.read.QueryContext(ctx, `
-		SELECT id, display_name, email, role, time_zone, theme, active, created_at,
+		SELECT id, display_name, email, role, time_zone, theme, language, active, created_at,
 		       client_customer_id, oidc_subject, last_login_at
 		FROM users ORDER BY display_name COLLATE NOCASE`)
 	if err != nil {
@@ -167,7 +167,8 @@ func (db *DB) ListUsers(ctx context.Context) ([]domain.User, error) {
 		var role, createdAt, oidcSubject, lastLogin string
 		var active int
 		if err := rows.Scan(&u.ID, &u.DisplayName, &u.Email, &role, &u.TimeZone, &u.Theme,
-			&active, &createdAt, &u.ClientCustomerID, &oidcSubject, &lastLogin); err != nil {
+			&u.Language, &active, &createdAt, &u.ClientCustomerID, &oidcSubject,
+			&lastLogin); err != nil {
 			return nil, err
 		}
 		u.Role = domain.Role(role)

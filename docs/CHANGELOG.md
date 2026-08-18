@@ -24,6 +24,52 @@ the decision.
 
 ### Added
 
+* **HTTPS, certificate scripts and platform hardening.**
+  * TLS terminated by the application itself (`--tls-cert`, `--tls-key`), with a
+    TLS 1.2 floor and 1.2 suites restricted to AEAD constructions with forward
+    secrecy. An optional listener redirects plain HTTP with a 308. HSTS
+    available but off by default, because it is hard to undo.
+  * Server mode refuses to bind a non-loopback address without TLS, an upstream
+    TLS declaration, or an explicit `--allow-insecure`. A group- or
+    world-readable private key is refused with a message saying how to fix it.
+  * `scripts/gen-cert.sh` and `gen-cert.ps1` generate ECDSA P-256 certificates
+    with proper SANs and constrained key usage, self-signed or from a local CA.
+  * **Landlock** self-sandboxing on Linux (`--hardening=auto|enforce`),
+    implemented against the raw syscalls and trimmed to the kernel's ABI
+    version. Off by default; the shipped systemd unit enables it.
+  * `deploy/` carries a hardened systemd unit, an AppArmor profile, an SELinux
+    policy module, a launchd job with a `sandbox-exec` profile, and a Windows
+    service installer using a virtual account with a restricted token.
+  * `scripts/harden-check.sh` reports what is actually active for a running
+    instance.
+
+* **Internationalisation, with Swedish.**
+  * Embedded JSON message catalogues, resolved entirely on the server so the
+    correct language and `lang` attribute are present in the first byte.
+  * Localisation beyond strings: Swedish renders `1 234,50` and `1 tim 30 min`
+    where English renders `1,234.50` and `1h 30m`, with locale-aware dates,
+    weekday and month names, and money.
+  * Language chosen from the user's stored preference, then `Accept-Language`
+    with quality values parsed properly, then English.
+  * A parity test fails the build when a catalogue lacks a key, and every screen
+    is rendered in every language and scanned for leaked keys.
+
+* **Accessibility.**
+  * A skip link, labelled landmarks, `aria-current` on the current page, an
+    accessible name on every form control, `aria-live` on the totals, and text
+    alternatives wherever colour or an icon carries meaning.
+  * The high-contrast theme is verified against WCAG 2.1 AA by computing real
+    contrast ratios from the stylesheet — and the contrast maths is itself
+    checked against known reference points.
+
+* **Context-sensitive help.**
+  * Each screen has its own help topics, translated like everything else,
+    covering the behaviours that are deliberate but surprising: overlapping
+    timers, the two totals, the quick-add parser's refusal to guess, frozen
+    rates.
+  * A real link, so it works without JavaScript; with script it loads into a
+    panel that manages focus in both directions.
+
 * **Server mode** (layer 2 of [MVP_PLAN.md](MVP_PLAN.md)). `--mode=server` now
   runs a real multi-user service.
   * **Local accounts** with Argon2id hashing (OWASP parameters, stored inside the
