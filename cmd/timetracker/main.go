@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -73,6 +74,14 @@ func run() error {
 	defer closeLog()
 	log.Info("starting",
 		"version", version, "mode", string(cfg.Mode), "data_dir", cfg.DataDir)
+	if cfg.ConfigFile != "" {
+		// Which file was actually read, not which one the operator thinks they
+		// edited - the two differ often enough to be worth one log line.
+		log.Info("configuration file loaded", "path", cfg.ConfigFile)
+	} else {
+		log.Debug("no configuration file found; using defaults, environment and flags",
+			"searched", strings.Join(config.DefaultConfigPaths(cfg.DataDir), ", "))
+	}
 
 	if err := config.EnsureDataDir(cfg.DataDir); err != nil {
 		return err
@@ -291,7 +300,9 @@ func portOf(addr string) string {
 // watching the console still sees everything even while the collector is
 // unreachable. See docs/adr/0010-audit-log-and-rsyslog.md.
 func buildLogger(cfg config.Config) (*slog.Logger, func()) {
-	base := logging.New(os.Stderr, cfg.LogLevel, cfg.LogFormat)
+	// --debug adds source positions, which is what makes a pasted log useful in
+	// a bug report; --verbose alone only raises the level.
+	base := logging.NewWithSource(os.Stderr, cfg.LogLevel, cfg.LogFormat, cfg.Debug)
 	if cfg.Mode != config.ModeServer {
 		return base, func() {}
 	}

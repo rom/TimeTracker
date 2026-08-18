@@ -217,20 +217,3 @@ func isSystemPath(path string) bool {
 		return false
 	}
 }
-
-// DefaultReadOnlyPaths lists what a server typically needs to read.
-//
-// It is deliberately generous and spans several distributions' conventions:
-// paths that do not exist are skipped, and being too narrow here breaks the
-// application in ways that are tedious to diagnose.
-func DefaultReadOnlyPaths() []string {
-	return []string{
-		"/usr", "/lib", "/lib64", "/bin", "/sbin",
-		"/etc",  // resolv.conf, ssl/certs, localtime, nsswitch.conf
-		"/proc", // the Go runtime reads /proc/sys/... at start-up
-		"/sys",  // cgroup limits, CPU topology
-		"/dev",  // urandom, null
-		"/run",  // the syslog socket on systemd hosts
-		"/var/run",
-	}
-}
