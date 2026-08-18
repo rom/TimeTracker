@@ -20,9 +20,33 @@ type ExpenseInput struct {
 	Billable      bool
 	Reimbursable  bool
 	MarkupPercent int64
+	// MarkupGiven distinguishes "the user typed 0%" from "the user said nothing
+	// about markup". Only the second inherits the customer's default; silently
+	// overriding an explicit zero would put a margin on a claim somebody had
+	// deliberately made at cost.
+	MarkupGiven bool
+	// A quantity-priced claim: a distance in kilometres or a number of days, as
+	// typed. Priced at the customer's mileage rate or per diem.
+	Quantity string
+	Unit     domain.ExpenseUnit
 	// OnBehalfOf, when set to another user, makes this a proposal that requires
 	// that user's confirmation - the same rule as for time.
 	OnBehalfOf int64
+}
+
+// quantityFrom parses a typed quantity into thousandths of a unit.
+func quantityFrom(in ExpenseInput) (int64, error) {
+	if in.Unit == domain.UnitNone || in.Quantity == "" {
+		return 0, nil
+	}
+	if !in.Unit.Valid() {
+		return 0, fmt.Errorf("%w: unknown unit %q", ErrValidation, in.Unit)
+	}
+	milli, err := domain.ParseQuantityMilli(in.Quantity)
+	if err != nil {
+		return 0, fmt.Errorf("%w: %s", ErrValidation, err)
+	}
+	return milli, nil
 }
 
 // CreateExpense records a cost.
@@ -67,6 +91,11 @@ func (s *Service) CreateExpense(ctx context.Context, in ExpenseInput) (domain.Ex
 		return domain.Expense{}, fmt.Errorf("%w: %s", ErrValidation, err)
 	}
 
+	quantity, err := quantityFrom(in)
+	if err != nil {
+		return domain.Expense{}, err
+	}
+
 	expense := domain.Expense{
 		UserID:        subjectID,
 		EnteredBy:     actor.ID,
@@ -79,8 +108,19 @@ func (s *Service) CreateExpense(ctx context.Context, in ExpenseInput) (domain.Ex
 		Billable:      in.Billable,
 		Reimbursable:  in.Reimbursable,
 		MarkupPercent: in.MarkupPercent,
+		QuantityMilli: quantity,
+		Unit:          in.Unit,
 		Status:        status,
 	}
+	// The customer's reimbursement terms fill in what the user did not say: the
+	// default markup, the mileage rate or per diem that prices a quantity, and
+	// whether this customer is invoiced for expenses at all.
+	customer, err := s.db.GetCustomer(ctx, project.CustomerID)
+	if err != nil {
+		return domain.Expense{}, err
+	}
+	applyCustomerExpenseRules(&expense, customer.Rules, in.MarkupGiven)
+
 	// The billed amount is computed once and frozen, for the same reason a time
 	// entry freezes its rate: a markup change tomorrow must not alter what was
 	// invoiced today.
@@ -143,6 +183,22 @@ func (s *Service) UpdateExpense(ctx context.Context, id int64, in ExpenseInput) 
 	updated.Billable = in.Billable
 	updated.Reimbursable = in.Reimbursable
 	updated.MarkupPercent = in.MarkupPercent
+
+	quantity, err := quantityFrom(in)
+	if err != nil {
+		return domain.Expense{}, err
+	}
+	updated.QuantityMilli = quantity
+	updated.Unit = in.Unit
+	// The unit rate is re-resolved rather than carried over, so correcting a
+	// distance re-prices it at the rate that applies now.
+	updated.UnitRateMinor = 0
+
+	customer, err := s.db.GetCustomer(ctx, project.CustomerID)
+	if err != nil {
+		return domain.Expense{}, err
+	}
+	applyCustomerExpenseRules(&updated, customer.Rules, in.MarkupGiven)
 	updated.ApplyMarkup()
 
 	if err := updated.Validate(); err != nil {

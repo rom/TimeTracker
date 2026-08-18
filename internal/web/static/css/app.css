@@ -432,6 +432,71 @@ input[type="text"], input[type="date"], input[type="time"], select {
 .badge-approved  { color: var(--success); border-color: var(--success); }
 .badge-rejected  { color: var(--danger);  border-color: var(--danger); }
 
+/* ---------------------------------------------------------- the guide ----- */
+
+/* Documentation, so it is set for reading: a measure that does not run the
+   width of a wide screen, and steps that are visibly steps. */
+.guide { max-width: 46rem; }
+.guide-topic { margin-bottom: var(--gap-lg); }
+.guide-topic h2 { margin-top: var(--gap-lg); }
+.guide-topic h2:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.guide-summary { color: var(--text-muted); font-size: 0.92em; margin: 0 0 var(--gap); }
+.guide-topic ol, .guide-topic ul { margin: 0 0 var(--gap); padding-left: 1.6em; }
+.guide-topic li { margin-bottom: 5px; }
+.guide-topic p { margin: 0 0 var(--gap); }
+.guide-topic code {
+  padding: 1px 5px; font-family: var(--font-mono); font-size: 0.9em;
+  background: var(--surface-sunken); border-radius: 4px;
+}
+.guide-permalink { font-size: 0.85em; }
+.guide-permalink a { color: var(--text-muted); }
+
+.guide-contents {
+  padding: var(--gap); margin-bottom: var(--gap-lg);
+  background: var(--surface-sunken); border-radius: var(--radius);
+}
+.guide-contents ol { margin: 0; padding-left: 1.4em; }
+.guide-contents li { margin-bottom: 6px; }
+.guide-contents .guide-summary { display: block; margin: 0; font-size: 0.85em; }
+
+/* ------------------------------------------------- the approval report ---- */
+
+/* A grid of one-character marks. Colour reinforces; the mark and its title
+   carry the meaning, so it survives a monochrome screen, a colour vision
+   deficiency, and a screen reader. */
+.approval-grid .cell-status { text-align: center; white-space: nowrap; }
+.status-mark {
+  display: inline-block; min-width: 1.4em; padding: 0 4px;
+  font-weight: 700; border-radius: var(--radius); font-variant-numeric: tabular-nums;
+}
+.status-hours { display: block; font-size: 0.8em; color: var(--text-muted); }
+
+.status-submitted     .status-mark, .status-mark.status-submitted     { color: var(--accent); }
+.status-approved      .status-mark, .status-mark.status-approved      { color: var(--success); }
+.status-rejected      .status-mark, .status-mark.status-rejected      { color: var(--danger); }
+.status-not_submitted .status-mark, .status-mark.status-not_submitted {
+  color: var(--accent-text); background: var(--warning);
+}
+.status-empty_submission .status-mark, .status-mark.status-empty_submission { color: var(--warning); }
+.status-open .status-mark, .status-mark.status-open { color: var(--text-muted); }
+
+.count-missing   { color: var(--warning); font-weight: 700; }
+.count-submitted { color: var(--accent); }
+.count-approved  { color: var(--success); }
+.count-rejected  { color: var(--danger); }
+.approval-grid tfoot td { font-size: 0.85em; }
+.approval-grid tfoot td span { margin: 0 2px; }
+
+/* The key. A grid of abbreviations with no key is a puzzle. */
+.status-key {
+  display: flex; flex-wrap: wrap; gap: var(--gap); margin-top: var(--gap);
+  padding: var(--gap); background: var(--surface-sunken);
+  border-radius: var(--radius); font-size: 0.85em;
+}
+.status-key .key-item { display: flex; align-items: baseline; gap: 6px; }
+.status-key dt, .status-key dd { margin: 0; }
+.status-key dd { color: var(--text-muted); }
+
 /* --------------------------------------------------- submit and approve --- */
 
 /* The week's state, shown wherever time is entered. A locked week that looked

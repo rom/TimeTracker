@@ -98,6 +98,15 @@ records the figures that were actually approved. If the current total ever
 diverges — a restored backup can do it — the queue flags the week rather than
 presenting the new number as though it had been submitted.
 
+### Documentation and help content
+
+Help and guide text lives in the message catalogues and is rendered through one
+restricted markup subset: paragraphs, lists, bold and code, and nothing else.
+The text is HTML-escaped **before** any tag of ours is inserted, in list items as
+much as in paragraphs, and that ordering is what the tests pin. It matters
+because catalogue content is written by translators rather than by the
+application, and its output is marked as trusted HTML for the template.
+
 ### Web
 
 * **CSRF**: a token bound to the session required for every unsafe method, plus

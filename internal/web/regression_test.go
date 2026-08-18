@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -8,6 +9,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rom/timetracker/internal/auth"
+	"github.com/rom/timetracker/internal/service"
 )
 
 // Regression tests.
@@ -290,4 +294,160 @@ func seedEntry(t *testing.T, srv *Server) string {
 		t.Fatalf("seed entry = %d: %s", rec.Code, rec.Body.String())
 	}
 	return today
+}
+
+// The header clock showed "--:--:--" and never updated.
+//
+// It was a placeholder waiting for JavaScript to replace it, which made three
+// separate failures indistinguishable and all of them silent: the script not
+// running, the script erroring before it got that far, and the clock itself
+// being broken. It also read the *browser's* zone, so it could disagree with
+// every other time on the page.
+//
+// The time is now rendered by the server, in the user's own zone. Script only
+// keeps it moving, so the worst case is a clock that is stale rather than one
+// that is visibly broken.
+func TestRegressionHeaderClockIsServerRendered(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	body := get(t, srv, "/today").Body.String()
+	if !strings.Contains(body, `id="header-clock"`) {
+		t.Fatal("the header clock is not rendered at all")
+	}
+	if strings.Contains(body, "--:--:--") {
+		t.Error("the header clock is still a placeholder for a script to fill in")
+	}
+
+	// The rendered value must be a real time, and it must be this instant's -
+	// a hard-coded string would satisfy the check above.
+	rendered := between(t, body, `id="header-clock"`, ">", "<")
+	parsed, err := time.Parse("15:04:05", rendered)
+	if err != nil {
+		t.Fatalf("the header clock rendered %q, which is not a time: %v", rendered, err)
+	}
+	now := time.Now().UTC()
+	wanted := time.Date(0, 1, 1, now.Hour(), now.Minute(), now.Second(), 0, time.UTC)
+	if diff := parsed.Sub(wanted); diff > time.Minute || diff < -time.Minute {
+		t.Errorf("the header clock rendered %q, which is not the current time (%s)",
+			rendered, wanted.Format("15:04:05"))
+	}
+
+	// The zone travels with it, so the script ticks in the user's zone rather
+	// than the browser's.
+	if !strings.Contains(body, `data-zone=`) {
+		t.Error("the header clock carries no zone; a script would tick it in the browser's")
+	}
+}
+
+// between returns the text between open and close, after the anchor.
+func between(t *testing.T, body, anchor, open, close string) string {
+	t.Helper()
+	at := strings.Index(body, anchor)
+	if at < 0 {
+		t.Fatalf("anchor %q not found", anchor)
+	}
+	rest := body[at:]
+	start := strings.Index(rest, open)
+	if start < 0 {
+		t.Fatalf("no %q after %q", open, anchor)
+	}
+	rest = rest[start+len(open):]
+	end := strings.Index(rest, close)
+	if end < 0 {
+		t.Fatalf("no %q after %q", close, anchor)
+	}
+	return strings.TrimSpace(rest[:end])
+}
+
+// Every screen with a proposal in the inbox returned 500.
+//
+// A custom template function named "index" shadowed the Go template builtin of
+// the same name. The builtin does a map or slice lookup; the custom one took a
+// []int64. So `index $page.Inbox.Overlapping .ID` - a perfectly ordinary map
+// lookup - failed at render time with "wrong type for value; expected []int64",
+// an error that says nothing about the real cause.
+//
+// It only appeared when the inbox had something in it, which is why it survived
+// a smoke test: the page renders fine while it is empty.
+//
+// The function is now called "nth", and this test keeps a proposal in the inbox
+// so the line is actually evaluated.
+func TestRegressionInboxRendersWithProposals(t *testing.T) {
+	srv, accounts := newServerModeTestServer(t)
+	cookie := signIn(t, srv)
+	token := csrfTokenFor(t, srv, cookie)
+
+	postAs := func(path string, form url.Values) *httptest.ResponseRecorder {
+		form.Set("csrf_token", token)
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.AddCookie(cookie)
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		return rec
+	}
+
+	postAs("/customers", url.Values{"name": {"Acme"}, "currency": {"SEK"}})
+	postAs("/projects", url.Values{"customer_id": {"1"}, "name": {"P"}, "billable": {"on"}})
+	postAs("/assignments", url.Values{"project_id": {"1"}, "name": {"A"}, "billable": {"on"}})
+	postAs("/users", url.Values{
+		"display_name": {"Member"}, "email": {"member@example.com"},
+		"password": {"a-long-enough-password"}, "role": {"member"},
+	})
+	for _, userID := range []string{"1", "2"} {
+		postAs("/members", url.Values{"project_id": {"1"}, "user_id": {userID}})
+	}
+
+	// Two proposals for the colleague, overlapping - which is what puts an
+	// entry in the map the template looks up.
+	today := time.Now().UTC().Format("2006-01-02")
+	for _, start := range []string{"09:00", "09:30"} {
+		if rec := postAs("/entries", url.Values{
+			"assignment_id": {"1"}, "date": {today}, "start": {start},
+			"duration": {"2h"}, "on_behalf_of": {"2"},
+		}); rec.Code != http.StatusSeeOther {
+			t.Fatalf("propose at %s = %d: %s", start, rec.Code, rec.Body.String())
+		}
+	}
+
+	login, err := accounts.Login(context.Background(), service.LoginRequest{
+		Email: "member@example.com", Password: "a-long-enough-password", IP: "203.0.113.9",
+	})
+	if err != nil {
+		t.Fatalf("member login: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/inbox", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: login.CookieValue})
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /inbox with proposals = %d, want 200\n%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Acme") {
+		t.Error("the inbox rendered but shows no proposal")
+	}
+}
+
+// The expenses screen returned 500 as soon as it had an expense on it, for the
+// same shadowed-builtin reason. Both pages are covered because both look a row
+// up in a map, and a fix to one would not have fixed the other.
+func TestRegressionExpensesScreenRendersWithRows(t *testing.T) {
+	srv, _ := newTestServer(t)
+	today := seedEntry(t, srv)
+
+	if rec := post(t, srv, "/expenses", url.Values{
+		"project_id": {"1"}, "spent_on": {today}, "category": {"Travel"},
+		"description": {"Taxi"}, "amount": {"250"}, "billable": {"on"},
+	}); rec.Code != http.StatusSeeOther {
+		t.Fatalf("create expense = %d: %s", rec.Code, rec.Body.String())
+	}
+
+	rec := get(t, srv, "/expenses")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /expenses with rows = %d, want 200\n%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Taxi") {
+		t.Error("the expenses screen rendered but shows no expense")
+	}
 }

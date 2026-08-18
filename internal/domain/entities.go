@@ -97,6 +97,10 @@ type Customer struct {
 	// RateMinor is the customer-level default hourly rate in minor units, used
 	// when neither the assignment nor the project sets one. 0 means "no default".
 	RateMinor int64
+	// Rules are this customer's contract terms beyond the base rate: overtime,
+	// travel time and reimbursement. All optional; a customer with none set
+	// bills exactly as it did before they existed. See rates.go.
+	Rules RateRules
 	// ArchivedAt is set instead of deleting. Deleting a customer would orphan
 	// invoiced history, so nothing in this application removes one.
 	ArchivedAt *time.Time
@@ -116,6 +120,9 @@ func (c Customer) Validate() error {
 	}
 	if c.Currency != "" && len(c.Currency) != 3 {
 		return invalid("currency must be a three-letter ISO-4217 code, got %q", c.Currency)
+	}
+	if err := c.Rules.Validate(); err != nil {
+		return err
 	}
 	return nil
 }
@@ -229,7 +236,11 @@ type TimeEntry struct {
 	DurationSeconds int64
 	Note            string
 	Billable        bool
-	Status          EntryStatus
+	// Kind distinguishes ordinary work from overtime and travel time, which many
+	// contracts price differently. Chosen by the person rather than derived from
+	// a threshold; see rates.go for why.
+	Kind   EntryKind
+	Status EntryStatus
 	// TimeZone is the IANA zone the entry was recorded in. It decides which day
 	// the entry belongs to, independently of where a report is later run from.
 	TimeZone string
@@ -349,7 +360,23 @@ func (e TimeEntry) Validate() error {
 	default:
 		return invalid("unknown status %q", e.Status)
 	}
+	// An empty kind is ordinary work, which is what every entry recorded before
+	// kinds existed is.
+	if e.Kind != "" && !e.Kind.Valid() {
+		return invalid("unknown kind of time %q", e.Kind)
+	}
 	return nil
+}
+
+// KindOrDefault returns the entry's kind, treating the empty value as work.
+//
+// Stored rows written before kinds existed have an empty column, and every
+// reader has to agree on what that means; this is the one place that decides.
+func (e TimeEntry) KindOrDefault() EntryKind {
+	if e.Kind == "" {
+		return KindWork
+	}
+	return e.Kind
 }
 
 // maxEntrySeconds is an upper bound on a single entry (7 days). It exists to

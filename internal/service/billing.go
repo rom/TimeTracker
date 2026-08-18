@@ -73,6 +73,23 @@ func (s *Service) billingContextFor(ctx context.Context, assignmentID, subjectID
 	}, nil
 }
 
+// rateForKind resolves the hourly rate for a kind of time, and whether that kind
+// is billable to this customer at all.
+//
+// Two steps, deliberately separate. The base rate comes from the
+// assignment/project/customer hierarchy exactly as it always has - overtime and
+// travel do not get their own hierarchy, because a customer's contract sets one
+// overtime term for the engagement, not one per assignment. The customer's rules
+// then modify that base.
+//
+// The second result is false only for travel a customer does not pay for. The
+// time is still recorded in full; it simply carries no amount, which is a
+// different statement from "worth zero per hour" and reads differently on a
+// timesheet.
+func (b billingContext) rateForKind(kind domain.EntryKind) (domain.Money, bool) {
+	return b.customer.Rules.RateForKind(kind, b.rate())
+}
+
 // rate resolves the hourly rate, most specific level first.
 //
 // The order is assignment → person-on-project → project → customer → instance
@@ -127,7 +144,13 @@ func (b billingContext) rounding() domain.RoundingRule {
 // A non-billable entry gets a zeroed snapshot rather than a hidden amount, so
 // nothing can later start billing it by accident.
 func (b billingContext) applyBilling(entry *domain.TimeEntry) {
-	if !entry.Billable || entry.DurationSeconds <= 0 {
+	rate, kindBillable := b.rateForKind(entry.KindOrDefault())
+
+	// kindBillable is the customer saying they do not pay for this sort of time
+	// - travel, in practice. The entry keeps its own Billable flag untouched:
+	// that is the person's statement about the work, and overwriting it would
+	// silently rewrite their intent if the contract later changed.
+	if !entry.Billable || !kindBillable || entry.DurationSeconds <= 0 {
 		entry.RoundingRuleApplied = ""
 		entry.BillableSeconds = 0
 		entry.RateMinor = 0
@@ -137,7 +160,6 @@ func (b billingContext) applyBilling(entry *domain.TimeEntry) {
 	}
 
 	rule := b.rounding()
-	rate := b.rate()
 
 	entry.RoundingRuleApplied = rule.String()
 	entry.BillableSeconds = rule.Apply(entry.DurationSeconds)

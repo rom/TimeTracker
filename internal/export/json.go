@@ -37,26 +37,28 @@ type jsonReport struct {
 }
 
 type jsonEntry struct {
-	ID              int64      `json:"id"`
-	Date            string     `json:"date"`
-	Start           time.Time  `json:"start"`
-	End             *time.Time `json:"end,omitempty"`
-	Customer        string     `json:"customer"`
-	Project         string     `json:"project"`
-	Assignment      string     `json:"assignment"`
-	Note            string     `json:"note,omitempty"`
-	User            string     `json:"user"`
-	EnteredBy       string     `json:"entered_by,omitempty"`
-	Billable        bool       `json:"billable"`
-	Status          string     `json:"status"`
-	DurationSeconds int64      `json:"duration_seconds"`
-	DurationHours   string     `json:"duration_hours"`
-	BillableSeconds int64      `json:"billable_seconds"`
-	RoundingRule    string     `json:"rounding_rule,omitempty"`
-	RateMinor       int64      `json:"rate_minor,omitempty"`
-	AmountMinor     int64      `json:"amount_minor,omitempty"`
-	Currency        string     `json:"currency,omitempty"`
-	Tags            []string   `json:"tags,omitempty"`
+	ID         int64      `json:"id"`
+	Date       string     `json:"date"`
+	Start      time.Time  `json:"start"`
+	End        *time.Time `json:"end,omitempty"`
+	Customer   string     `json:"customer"`
+	Project    string     `json:"project"`
+	Assignment string     `json:"assignment"`
+	Note       string     `json:"note,omitempty"`
+	User       string     `json:"user"`
+	EnteredBy  string     `json:"entered_by,omitempty"`
+	Billable   bool       `json:"billable"`
+	// Kind explains a rate that differs from the customer's base one.
+	Kind            string   `json:"kind"`
+	Status          string   `json:"status"`
+	DurationSeconds int64    `json:"duration_seconds"`
+	DurationHours   string   `json:"duration_hours"`
+	BillableSeconds int64    `json:"billable_seconds"`
+	RoundingRule    string   `json:"rounding_rule,omitempty"`
+	RateMinor       int64    `json:"rate_minor,omitempty"`
+	AmountMinor     int64    `json:"amount_minor,omitempty"`
+	Currency        string   `json:"currency,omitempty"`
+	Tags            []string `json:"tags,omitempty"`
 }
 
 type jsonTotals struct {
@@ -113,6 +115,7 @@ func WriteJSON(w io.Writer, report Report) error {
 			User:            line.User,
 			EnteredBy:       line.EnteredBy,
 			Billable:        line.Billable,
+			Kind:            line.Kind,
 			Status:          line.Status,
 			DurationSeconds: line.Seconds,
 			DurationHours:   domain.FormatDecimalHours(line.Seconds),

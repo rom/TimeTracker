@@ -198,6 +198,9 @@ type EntryInput struct {
 	EndedAt         *time.Time
 	Note            string
 	Billable        bool
+	// Kind is work, overtime or travel. Empty means work, so a caller that does
+	// not know about kinds records ordinary work rather than nothing.
+	Kind domain.EntryKind
 	// OnBehalfOf, when set to another user, makes this a proxy proposal that
 	// requires that user's confirmation before it counts.
 	OnBehalfOf int64
@@ -249,6 +252,7 @@ func (s *Service) CreateEntry(ctx context.Context, in EntryInput) (domain.TimeEn
 		StartedAt:    in.StartedAt,
 		Note:         in.Note,
 		Billable:     in.Billable,
+		Kind:         in.Kind,
 		Status:       status,
 		// The entry's own zone decides which day it belongs to, so it is the
 		// subject's zone rather than the reader's.
@@ -323,6 +327,7 @@ func (s *Service) UpdateEntry(ctx context.Context, entryID int64, in EntryInput)
 	updated.StartedAt = in.StartedAt
 	updated.Note = in.Note
 	updated.Billable = in.Billable
+	updated.Kind = in.Kind
 	// Editing an entry clears a review flag: a human has now looked at it, which
 	// is exactly what the flag was asking for.
 	updated.Flagged = false
@@ -494,60 +499,18 @@ func entryDiff(before, after domain.TimeEntry, assignmentLabel string) map[strin
 	return diff
 }
 
-// createEntryTx inserts an entry inside the caller's transaction, so the insert
-// and its audit row commit together.
+// createEntryTx and updateEntryTx insert and update inside the caller's
+// transaction, so a change and its audit row commit together.
+//
+// They delegate to the store rather than carrying their own SQL. They used to
+// carry it, and the two copies drifted: a column added to the store's insert
+// was silently missing from this one, so a field the application believed it was
+// storing was not stored at all. Column knowledge belongs in exactly one
+// package, and this is how the service reaches it without keeping a second copy.
 func createEntryTx(ctx context.Context, tx *sql.Tx, e domain.TimeEntry) (domain.TimeEntry, error) {
-	var endedAt any
-	if e.EndedAt != nil {
-		endedAt = e.EndedAt.UTC().Format(time.RFC3339)
-	}
-	now := time.Now().UTC().Format(time.RFC3339)
-
-	res, err := tx.ExecContext(ctx, `
-		INSERT INTO time_entries (user_id, entered_by, assignment_id, started_at, ended_at,
-		    duration_seconds, note, billable, status, time_zone, rounding_rule_applied,
-		    billable_seconds, rate_minor, amount_minor, currency, flagged, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.UserID, e.EnteredBy, e.AssignmentID, e.StartedAt.UTC().Format(time.RFC3339), endedAt,
-		e.DurationSeconds, e.Note, boolInt(e.Billable), string(e.Status), e.TimeZone,
-		e.RoundingRuleApplied, e.BillableSeconds, e.RateMinor, e.AmountMinor, e.Currency,
-		boolInt(e.Flagged), now, now)
-	if err != nil {
-		return domain.TimeEntry{}, fmt.Errorf("insert time entry: %w", err)
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return domain.TimeEntry{}, err
-	}
-	e.ID = id
-	return e, nil
+	return store.CreateEntryTx(ctx, tx, e)
 }
 
-// updateEntryTx saves an edited entry inside the caller's transaction.
 func updateEntryTx(ctx context.Context, tx *sql.Tx, e domain.TimeEntry) error {
-	var endedAt any
-	if e.EndedAt != nil {
-		endedAt = e.EndedAt.UTC().Format(time.RFC3339)
-	}
-	_, err := tx.ExecContext(ctx, `
-		UPDATE time_entries SET assignment_id = ?, started_at = ?, ended_at = ?,
-		       duration_seconds = ?, note = ?, billable = ?, status = ?, flagged = ?,
-		       rounding_rule_applied = ?, billable_seconds = ?, rate_minor = ?,
-		       amount_minor = ?, currency = ?, updated_at = ?
-		WHERE id = ?`,
-		e.AssignmentID, e.StartedAt.UTC().Format(time.RFC3339), endedAt, e.DurationSeconds,
-		e.Note, boolInt(e.Billable), string(e.Status), boolInt(e.Flagged),
-		e.RoundingRuleApplied, e.BillableSeconds, e.RateMinor, e.AmountMinor, e.Currency,
-		time.Now().UTC().Format(time.RFC3339), e.ID)
-	if err != nil {
-		return fmt.Errorf("update time entry: %w", err)
-	}
-	return nil
-}
-
-func boolInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
+	return store.UpdateEntryTx(ctx, tx, e)
 }

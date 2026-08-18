@@ -128,6 +128,31 @@ func (m Money) ApplyPercent(pct int64) Money {
 	return Money{Minor: m.Minor + quotient, Currency: m.Currency}
 }
 
+// ScalePercent returns the amount taken *as* pct percent of itself: 150 gives one
+// and a half times the amount, 50 gives half of it.
+//
+// Deliberately separate from ApplyPercent, which *adds* pct. The two read almost
+// identically at a call site and mean very different things - a 150% overtime
+// rate is one and a half times the base, while a 150% expense markup is two and
+// a half times the cost - so they are named for what they do rather than sharing
+// one function with a flag.
+func (m Money) ScalePercent(pct int64) Money {
+	numerator := m.Minor * pct
+	quotient := numerator / 100
+	remainder := numerator % 100
+	if remainder < 0 {
+		remainder = -remainder
+	}
+	if remainder*2 >= 100 {
+		if numerator < 0 {
+			quotient--
+		} else {
+			quotient++
+		}
+	}
+	return Money{Minor: quotient, Currency: m.Currency}
+}
+
 // String renders the amount with two decimal places and its currency code, e.g.
 // "1234.50 SEK". Display formatting for a locale is a presentation concern and
 // belongs in the web layer; this is for logs, exports and debugging.

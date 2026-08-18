@@ -16,7 +16,7 @@ import (
 // forgotten in another.
 const entrySelect = `
 	SELECT e.id, e.user_id, e.entered_by, e.assignment_id, e.started_at, e.ended_at,
-	       e.duration_seconds, e.note, e.billable, e.status, e.time_zone,
+	       e.duration_seconds, e.note, e.billable, e.kind, e.status, e.time_zone,
 	       e.rounding_rule_applied, e.billable_seconds, e.rate_minor, e.amount_minor,
 	       e.currency, e.flagged, e.created_at, e.updated_at,
 	       e.decided_by, e.decided_at, e.decision_note,
@@ -35,19 +35,42 @@ const entrySelect = `
 // nothing here prevents several from existing at once for the same user, which is
 // the point (docs/adr/0004-concurrent-timers.md).
 func (db *DB) CreateEntry(ctx context.Context, e domain.TimeEntry) (domain.TimeEntry, error) {
+	return CreateEntryTx(ctx, db.write, e)
+}
+
+// UpdateEntry saves an edited entry.
+func (db *DB) UpdateEntry(ctx context.Context, e domain.TimeEntry) error {
+	return UpdateEntryTx(ctx, db.write, e)
+}
+
+// Execer is the part of *sql.DB and *sql.Tx these writes need.
+//
+// It exists so that the insert and the update have exactly one implementation
+// each, whether they run on their own or inside a caller's transaction. The
+// service layer needs the transactional form so that a change and its audit row
+// commit together; it previously did that by keeping its own copy of the SQL,
+// and the copies drifted - a column added to one was silently absent from the
+// other, which is a stored field that quietly stops being stored.
+type Execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+// CreateEntryTx inserts an entry using the given executor.
+func CreateEntryTx(ctx context.Context, db Execer, e domain.TimeEntry) (domain.TimeEntry, error) {
 	now := time.Now()
 	var endedAt any
 	if e.EndedAt != nil {
 		endedAt = formatTime(*e.EndedAt)
 	}
 
-	res, err := db.write.ExecContext(ctx, `
+	res, err := db.ExecContext(ctx, `
 		INSERT INTO time_entries (user_id, entered_by, assignment_id, started_at, ended_at,
-		    duration_seconds, note, billable, status, time_zone, rounding_rule_applied,
+		    duration_seconds, note, billable, kind, status, time_zone, rounding_rule_applied,
 		    billable_seconds, rate_minor, amount_minor, currency, flagged, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.UserID, e.EnteredBy, e.AssignmentID, formatTime(e.StartedAt), endedAt,
-		e.DurationSeconds, e.Note, boolToInt(e.Billable), string(e.Status), e.TimeZone,
+		e.DurationSeconds, e.Note, boolToInt(e.Billable),
+		string(e.KindOrDefault()), string(e.Status), e.TimeZone,
 		e.RoundingRuleApplied, e.BillableSeconds, e.RateMinor, e.AmountMinor, e.Currency,
 		boolToInt(e.Flagged), formatTime(now), formatTime(now))
 	if err != nil {
@@ -63,20 +86,22 @@ func (db *DB) CreateEntry(ctx context.Context, e domain.TimeEntry) (domain.TimeE
 	return e, nil
 }
 
-// UpdateEntry saves an edited entry.
-func (db *DB) UpdateEntry(ctx context.Context, e domain.TimeEntry) error {
+// UpdateEntryTx saves an edited entry using the given executor.
+func UpdateEntryTx(ctx context.Context, db Execer, e domain.TimeEntry) error {
 	var endedAt any
 	if e.EndedAt != nil {
 		endedAt = formatTime(*e.EndedAt)
 	}
-	res, err := db.write.ExecContext(ctx, `
+	res, err := db.ExecContext(ctx, `
 		UPDATE time_entries SET assignment_id = ?, started_at = ?, ended_at = ?,
-		       duration_seconds = ?, note = ?, billable = ?, status = ?, time_zone = ?,
+		       duration_seconds = ?, note = ?, billable = ?, kind = ?, status = ?,
+		       time_zone = ?,
 		       rounding_rule_applied = ?, billable_seconds = ?, rate_minor = ?,
 		       amount_minor = ?, currency = ?, flagged = ?, updated_at = ?
 		WHERE id = ?`,
 		e.AssignmentID, formatTime(e.StartedAt), endedAt, e.DurationSeconds, e.Note,
-		boolToInt(e.Billable), string(e.Status), e.TimeZone, e.RoundingRuleApplied,
+		boolToInt(e.Billable), string(e.KindOrDefault()), string(e.Status),
+		e.TimeZone, e.RoundingRuleApplied,
 		e.BillableSeconds, e.RateMinor, e.AmountMinor, e.Currency, boolToInt(e.Flagged),
 		formatTime(time.Now()), e.ID)
 	if err != nil {
@@ -310,8 +335,9 @@ func scanEntry(row rowScanner) (domain.TimeEntry, error) {
 	var startedAt, createdAt, updatedAt, status, decidedAt string
 	var billable, flagged int
 
+	var kind string
 	err := row.Scan(&e.ID, &e.UserID, &e.EnteredBy, &e.AssignmentID, &startedAt, &endedAt,
-		&e.DurationSeconds, &e.Note, &billable, &status, &e.TimeZone,
+		&e.DurationSeconds, &e.Note, &billable, &kind, &status, &e.TimeZone,
 		&e.RoundingRuleApplied, &e.BillableSeconds, &e.RateMinor, &e.AmountMinor,
 		&e.Currency, &flagged, &createdAt, &updatedAt,
 		&e.DecidedBy, &decidedAt, &e.DecisionNote,
@@ -327,6 +353,7 @@ func scanEntry(row rowScanner) (domain.TimeEntry, error) {
 
 	e.Billable = billable != 0
 	e.Flagged = flagged != 0
+	e.Kind = domain.EntryKind(kind)
 	e.Status = domain.EntryStatus(status)
 	if e.StartedAt, err = parseTime(startedAt); err != nil {
 		return domain.TimeEntry{}, err

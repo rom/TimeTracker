@@ -368,3 +368,159 @@ func containsString(values []string, want string) bool {
 	}
 	return false
 }
+
+// TestApprovalReportShowsWhoHasNotSubmitted.
+//
+// The queue cannot answer this: a week nobody submitted has no row, so the
+// interesting cells are the ones that would otherwise be blank. That is the
+// whole reason the report exists, and it is what this test pins.
+func TestApprovalReportShowsWhoHasNotSubmitted(t *testing.T) {
+	f := newServerFixture(t)
+	assignment, colleague := f.team(t)
+	colleagueCtx := auth.WithUser(f.ctx, colleague)
+
+	lastWeek := f.now.AddDate(0, 0, -7)
+
+	// The colleague works both weeks and submits only the earlier one.
+	for _, when := range []time.Time{lastWeek, f.now} {
+		if _, err := f.svc.CreateEntry(colleagueCtx, EntryInput{
+			AssignmentID: assignment.ID, StartedAt: when,
+			DurationSeconds: 8 * 3600, Billable: true,
+		}); err != nil {
+			t.Fatalf("record time: %v", err)
+		}
+	}
+	if _, err := f.svc.SubmitWeek(colleagueCtx, lastWeek); err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+
+	report, err := f.svc.ApprovalReportFor(f.ctx, f.now, 2)
+	if err != nil {
+		t.Fatalf("report: %v", err)
+	}
+	if len(report.Weeks) != 2 {
+		t.Fatalf("weeks = %d, want 2", len(report.Weeks))
+	}
+
+	row := findRow(t, report, colleague.ID)
+	if got := row.Cells[0].Status; got != string(domain.PeriodSubmitted) {
+		t.Errorf("the submitted week reads %q", got)
+	}
+	// The cell that matters: time recorded, nothing submitted.
+	if got := row.Cells[1].Status; got != string(StatusNotSubmitted) {
+		t.Errorf("the unsubmitted week reads %q, want not_submitted", got)
+	}
+	if !row.Cells[1].Recorded() {
+		t.Error("the unsubmitted week shows no recorded time")
+	}
+	if row.Outstanding != 1 || report.Outstanding != 1 {
+		t.Errorf("outstanding = %d row / %d report, want 1 and 1",
+			row.Outstanding, report.Outstanding)
+	}
+	if report.Weeks[1].NotSubmitted != 1 {
+		t.Errorf("the column summary missed it: %+v", report.Weeks[1])
+	}
+}
+
+// TestApprovalReportLeavesUnworkedWeeksBlank: a week somebody did not work
+// needs no submission, and marking it would bury the cells that do.
+func TestApprovalReportLeavesUnworkedWeeksBlank(t *testing.T) {
+	f := newServerFixture(t)
+	assignment, colleague := f.team(t)
+	colleagueCtx := auth.WithUser(f.ctx, colleague)
+
+	if _, err := f.svc.CreateEntry(colleagueCtx, EntryInput{
+		AssignmentID: assignment.ID, StartedAt: f.now,
+		DurationSeconds: 3600, Billable: true,
+	}); err != nil {
+		t.Fatalf("record time: %v", err)
+	}
+
+	report, err := f.svc.ApprovalReportFor(f.ctx, f.now, 4)
+	if err != nil {
+		t.Fatalf("report: %v", err)
+	}
+	row := findRow(t, report, colleague.ID)
+
+	// Only the last of the four weeks has anything in it.
+	for i, cell := range row.Cells[:3] {
+		if cell.Status != string(StatusNothing) {
+			t.Errorf("week %d is marked %q for a week with no time", i, cell.Status)
+		}
+	}
+	if row.Outstanding != 1 {
+		t.Errorf("outstanding = %d, want only the worked week", row.Outstanding)
+	}
+}
+
+// TestApprovalReportIsScopedToWhatTheActorMaySee: without the manage permission
+// the report is the actor's own weeks. Useful, and gives away nothing about
+// anybody else.
+func TestApprovalReportIsScopedToWhatTheActorMaySee(t *testing.T) {
+	f := newServerFixture(t)
+	assignment, colleague := f.team(t)
+	colleagueCtx := auth.WithUser(f.ctx, colleague)
+
+	// Both people record time.
+	if _, err := f.svc.CreateEntry(f.ctx, EntryInput{
+		AssignmentID: assignment.ID, StartedAt: f.now,
+		DurationSeconds: 3600, Billable: true,
+	}); err != nil {
+		t.Fatalf("admin records time: %v", err)
+	}
+	if _, err := f.svc.CreateEntry(colleagueCtx, EntryInput{
+		AssignmentID: assignment.ID, StartedAt: f.now,
+		DurationSeconds: 3600, Billable: true,
+	}); err != nil {
+		t.Fatalf("colleague records time: %v", err)
+	}
+
+	// The administrator sees both.
+	managerView, err := f.svc.ApprovalReportFor(f.ctx, f.now, 1)
+	if err != nil {
+		t.Fatalf("manager report: %v", err)
+	}
+	if len(managerView.Rows) != 2 {
+		t.Errorf("a manager sees %d rows, want both people", len(managerView.Rows))
+	}
+
+	// The member sees only themselves.
+	memberView, err := f.svc.ApprovalReportFor(colleagueCtx, f.now, 1)
+	if err != nil {
+		t.Fatalf("member report: %v", err)
+	}
+	if len(memberView.Rows) != 1 {
+		t.Fatalf("a member sees %d rows, want only their own", len(memberView.Rows))
+	}
+	if memberView.Rows[0].UserID != colleague.ID {
+		t.Errorf("a member's report shows somebody else: %+v", memberView.Rows[0])
+	}
+}
+
+// TestApprovalReportClampsItsRange: an unbounded number from a query string
+// must not become an unbounded query.
+func TestApprovalReportClampsItsRange(t *testing.T) {
+	f := newServerFixture(t)
+
+	for _, weeks := range []int{0, -5, 10000} {
+		report, err := f.svc.ApprovalReportFor(f.ctx, f.now, weeks)
+		if err != nil {
+			t.Fatalf("weeks=%d: %v", weeks, err)
+		}
+		if len(report.Weeks) < 1 || len(report.Weeks) > 53 {
+			t.Errorf("weeks=%d produced %d columns", weeks, len(report.Weeks))
+		}
+	}
+}
+
+// findRow locates one person's row, failing the test if it is absent.
+func findRow(t *testing.T, report ApprovalReport, userID int64) ApprovalRow {
+	t.Helper()
+	for _, row := range report.Rows {
+		if row.UserID == userID {
+			return row
+		}
+	}
+	t.Fatalf("no row for user %d in %+v", userID, report.Rows)
+	return ApprovalRow{}
+}

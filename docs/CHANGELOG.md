@@ -12,6 +12,28 @@ the decision.
 
 ### Fixed
 
+* **The header clock showed `--:--:--` and never updated.** Three defects, one
+  symptom. The value was a placeholder for JavaScript to replace, so a script
+  that never ran, one that failed before reaching it, and a broken clock were
+  indistinguishable and all silent — the time is now rendered by the server, so
+  the worst case is a stale clock rather than a visibly broken one, and it works
+  with no script at all. It read the *browser's* zone while every other time on
+  the page used the user's. And `init()` ran seven features in sequence with no
+  isolation, so the first to throw silently disabled the six after it; the clock
+  was second, which made almost any early fault produce exactly this symptom.
+  Each feature now starts independently and a failure is logged.
+* **The inbox returned 500 as soon as it held a proposal.** A custom template
+  function named `index` shadowed the Go template builtin, so an ordinary map
+  lookup failed with "wrong type for value; expected []int64" — an error that
+  says nothing about the cause. The expenses screen would have done the same.
+  Renamed to `nth`; both screens have regression tests that keep a row on the
+  page, since the fault only appears when there is one.
+* **The service layer kept its own copy of the time-entry insert and update.**
+  The copies had already drifted — the transactional update never wrote
+  `time_zone` — and a newly added column was written by one and not the other,
+  so a field the application believed it was storing was not stored at all.
+  There is now one statement each, in the store, with the service calling the
+  transactional form.
 * **Editing an entry was implemented but unreachable.** The service, the routes
   and the form all existed; no screen ever rendered a link to any of them, so
   the only way in was to type a URL. Rows on the day and entries screens now
@@ -29,6 +51,34 @@ the decision.
 
 ### Added
 
+* **Customer contract terms: overtime, travel time and reimbursement.** Overtime
+  and travel are a *kind* on the entry, chosen by the person; the customer's
+  rules say what each is worth. Nothing is reclassified automatically — whether
+  an hour counts as overtime is a contractual judgement, and a threshold that is
+  exceeded produces a notice on the week view rather than a rate nobody agreed
+  to. Travel a customer does not pay for is its own state, not a zero rate: the
+  time is recorded in full and carries no amount. Reimbursement covers a default
+  markup, mileage per kilometre and per diem per day — a quantity is priced from
+  the customer's rate, with the working shown on the claim — and a receipt
+  threshold enforced when the week is submitted. The kind reaches CSV, JSON, PDF
+  and DOCX, because a line billed at one and a half times the base rate has to
+  say why on the document carrying the figure. See
+  [ADR-0024](adr/0024-customer-rate-rules.md).
+* **An approval status report**, per person per week. The queue answers "what is
+  waiting for me"; this answers "who has not submitted", which no queue can show
+  because a submission that was never made has no row. Weeks with time recorded
+  and nothing handed in are marked; weeks nobody worked stay blank, so the cells
+  that matter are not buried. Scoped like everything else: without the manage
+  permission it is your own weeks.
+* **A task-oriented guide** at `/guide`, alongside the per-screen help. Ten
+  how-tos in numbered steps — recording time, fixing an entry, moving time,
+  **recording time for a colleague**, submitting a week, approving one, expenses,
+  exporting, backup, and setting up customers and contract terms. It exists
+  because per-screen help cannot reach somebody who does not yet know which
+  screen they need, which is exactly the position of anyone asked to put a
+  colleague's hours in. Catalogue content, so translated and escaped like the
+  rest; topics that cannot apply in the running mode are not offered. See
+  [ADR-0025](adr/0025-task-oriented-guide.md).
 * **Weekly submit and approve.** A person declares a week finished; a manager
   accepts it or sends it back with a reason; an approved week can be reopened,
   deliberately and audibly. Submitting locks the week - creating, editing,

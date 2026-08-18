@@ -53,6 +53,8 @@
 | 017 help | Every help screen renders in every language. The help control is asserted to be a real link that returns a whole page without JavaScript. An unknown screen falls back rather than erroring. The markup renderer is tested against script injection, since help text is written by translators and its output is marked as trusted HTML. |
 | 015 least privilege | Config tests assert that server mode refuses a public bind without TLS, that a half-configured TLS pair is rejected, that a group-readable private key is refused with a message saying how to fix it, and that no CBC or non-forward-secret cipher suite is offered. The platform profiles in `deploy/` are **not** covered by automated tests - they are verified by `scripts/harden-check.sh` and `systemd-analyze security` against a real deployment, which is stated plainly rather than implied. |
 | 020 approval and correction | The lock is proved by removing it: a sanity run that neuters `checkPeriodOpen` must fail create, update, delete, timer start and the HTTP-level test together - a lock is only real if every mutation asks. Positive cases cover submit → withdraw → edit, edit refused *into* a locked week as well as inside one, an administrator being refused like anyone else, an empty week refused for submission, rejection requiring a reason, the reason reaching the owner's screen, a resubmission starting clean, nobody deciding on their own week in either mode, and reopen restoring the ability to edit. Week-start arithmetic is tested against Sunday-start weeks and a zone where late Sunday in UTC is already Monday locally. |
+| 021 contract rules | The rate table is exercised for every kind against every combination of set and unset rule, because an unset rule silently behaving as zero would bill work at nothing - the most expensive failure available here. Quantity pricing is pinned exactly (42.5 km at 25.00 is 106250 minor units, not approximately that) and the formatter is proved to round-trip through the parser, so what is displayed can be typed back. Service tests prove the kind survives storage - it once did not, see §3a - that unbilled travel is still recorded in full, that a threshold produces a notice and marking the time stops it, that an explicit 0% markup is not overwritten by a customer default, and that a claim over the evidence threshold refuses the week's submission by name. |
+| 022 learnability | Every guide topic is asserted to exist in every catalogued language, since a missing one renders as its own key - a page of gibberish rather than an error. The proxy topic is checked for the specific promises that make it worth having (a proposal, the inbox, the `@name` syntax, the shared project). Topics that cannot apply in the running mode are asserted absent. The markup renderer is tested for what it must and must not do: lists where every line is a marker, prose otherwise, and HTML from the catalogue escaped rather than executed. |
 | 014 exactness | Rounding boundary tables (exactly on the increment, one second either side, zero, negative guard); rate × duration half-away-from-zero; mixed-currency addition panics/errors; a source-level check that no persisted field or total is `float64`. |
 
 ## 3a. Regression tests
@@ -70,6 +72,9 @@ list is short and each entry is specific:
 | a shell script named `.png` was stored | SECURITY.md claimed an extension check that did not exist |
 | the macOS and Windows builds broke | a symbol used by shared code was defined only in a `_linux.go` file |
 | editing an entry was unreachable | the service, the routes and the form existed; no screen rendered a link to any of them |
+| the header clock showed `--:--:--` forever | a placeholder waiting for a script, in the browser's zone, behind an init sequence where one throw disabled everything after it |
+| the inbox returned 500 with any proposal in it | a custom template function named `index` shadowed the builtin, so a map lookup failed |
+| a kind was applied to a rate but never stored | the service kept its own copy of the entry insert, and the copies drifted |
 
 Two of those are worth dwelling on. The 500 was invisible because the test logger
 discarded output and the smoke test rendered only empty pages - so the regression
@@ -84,6 +89,22 @@ the handler was never the broken part. A companion test covers the trap that mad
 the form wrong as well as unreachable: the end-time field must stay empty,
 because an end time overrides a duration and a prefilled one would silently
 discard the correction the user had just typed.
+
+Three of these share a shape worth naming: **the page renders fine while it is
+empty.** The shadowed `index`, the earlier lost-`$` failure, and the expenses
+screen all worked until there was a row on them. Smoke tests that load every
+screen on an empty database prove nothing about any of them, so the regression
+tests here seed a row first and the broad smoke test now covers the screens that
+have one.
+
+The header clock is the other kind. It could not be reproduced in a headless
+browser at all - it ticks there - so the fix was not to chase the trigger but to
+remove the failure mode: the value is rendered by the server, so there is no
+state in which the page shows dashes. The Go test asserts that what is served is
+the current time rather than a placeholder, which is a property no browser is
+needed to check. The browser-level behaviour (ticking, ticking with the first
+initialiser sabotaged, and correct output with JavaScript disabled entirely) was
+verified by hand; see §5.
 
 The cross-compile failure is the one no test can catch: `make build-check`
 compiles all six OS/arch targets and runs inside `make check`, and a regression
@@ -139,6 +160,11 @@ Some things automation cannot honestly settle, checked before each release:
 * Clipboard paste of an image on macOS, Windows and Linux browsers — clipboard
   behaviour differs per platform and is not reproducible in `httptest`.
 * A restore drill: take a backup, destroy the installation, restore, verify.
+* **The header clock**, in a real browser: that it ticks; that it still shows the
+  right time with JavaScript disabled entirely; and that sabotaging the first
+  initialiser leaves the clock and every later feature running, with the failure
+  logged. The Go tests cover what is served, which is what makes the placeholder
+  failure impossible; only a browser can show that the script does its half.
 
 ## 6. Running the tests
 

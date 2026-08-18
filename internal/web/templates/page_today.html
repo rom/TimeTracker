@@ -102,6 +102,11 @@
       <input type="time" name="start" value="09:00" aria-label="{{.T "entry.start"}}">
       <input type="text" name="duration" placeholder="1h30" aria-label="{{.T "entry.duration"}}">
       <input type="text" name="note" placeholder="{{.T "entry.note.placeholder"}}" aria-label="{{.T "entry.note"}}">
+      {{/* Work, overtime or travel. What a customer pays for each is their
+           contract's business; which one this was is the person's. */}}
+      <select name="kind" aria-label="{{.T "entry.kind"}}">
+        {{range entryKinds}}<option value="{{.}}">{{$.T .MessageKey}}</option>{{end}}
+      </select>
       <label class="inline-check">
         <input type="checkbox" name="billable" checked> {{.T "entry.billable"}}
       </label>

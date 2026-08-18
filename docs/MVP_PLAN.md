@@ -30,6 +30,8 @@ add it.
 | **5** | Reports, PDF and DOCX export | ✅ delivered |
 | **6** | Semi-automatic assistance | 🔨 partial: gaps and long-timer review shipped; idle detection and reminders outstanding |
 | **7** | Hardening, packaging, performance | 🔨 partial: hardening shipped; the performance suite is not yet written |
+| **8** | Bulk import, backup, YAML configuration | ✅ delivered |
+| **9** | Customer contract rules, approval report, user guide | ✅ delivered |
 
 ---
 
@@ -184,11 +186,24 @@ Delivered alongside the layers above:
   favourites, moving time between assignments with the billing recomputed from
   the target, and administrator toggles for the header clock and date.
 
+## Layer 9 — Contract rules and documentation ✅
+
+Customer-specific overtime, travel time and reimbursement terms, with the kind of
+time chosen by the person and thresholds that prompt rather than reclassify
+([ADR-0024](adr/0024-customer-rate-rules.md)). The approval status report, per
+person per week. A task-oriented user guide alongside the per-screen help
+([ADR-0025](adr/0025-task-oriented-guide.md)).
+
+**Done when:** a contract's terms can be entered without a person computing
+anything, no rate reaches an entry that nobody chose to apply, and the normal
+actions are documented as procedures in every supported language. **Done.**
+
 ## Backlog (not yet scheduled)
 
 Calendar (ICS) import · git commit import · desktop activity agent · recurring
 entries · invoice numbering · multi-currency conversion · internal cost rates and
-margin reporting · fine-grained permissions · PostgreSQL backend · webhooks ·
+margin reporting · dated contract terms (rules change on renewal; today's are
+current-only) · per-project overtime terms · fine-grained permissions · PostgreSQL backend · webhooks ·
 public read-only client portal links · PWA/offline · Slack reminder integration.
 
 ## Out of scope

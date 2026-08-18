@@ -20,6 +20,35 @@
        weeks. */}}
   {{template "period-banner" .}}
 
+  {{/* Overtime the customer's contract would treat differently, not yet marked
+       as such. Reported and left alone, exactly like the unaccounted-time gaps
+       on the day view: whether an hour counts as overtime is a contractual
+       decision, and a tool that made it silently would be inventing invoice
+       lines nobody agreed to. */}}
+  {{if .Overtime}}
+    <div class="gaps overtime-notices" role="note">
+      <strong>{{.T "overtime.notice"}}</strong>
+      <ul class="notice-list">
+        {{range .Overtime}}
+          <li>
+            {{if eq .Period "day"}}
+              {{$.T "overtime.notice.day"
+                  ($.Printer.FormatDate .Starting) ($.Printer.FormatDuration .RecordedSeconds)
+                  .CustomerName ($.Printer.FormatDuration .ExcessSeconds)
+                  ($.Printer.FormatDuration .ThresholdSeconds)}}
+            {{else}}
+              {{$.T "overtime.notice.week"
+                  ($.Printer.FormatDate .Starting) ($.Printer.FormatDuration .RecordedSeconds)
+                  .CustomerName ($.Printer.FormatDuration .ExcessSeconds)
+                  ($.Printer.FormatDuration .ThresholdSeconds)}}
+            {{end}}
+          </li>
+        {{end}}
+      </ul>
+      <p class="field-help">{{.T "overtime.notice.help"}}</p>
+    </div>
+  {{end}}
+
   {{/* The grid: one row per assignment, one column per day. It is read across
        weeks, so the row order is stable rather than reflecting the order entries
        happened to be created in. */}}
@@ -49,7 +78,7 @@
             </th>
             {{$row := .}}
             {{range $i, $d := $week.Days}}
-              {{$seconds := index $row.Seconds $i}}
+              {{$seconds := nth $row.Seconds $i}}
               <td class="cell-day {{if eq $seconds 0}}empty{{end}}">
                 {{if gt $seconds 0}}{{$.Printer.FormatDecimal (hours $seconds)}}{{end}}
               </td>

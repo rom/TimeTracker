@@ -186,21 +186,55 @@
   }
 
   /*
-   * The optional header clock. Ticking it client-side rather than re-rendering
-   * the page is the only sane way to show seconds, and it is decorative - the
-   * server's clock is what decides what gets recorded.
+   * The optional header clock.
+   *
+   * The server renders the current time into the element, so this function only
+   * keeps it moving. If it never runs, the header shows the time the page was
+   * loaded - stale, but true and obviously a clock. The previous version left a
+   * "--:--:--" placeholder for the script to replace, which meant any failure
+   * here showed the user a row of dashes with nothing to explain it.
+   *
+   * The time is shown in the user's configured zone rather than the browser's.
+   * Those differ often enough to matter - a laptop still on the previous
+   * country's zone, a server-side profile set deliberately - and a header
+   * disagreeing with the entries beneath it is worse than no header at all.
    */
   function initHeaderClock() {
     var clock = document.getElementById("header-clock");
     if (!clock) return;
 
+    var zone = clock.getAttribute("data-zone");
+    var formatter = null;
+    try {
+      formatter = new Intl.DateTimeFormat("en-GB", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+        timeZone: zone || undefined,
+      });
+    } catch (err) {
+      /* An unknown zone name, or an engine without full ICU data. Falling back
+         to the browser's own zone is better than stopping the clock; it is the
+         same answer for most people and a visibly running clock either way. */
+      formatter = null;
+    }
+
     function tick() {
       var now = new Date();
+      if (formatter) {
+        var text = formatter.format(now);
+        /* Some engines render midnight as "24:00:00" under hour12:false. */
+        if (text.indexOf("24:") === 0) text = "00:" + text.slice(3);
+        clock.textContent = text;
+        return;
+      }
       clock.textContent =
         String(now.getHours()).padStart(2, "0") + ":" +
         String(now.getMinutes()).padStart(2, "0") + ":" +
         String(now.getSeconds()).padStart(2, "0");
     }
+
     tick();
     window.setInterval(tick, 1000);
   }
@@ -460,17 +494,46 @@
 
   /* ------------------------------------------------------------- start ---- */
 
-  function init() {
+  function startLiveClocks() {
     updateClocks();
     /* One second is the natural cadence for a clock showing seconds. */
     window.setInterval(updateClocks, 1000);
-    initHeaderClock();
-    initThemePicker();
-    initLanguagePicker();
-    initAjaxForms();
-    initPaste();
-    initHelp();
-    initShortcuts();
+  }
+
+  /*
+   * Each feature is started separately, and a failure in one does not stop the
+   * rest.
+   *
+   * These are independent features sharing a file, not a pipeline. Running them
+   * as a straight sequence meant the first one to throw silently disabled every
+   * one after it - so a fault anywhere near the top of the list could leave the
+   * page looking fine while the clock, the theme picker and the paste handler
+   * had all quietly never started. Nothing was logged, because nothing had gone
+   * wrong as far as the page was concerned.
+   */
+  function init() {
+    var features = [
+      ["live timers", startLiveClocks],
+      ["header clock", initHeaderClock],
+      ["theme picker", initThemePicker],
+      ["language picker", initLanguagePicker],
+      ["forms", initAjaxForms],
+      ["paste", initPaste],
+      ["help", initHelp],
+      ["shortcuts", initShortcuts],
+    ];
+
+    features.forEach(function (feature) {
+      try {
+        feature[1]();
+      } catch (err) {
+        /* Loud in the console, silent on the page: a user cannot act on this,
+           and a broken enhancement must not obscure the timesheet itself. */
+        if (window.console && window.console.error) {
+          window.console.error("timetracker: " + feature[0] + " failed to start", err);
+        }
+      }
+    });
   }
 
   if (document.readyState === "loading") {

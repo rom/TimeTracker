@@ -16,6 +16,11 @@
 
   <p class="screen-intro">{{.T "approvals.intro"}}</p>
 
+  {{/* The queue is "what is waiting for me". The report answers the other
+       question - who has not submitted at all - which no queue can show,
+       because an absent submission is an absent row. */}}
+  <p><a class="btn btn-quiet btn-small" href="/approvals/report">{{.T "report.approval.title"}}</a></p>
+
   <h2 class="section-heading" id="queue-heading">{{.T "approvals.queue"}}</h2>
   {{if .Approvals}}
     <table class="entries" aria-labelledby="queue-heading">

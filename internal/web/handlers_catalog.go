@@ -43,6 +43,11 @@ func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	rules, err := rateRulesFromForm(r, r.FormValue("currency"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	_, err = s.svc.CreateCustomer(r.Context(), domain.Customer{
 		Name:      r.FormValue("name"),
 		Code:      r.FormValue("code"),
@@ -50,6 +55,7 @@ func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 		ColourKey: r.FormValue("colour_key"),
 		Icon:      r.FormValue("icon"),
 		RateMinor: rate,
+		Rules:     rules,
 	})
 	if err != nil {
 		s.fail(w, r, err)

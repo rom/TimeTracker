@@ -49,6 +49,8 @@ Statuses: `proposed` → `accepted` → `superseded by ADR-NNNN` | `deprecated`.
 | [0021](0021-json-backups-that-merge.md) | Backups are JSON, and restoring merges | accepted | 2026-08-18 | ASR-010, ASR-018 |
 | [0022](0022-two-pass-csv-import.md) | CSV import previews, then imports all or nothing | accepted | 2026-08-18 | ASR-019 |
 | [0023](0023-week-as-the-unit-of-approval.md) | The week is the unit of submission, approval and locking | accepted | 2026-08-18 | ASR-020 |
+| [0024](0024-customer-rate-rules.md) | Overtime and travel are a kind on the entry, priced by customer rules | accepted | 2026-08-18 | ASR-021 |
+| [0025](0025-task-oriented-guide.md) | A task-oriented guide alongside per-screen help | accepted | 2026-08-18 | ASR-022 |
 
 ## Writing a new one
 

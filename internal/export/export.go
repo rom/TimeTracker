@@ -52,18 +52,23 @@ type Report struct {
 // rounding rule that produced the latter, so a client can verify the arithmetic
 // instead of having to trust it.
 type Line struct {
-	ID             int64
-	Date           time.Time
-	Start          time.Time
-	End            *time.Time
-	Customer       string
-	Project        string
-	Assignment     string
-	Code           string
-	Note           string
-	User           string
-	EnteredBy      string
-	Billable       bool
+	ID         int64
+	Date       time.Time
+	Start      time.Time
+	End        *time.Time
+	Customer   string
+	Project    string
+	Assignment string
+	Code       string
+	Note       string
+	User       string
+	EnteredBy  string
+	Billable   bool
+	// Kind is work, overtime or travel. It is exported because a line billed at
+	// one and a half times the base rate has to say why: an invoice figure that
+	// cannot be explained from the document it appears in is a dispute waiting
+	// to happen.
+	Kind           string
 	Status         string
 	Seconds        int64
 	BillableSecond int64
@@ -117,6 +122,7 @@ func NewReport(title string, from, to time.Time, timeZone, user string, entries 
 			User:           e.UserName,
 			EnteredBy:      e.EnteredByName,
 			Billable:       e.Billable,
+			Kind:           string(e.KindOrDefault()),
 			Status:         string(e.Status),
 			Seconds:        e.ElapsedSeconds(now),
 			BillableSecond: e.BillableSeconds,
