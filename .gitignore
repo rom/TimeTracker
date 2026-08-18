@@ -1,0 +1,17 @@
+# Build artefacts
+/bin/
+/dist/
+coverage.out
+coverage.html
+
+# Local runtime data (never commit someone's timesheet)
+*.db
+*.db-wal
+*.db-shm
+/data/
+
+# Editor and OS noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
