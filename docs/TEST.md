@@ -52,6 +52,7 @@
 | 016 localisation | A catalogue parity test fails the build when any language lacks a key. Every screen is rendered in every catalogued language and scanned for leaked keys. Formatter tests pin Swedish decimals, group separators, durations and money against English. Negotiation tests cover quality values, region variants and an unsupported header. |
 | 017 help | Every help screen renders in every language. The help control is asserted to be a real link that returns a whole page without JavaScript. An unknown screen falls back rather than erroring. The markup renderer is tested against script injection, since help text is written by translators and its output is marked as trusted HTML. |
 | 015 least privilege | Config tests assert that server mode refuses a public bind without TLS, that a half-configured TLS pair is rejected, that a group-readable private key is refused with a message saying how to fix it, and that no CBC or non-forward-secret cipher suite is offered. The platform profiles in `deploy/` are **not** covered by automated tests - they are verified by `scripts/harden-check.sh` and `systemd-analyze security` against a real deployment, which is stated plainly rather than implied. |
+| 020 approval and correction | The lock is proved by removing it: a sanity run that neuters `checkPeriodOpen` must fail create, update, delete, timer start and the HTTP-level test together - a lock is only real if every mutation asks. Positive cases cover submit → withdraw → edit, edit refused *into* a locked week as well as inside one, an administrator being refused like anyone else, an empty week refused for submission, rejection requiring a reason, the reason reaching the owner's screen, a resubmission starting clean, nobody deciding on their own week in either mode, and reopen restoring the ability to edit. Week-start arithmetic is tested against Sunday-start weeks and a zone where late Sunday in UTC is already Monday locally. |
 | 014 exactness | Rounding boundary tables (exactly on the increment, one second either side, zero, negative guard); rate × duration half-away-from-zero; mixed-currency addition panics/errors; a source-level check that no persisted field or total is `float64`. |
 
 ## 3a. Regression tests
@@ -68,12 +69,21 @@ list is short and each entry is specific:
 | PDF and DOCX returned 501 after being implemented | the handler's switch still listed them as unimplemented |
 | a shell script named `.png` was stored | SECURITY.md claimed an extension check that did not exist |
 | the macOS and Windows builds broke | a symbol used by shared code was defined only in a `_linux.go` file |
+| editing an entry was unreachable | the service, the routes and the form existed; no screen rendered a link to any of them |
 
 Two of those are worth dwelling on. The 500 was invisible because the test logger
 discarded output and the smoke test rendered only empty pages - so the regression
 test creates data first. And the extension check was a documentation claim that
 was simply untrue, which is the kind of defect only reading the docs against the
 code will find.
+
+The unreachable edit form is the same class of defect as the extension check:
+every layer passed its own tests, and the feature was still absent from the
+product. Its regression test asserts the **link on the row**, not the handler -
+the handler was never the broken part. A companion test covers the trap that made
+the form wrong as well as unreachable: the end-time field must stay empty,
+because an end time overrides a duration and a prefilled one would silently
+discard the correction the user had just typed.
 
 The cross-compile failure is the one no test can catch: `make build-check`
 compiles all six OS/arch targets and runs inside `make check`, and a regression

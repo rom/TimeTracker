@@ -79,6 +79,25 @@ internal notes, cost data and colleague identities are removed before the data
 leaves it, so no template bug can leak them. Resources a user may not know exist
 return "not found" rather than "forbidden".
 
+### Approval and period locking ([ADR-0023](adr/0023-week-as-the-unit-of-approval.md))
+
+Submitted and approved weeks refuse every mutation of the time inside them, and
+the check is one function that every mutating path calls — create, update,
+delete, timer start, timer stop, and moving entries between assignments. **The
+lock is not conditional on role.** An administrator is refused like anyone else;
+reopening is the only way through and it writes an audit record naming who did
+it, when, and why.
+
+Nobody decides on their own timesheet, whatever their role, and the check is on
+the identity in the request rather than on which control the page offered. An
+edit that changes an entry's date is checked against **both** weeks, so the lock
+cannot be walked around by moving time out of a locked week into an open one.
+
+The total as it stood at submission is stored with the decision, so an approval
+records the figures that were actually approved. If the current total ever
+diverges — a restored backup can do it — the queue flags the week rather than
+presenting the new number as though it had been submitted.
+
 ### Web
 
 * **CSRF**: a token bound to the session required for every unsafe method, plus
@@ -212,6 +231,13 @@ Stated plainly, because a security document that only lists strengths is not use
   have not tested. A tighter list would confine better.
 * **There is no ACME/Let's Encrypt integration**, so self-terminated TLS means
   manual renewal.
+* **An approved week is a status, not an immutable snapshot.** The entries are
+  the same rows; what stops them changing is the lock, and the lock is code. A
+  restore or direct database access can move a week's total after it was
+  approved. The stored submitted total makes such a divergence *visible* — the
+  approval queue flags it — but it does not prevent it. A copied, immutable
+  snapshot at approval would; it is recorded as a rejected alternative in
+  ADR-0023 rather than as an oversight.
 
 ## 6. Reporting a vulnerability
 

@@ -424,6 +424,35 @@ input[type="text"], input[type="date"], input[type="time"], select {
 .badge-proxy   { border-color: var(--border-strong); }
 .badge-flagged { color: var(--warning); border-color: var(--warning); }
 
+/* Period status. The colour is a reinforcement, never the only signal: each
+   badge also carries its status as words, so it survives a monochrome screen
+   and a colour vision deficiency alike. */
+.badge-period    { margin-left: 0; font-weight: 600; }
+.badge-submitted { color: var(--text); border-color: var(--border-strong); }
+.badge-approved  { color: var(--success); border-color: var(--success); }
+.badge-rejected  { color: var(--danger);  border-color: var(--danger); }
+
+/* --------------------------------------------------- submit and approve --- */
+
+/* The week's state, shown wherever time is entered. A locked week that looked
+   like an open one until a save failed would be the worst version of this. */
+.period-banner {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-sm);
+  padding: 8px var(--gap); margin-bottom: var(--gap);
+  background: var(--surface-raised);
+  border: 1px solid var(--border); border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius); font-size: 0.9em;
+}
+.period-banner.period-open      { border-left-color: var(--border-strong); }
+.period-banner.period-submitted { border-left-color: var(--accent); }
+.period-banner.period-approved  { border-left-color: var(--success); }
+.period-banner.period-rejected  { border-left-color: var(--danger); }
+.period-detail  { color: var(--text-muted); }
+.period-reason  { color: var(--text); }
+.period-total   { margin-left: auto; font-variant-numeric: tabular-nums; }
+.period-locked  { color: var(--text-muted); white-space: nowrap; }
+.period-banner form { display: inline; }
+
 /* --------------------------------------------------------- week grid ----- */
 
 .grid-scroll { overflow-x: auto; }
@@ -448,6 +477,25 @@ input[type="text"], input[type="date"], input[type="time"], select {
   margin: var(--gap) 0; padding: var(--gap);
   background: var(--surface-raised); border: 1px solid var(--border); border-radius: var(--radius);
 }
+/* The correction screen stacks its fields and labels them visibly. A row of
+   bare inputs is fine for adding time in a hurry; it is the wrong shape for
+   checking a value that is already wrong. */
+.entry-form-full { display: block; max-width: 34rem; }
+.entry-form-full .field { margin-bottom: var(--gap); }
+.entry-form-full .field label { display: block; margin-bottom: 3px; font-weight: 600; font-size: 0.9em; }
+.entry-form-full .field input, .entry-form-full .field select { width: 100%; }
+.entry-form-full .field-help { margin-bottom: 0; }
+.entry-form-full .form-actions { display: flex; gap: var(--gap-sm); margin-top: var(--gap-lg); }
+
+/* What is being corrected, stated before the form. */
+.entry-summary {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-sm);
+  padding: 10px var(--gap); margin-bottom: var(--gap);
+  background: var(--surface-sunken); border-radius: var(--radius);
+}
+.entry-summary .entry-assignment, .entry-summary .entry-path { display: inline; }
+.entry-current { width: 100%; font-variant-numeric: tabular-nums; }
+
 .filter { display: flex; gap: var(--gap); flex-wrap: wrap; align-items: flex-end; margin-bottom: var(--gap); }
 .filter label { display: flex; flex-direction: column; gap: 2px; font-size: 0.85em; color: var(--text-muted); }
 .manual-entry summary { cursor: pointer; color: var(--text-muted); margin-top: var(--gap-lg); }

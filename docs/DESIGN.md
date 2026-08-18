@@ -86,6 +86,34 @@ resolves fuzzily against recent entries; `#word` is a tag; `@person` makes it a
 proxy proposal; the remainder is the note. Anything ambiguous opens the full form
 pre-filled rather than guessing.
 
+### Correcting an entry
+
+An entry is a record of something that happened, and the record is frequently
+wrong on first attempt. Correcting it is therefore a normal operation with a
+screen of its own, not a hidden one.
+
+The dominant error is a **duration in the wrong unit**: `8m` typed where `8h` was
+meant. Everything about the correction screen is arranged around making that
+visible.
+
+* The entry is restated in words first — the day, the start time, and the
+  duration as it currently stands — because a value sitting in an input reads as
+  something to type over, and this one is the thing to check.
+* The duration is shown in **the same notation it accepts**: `8m`, `1h 30m`,
+  `8h`. What is on screen can be typed straight back. `0h 8m` where a working
+  day should be is legible as wrong at a glance; `480` would not be.
+* The field order is assignment, day, start, duration. The eye arrives at the
+  duration having already confirmed everything around it.
+* The **end time is left empty**. An end time takes precedence over a duration,
+  so a prefilled one would silently discard the duration the user had just
+  corrected — the exact failure the screen exists to prevent. Filling it in is a
+  deliberate choice, and the field says what it does.
+
+Every change is audited with the previous value, so a figure that has been
+corrected can still be explained afterwards. If the week has been submitted or
+approved, the correction is refused with a message naming the way to unlock it —
+see §4a.
+
 ### Copy, paste and attachments
 
 * Pasting into the note field accepts plain text; pasting an **image** (screenshot,
@@ -112,6 +140,46 @@ work; overlapping proposals from two different people for the same period are
 flagged together rather than silently duplicated; and a rejected proposal stays
 visible to its author, so the conversation happens in the tool.
 
+## 4a. Submitting and approving a week
+
+Hours that have been billed must stop moving; hours that have not must be easy to
+fix. The week is where those two needs are reconciled
+([ADR-0023](adr/0023-week-as-the-unit-of-approval.md)).
+
+```
+open ──submit──▶ submitted ──approve──▶ approved
+  ▲                  │                      │
+  └──withdraw────────┘                      │
+  ◀──────────reject (with a reason)─────────┤
+  ◀──────────reopen (deliberate)────────────┘
+```
+
+**Submitting locks the week to its owner.** No time in it can be created,
+edited, moved or deleted; no timer can be started inside it or stopped into it.
+That is what submitting means — hours that keep changing afterwards are not a
+declaration.
+
+**Withdrawing is the owner's own** as long as nobody has decided yet. People
+submit and then remember something, and needing a manager to undo that makes
+them submit late instead, which costs more than it protects.
+
+**Only a manager approves, and never their own week**, whatever their role. The
+single-user build has nobody else, so it refuses the action rather than offering
+a control that means nothing.
+
+**A rejection carries a reason**, and the reason is shown to the owner on the
+week view — the screen where they will act on it. "Rejected" alone leaves them
+guessing and they resubmit the same hours.
+
+**Reopening is the way back from approved.** It is a separate, audited act with
+its own reason. A system with no way back does not prevent corrections; it moves
+them somewhere nobody is looking.
+
+The state of the week is shown wherever time is entered — on the day view and
+the week view, with the controls that are actually available. A locked week that
+looked exactly like an open one until a save failed would be the worst version
+of this feature: the banner is what makes the refusal predictable.
+
 ## 5. Rates, billing and rounding
 
 Rate resolution, most specific first:
@@ -137,9 +205,11 @@ to the company. Receipts attach directly.
 | Screen | Purpose |
 |---|---|
 | **Today** | the default. Running timers, today's entries as a timeline, quick add, running totals (summed and elapsed), unaccounted-time gaps. |
-| **Week** | grid of assignments × days. Inline duration editing, weekly totals per assignment and per day, submit-for-approval. |
+| **Week** | grid of assignments × days, weekly totals per assignment and per day, and the week's approval state with the submit or withdraw control. |
+| **Correct entry** | one entry, opened from any row: assignment, day, start, duration, note, billable. See §3. |
 | **Entries** | filterable list across any range: customer, project, assignment, tag, person, billable, status. The basis of every export. |
-| **Inbox** | proxy proposals awaiting your decision; timesheets awaiting your approval (manager). |
+| **Inbox** | proxy proposals awaiting your decision. |
+| **Approvals** | weeks awaiting your decision, weeks you have approved (with the way to reopen one), and your own submitted weeks. Server mode only. |
 | **Expenses** | list and entry, with receipts, billable/reimbursable flags. |
 | **Reports** | grouped totals by customer/project/assignment/person/tag over a range, billable vs non-billable, budget consumption, export in four formats. |
 | **Admin** | customers, projects, assignments, rates, tags; in server mode also users, roles, memberships, sessions and the audit log. |

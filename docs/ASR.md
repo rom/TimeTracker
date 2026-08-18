@@ -461,3 +461,37 @@ import leaves the user reconciling two sources, which is more work than the
 retyping it replaced.
 
 *Addressed by:* [ADR-0022](adr/0022-two-pass-csv-import.md)
+
+---
+
+### ASR-020
+**Recorded hours can be declared finished, checked by someone else, and then
+stop moving - without making a mistake permanent.**
+
+*Quality attribute:* Integrity / Modifiability
+
+*Requirement:* A person must be able to declare a week's hours finished; a
+manager must be able to accept or return them; accepted hours must not change
+afterwards; and a genuine error must still be correctable through a route that
+leaves a record. A mistyped entry must be correctable at any time before the
+week is declared finished, without deleting and re-entering it.
+
+*Fit criterion:* Submitting a week refuses every subsequent change to time
+inside it - creating, editing, moving, deleting, and starting or stopping a
+timer - for every user including an administrator, with a message naming the way
+to unlock it. Approval is refused to the week's owner whatever their role, and
+to anyone without the manage permission. A rejection carries a reason, and that
+reason is shown to the owner on the screen where they correct it. Reopening an
+approved week is a distinct operation with its own audit record. Any entry can be
+edited in place, including its date, start time and duration, and the edit is
+audited with the previous value.
+
+*Rationale:* Two failures are common in time tracking tools and both are
+expensive. Hours that keep moving after they were invoiced mean the invoice
+cannot be explained. Hours that can never be corrected mean people work around
+the tool - a compensating entry in the wrong week, or a note in an email - and
+the record silently stops describing reality. The requirement is to prevent the
+first without causing the second, which is why "correctable through an audited
+route" is part of the criterion rather than a convenience.
+
+*Addressed by:* [ADR-0023](adr/0023-week-as-the-unit-of-approval.md)

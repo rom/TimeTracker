@@ -1,0 +1,158 @@
+{{/*
+  Weekly submit and approve.
+
+  Two lists on one screen, and the order is deliberate: what is waiting for this
+  person's decision comes first, their own weeks second. A manager opens this
+  screen because somebody is waiting on them, not to look at themselves.
+*/}}
+{{define "content"}}
+<section class="approvals">
+
+  <header class="screen-header">
+    <div class="screen-title">
+      <h1>{{.T "approvals.title"}}</h1>
+    </div>
+  </header>
+
+  <p class="screen-intro">{{.T "approvals.intro"}}</p>
+
+  <h2 class="section-heading" id="queue-heading">{{.T "approvals.queue"}}</h2>
+  {{if .Approvals}}
+    <table class="entries" aria-labelledby="queue-heading">
+      <thead>
+        <tr>
+          <th scope="col">{{.T "approvals.who"}}</th>
+          <th scope="col">{{.T "approvals.week"}}</th>
+          <th scope="col">{{.T "approvals.submitted"}}</th>
+          <th scope="col">{{.T "approvals.hours"}}</th>
+          <th scope="col"><span class="visually-hidden">{{.T "approvals.decision"}}</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Approvals}}
+          <tr class="entry-row">
+            <td class="cell-what">
+              <span class="entry-assignment">{{.UserName}}</span>
+            </td>
+            <td>{{.WeekStart}}</td>
+            <td>{{if .SubmittedAt.IsZero}}—{{else}}{{$.Printer.FormatDate .SubmittedAt}}{{end}}</td>
+            <td class="cell-time">
+              {{$.Printer.FormatDuration .SubmittedSeconds}}
+              {{/* A week that has moved since it was submitted is flagged rather
+                   than silently approved: the decision is about specific figures,
+                   and these are no longer those figures. */}}
+              {{if .Changed}}
+                <span class="badge badge-flagged" title="{{$.T "approvals.changed.title"}}">
+                  {{$.T "approvals.changed" ($.Printer.FormatDuration .CurrentSeconds)}}
+                </span>
+              {{end}}
+            </td>
+            <td class="cell-actions">
+              <form method="post" action="/approvals/approve" class="inline"
+                    hx-post="/approvals/approve">
+                {{template "csrf" $.CSRFToken}}
+                <input type="hidden" name="user_id" value="{{.UserID}}">
+                <input type="hidden" name="week_start" value="{{.WeekStart}}">
+                <button type="submit" class="btn btn-small btn-primary">{{$.T "approvals.approve"}}</button>
+              </form>
+              {{/* Rejecting needs a reason, so the field is part of the control
+                   rather than a prompt that appears afterwards. */}}
+              <form method="post" action="/approvals/reject" class="inline"
+                    hx-post="/approvals/reject">
+                {{template "csrf" $.CSRFToken}}
+                <input type="hidden" name="user_id" value="{{.UserID}}">
+                <input type="hidden" name="week_start" value="{{.WeekStart}}">
+                <input type="text" name="reason" required maxlength="1000"
+                       placeholder="{{$.T "approvals.reason.placeholder"}}"
+                       aria-label="{{$.T "approvals.reason"}}">
+                <button type="submit" class="btn btn-small btn-quiet">{{$.T "approvals.reject"}}</button>
+              </form>
+            </td>
+          </tr>
+        {{end}}
+      </tbody>
+    </table>
+  {{else}}
+    <p class="empty">{{.T "approvals.queue.empty"}}</p>
+  {{end}}
+
+  {{/* Approved weeks, with the way back. A system with no way to correct an
+       approved timesheet forces people to invent an adjustment somewhere else,
+       which is worse than an audited reopening. */}}
+  {{if .Approved}}
+    <h2 class="section-heading" id="approved-heading">{{.T "approvals.approved"}}</h2>
+    <table class="entries" aria-labelledby="approved-heading">
+      <thead>
+        <tr>
+          <th scope="col">{{.T "approvals.who"}}</th>
+          <th scope="col">{{.T "approvals.week"}}</th>
+          <th scope="col">{{.T "approvals.hours"}}</th>
+          <th scope="col"><span class="visually-hidden">{{.T "approvals.decision"}}</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Approved}}
+          <tr class="entry-row period-approved">
+            <td class="cell-what"><span class="entry-assignment">{{.UserName}}</span></td>
+            <td>{{.WeekStart}}</td>
+            <td class="cell-time">{{$.Printer.FormatDuration .SubmittedSeconds}}</td>
+            <td class="cell-actions">
+              <form method="post" action="/approvals/reopen" class="inline"
+                    hx-post="/approvals/reopen"
+                    hx-confirm="{{$.T "approvals.reopen.confirm"}}">
+                {{template "csrf" $.CSRFToken}}
+                <input type="hidden" name="user_id" value="{{.UserID}}">
+                <input type="hidden" name="week_start" value="{{.WeekStart}}">
+                <input type="text" name="reason" maxlength="1000"
+                       placeholder="{{$.T "approvals.reason.placeholder"}}"
+                       aria-label="{{$.T "approvals.reason"}}">
+                <button type="submit" class="btn btn-small btn-quiet">{{$.T "approvals.reopen"}}</button>
+              </form>
+            </td>
+          </tr>
+        {{end}}
+      </tbody>
+    </table>
+  {{end}}
+
+  <h2 class="section-heading" id="mine-heading">{{.T "approvals.mine"}}</h2>
+  {{if .MyPeriods}}
+    <table class="entries" aria-labelledby="mine-heading">
+      <thead>
+        <tr>
+          <th scope="col">{{.T "approvals.week"}}</th>
+          <th scope="col">{{.T "approvals.status"}}</th>
+          <th scope="col">{{.T "approvals.hours"}}</th>
+          <th scope="col">{{.T "approvals.note"}}</th>
+          <th scope="col"><span class="visually-hidden">{{.T "approvals.decision"}}</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .MyPeriods}}
+          {{$status := printf "%s" .Status}}
+          <tr class="entry-row period-{{$status}}">
+            <td><a href="/week?date={{.WeekStart}}">{{.WeekStart}}</a></td>
+            <td>
+              <span class="badge badge-period badge-{{$status}}">{{$.T (printf "period.status.%s" $status)}}</span>
+            </td>
+            <td class="cell-time">{{$.Printer.FormatDuration .SubmittedSeconds}}</td>
+            <td class="period-reason">{{.Note}}</td>
+            <td class="cell-actions">
+              {{if eq $status "submitted"}}
+                <form method="post" action="/week/withdraw" class="inline" hx-post="/week/withdraw">
+                  {{template "csrf" $.CSRFToken}}
+                  <input type="hidden" name="week" value="{{.WeekStart}}">
+                  <button type="submit" class="btn btn-small btn-quiet">{{$.T "period.withdraw"}}</button>
+                </form>
+              {{end}}
+            </td>
+          </tr>
+        {{end}}
+      </tbody>
+    </table>
+  {{else}}
+    <p class="empty">{{.T "approvals.mine.empty"}}</p>
+  {{end}}
+
+</section>
+{{end}}

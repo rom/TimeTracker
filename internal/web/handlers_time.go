@@ -52,6 +52,9 @@ type pageData struct {
 	Projects  []domain.Project
 	Entry     *domain.TimeEntry
 	Filter    entryFilterForm
+	// Zone is the acting user's IANA zone, for templates that render a stored
+	// instant as a wall clock time.
+	Zone *time.Location
 	// Expenses, attachments and the proxy inbox.
 	Expenses      []domain.Expense
 	ExpenseTotals service.ExpenseTotals
@@ -63,6 +66,12 @@ type pageData struct {
 	EditCustomer   *domain.Customer
 	EditProject    *domain.Project
 	EditAssignment *domain.Assignment
+
+	// Weekly submit and approve.
+	PeriodView *service.PeriodView
+	Approvals  []domain.TimesheetPeriod
+	Approved   []domain.TimesheetPeriod
+	MyPeriods  []domain.TimesheetPeriod
 
 	// Moving time.
 	MoveIDs []string
@@ -173,6 +182,7 @@ func (s *Server) newPageData(r *http.Request, title, active string) (pageData, e
 		Settings:   settings,
 		Rounding:   service.RoundingPresets(),
 		InboxCount: inboxCount,
+		Zone:       userLocation(r),
 	}, nil
 }
 
@@ -230,6 +240,15 @@ func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
 	data.Day = &day
 	data.Totals = day.Totals
 
+	// Whether this day's week is locked, so the screen can say so rather than
+	// offering controls whose only outcome is an error message.
+	period, err := s.svc.Period(r.Context(), date)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	data.PeriodView = &period
+
 	if data.Recent, err = s.svc.RecentAssignments(r.Context(), 8); err != nil {
 		s.fail(w, r, err)
 		return
@@ -259,6 +278,15 @@ func (s *Server) handleWeek(w http.ResponseWriter, r *http.Request) {
 	}
 	data.Week = &week
 	data.Totals = week.Totals
+
+	// The week view is where submitting belongs: it is the screen showing
+	// exactly what would be submitted.
+	period, err := s.svc.Period(r.Context(), date)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	data.PeriodView = &period
 
 	if data.Assignments, err = s.svc.Assignments(r.Context(), 0, false); err != nil {
 		s.fail(w, r, err)
@@ -429,32 +457,43 @@ func (s *Server) handleQuickAdd(w http.ResponseWriter, r *http.Request) {
 	s.refreshOrRedirect(w, r)
 }
 
-// handleEditEntryForm returns the edit form for one entry, as an HTMX fragment.
+// handleEditEntryForm renders the screen for correcting one entry.
+//
+// A whole screen rather than an inline field, because the mistake this exists to
+// fix - eight minutes typed where eight hours were meant - is only obvious when
+// the duration is shown next to the day, the start time and the assignment. An
+// inline cell shows the wrong number in the same shape as the right one.
 func (s *Server) handleEditEntryForm(w http.ResponseWriter, r *http.Request) {
 	entry, err := s.svc.Entry(r.Context(), int64Param(r.PathValue("id")))
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	assignments, err := s.svc.Assignments(r.Context(), 0, false)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
 
-	page, err := s.newPageData(r, "", "today")
+	data, err := s.newPageData(r, "", "today")
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	s.renderFragment(w, r, "page_today.html", "entry-edit-form", map[string]any{
-		"Entry":       entry,
-		"Assignments": assignments,
-		"Page":        page,
-	})
+	data.Title = data.Printer.T("entry.edit.title")
+	data.Entry = &entry
+	if data.Assignments, err = s.svc.Assignments(r.Context(), 0, false); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	// The week's state is shown on the form, so somebody who cannot save an
+	// edit learns that before typing it rather than after.
+	if period, periodErr := s.svc.Period(r.Context(), entry.StartedAt); periodErr == nil {
+		data.PeriodView = &period
+	}
+	s.render(w, r, "page_entry_edit.html", data)
 }
 
 // handleUpdateEntry saves an edit.
+//
+// The redirect goes to the day the entry now belongs to rather than back to
+// wherever the form was opened from: an edit that moves an entry to another day
+// would otherwise appear to have deleted it.
 func (s *Server) handleUpdateEntry(w http.ResponseWriter, r *http.Request) {
 	if err := parseForm(r); err != nil {
 		s.fail(w, r, err)
@@ -465,11 +504,19 @@ func (s *Server) handleUpdateEntry(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	if _, err := s.svc.UpdateEntry(r.Context(), int64Param(r.PathValue("id")), input); err != nil {
+	updated, err := s.svc.UpdateEntry(r.Context(), int64Param(r.PathValue("id")), input)
+	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	s.refreshOrRedirect(w, r)
+
+	target := "/today?date=" + updated.StartedAt.In(userLocation(r)).Format("2006-01-02")
+	if isHTMX(r) {
+		w.Header().Set("HX-Redirect", target)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 // handleDeleteEntry removes an entry. The prior state survives in the audit
@@ -487,13 +534,7 @@ func (s *Server) handleDeleteEntry(w http.ResponseWriter, r *http.Request) {
 // It accepts either a duration or an explicit end time, because both are natural:
 // "2h on the migration" and "09:00 to 10:30" are the same statement made two ways.
 func (s *Server) entryInputFromForm(r *http.Request) (service.EntryInput, error) {
-	user, _ := auth.UserFrom(r.Context())
-	loc := time.UTC
-	if user.TimeZone != "" {
-		if parsed, err := time.LoadLocation(user.TimeZone); err == nil {
-			loc = parsed
-		}
-	}
+	loc := userLocation(r)
 
 	input := service.EntryInput{
 		AssignmentID: int64Param(r.FormValue("assignment_id")),
@@ -582,16 +623,27 @@ func (s *Server) refreshOrRedirect(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
+// userLocation resolves the acting user's IANA zone.
+//
+// Dates on screen and dates in forms are both local ones; getting this wrong
+// puts an entry on the wrong calendar day, which is the kind of error nobody
+// spots until an invoice is queried. One function so there is one answer.
+func userLocation(r *http.Request) *time.Location {
+	user, _ := auth.UserFrom(r.Context())
+	if user.TimeZone == "" {
+		return time.UTC
+	}
+	parsed, err := time.LoadLocation(user.TimeZone)
+	if err != nil {
+		return time.UTC
+	}
+	return parsed
+}
+
 // dateParam reads a ?date=YYYY-MM-DD parameter, defaulting to today in the user's
 // zone.
 func (s *Server) dateParam(r *http.Request, name string) time.Time {
-	user, _ := auth.UserFrom(r.Context())
-	loc := time.UTC
-	if user.TimeZone != "" {
-		if parsed, err := time.LoadLocation(user.TimeZone); err == nil {
-			loc = parsed
-		}
-	}
+	loc := userLocation(r)
 	if raw := r.URL.Query().Get(name); raw != "" {
 		if parsed, err := time.ParseInLocation("2006-01-02", raw, loc); err == nil {
 			return parsed

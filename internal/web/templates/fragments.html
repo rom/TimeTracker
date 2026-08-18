@@ -143,6 +143,14 @@
           <button type="submit" class="btn btn-small btn-stop">{{$page.T "action.stop"}}</button>
         </form>
       {{end}}
+      {{/* A plain link, not a background swap: correcting an entry is a
+           deliberate act that deserves a screen of its own, and a link works
+           with no script at all. */}}
+      <a class="btn btn-small btn-quiet" href="/entries/{{$e.ID}}/edit"
+         title="{{$page.T "entry.edit.title"}}">
+        <span aria-hidden="true">✎</span>
+        <span class="visually-hidden">{{$page.T "action.edit"}}</span>
+      </a>
       <form method="post" action="/entries/{{$e.ID}}/delete" hx-post="/entries/{{$e.ID}}/delete"
             hx-confirm="{{$page.T "entry.delete.confirm"}}">
         {{template "csrf" $page.CSRFToken}}
@@ -164,25 +172,127 @@
 {{end}}
 
 {{/* ------------------------------------------------------- entry edit form */}}
+{{/* --------------------------------------------------------- editing an entry */}}
+{{/*
+  The correction form. The field order matters: assignment, then day, then start,
+  then duration - because the mistake this screen exists to fix is a duration
+  typed in the wrong unit, and the eye should arrive at the duration having
+  already confirmed everything around it.
+
+  The duration is shown in the same notation it accepts ("8h", "45m", "1h 30m"),
+  so what is on screen is what can be typed back. "0h 8m" where a day's work
+  should be is legible as wrong at a glance; "480" would not be.
+*/}}
 {{define "entry-edit-form"}}
-  <form class="entry-form" method="post" action="/entries/{{.Entry.ID}}"
-        hx-post="/entries/{{.Entry.ID}}">
-    {{template "csrf" .CSRF}}
-    <select name="assignment_id" required>
-      {{$selected := .Entry.AssignmentID}}
-      {{range .Assignments}}
-        <option value="{{.ID}}" {{if eq .ID $selected}}selected{{end}}>{{.Label}}</option>
-      {{end}}
-    </select>
-    <input type="date" name="date" value="{{date .Entry.StartedAt}}" required
-           aria-label="{{.Page.T "entry.date"}}">
-    <input type="text" name="duration" value="{{duration .Entry.DurationSeconds}}"
-           placeholder="1h30" aria-label="{{.Page.T "entry.duration"}}">
-    <input type="text" name="note" value="{{.Entry.Note}}"
-           placeholder="{{.Page.T "entry.note"}}" aria-label="{{.Page.T "entry.note"}}">
+  {{- $page := .Page -}}
+  {{- $entry := .Entry -}}
+  <form class="entry-form entry-form-full" method="post" action="/entries/{{$entry.ID}}"
+        hx-post="/entries/{{$entry.ID}}">
+    {{template "csrf" $page.CSRFToken}}
+
+    <div class="field">
+      <label for="edit-assignment">{{$page.T "entry.assignment"}}</label>
+      <select id="edit-assignment" name="assignment_id" required>
+        {{$selected := $entry.AssignmentID}}
+        {{range $page.Assignments}}
+          <option value="{{.ID}}" {{if eq .ID $selected}}selected{{end}}>{{.Label}}</option>
+        {{end}}
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="edit-date">{{$page.T "entry.date"}}</label>
+      <input type="date" id="edit-date" name="date" required
+             value="{{date ($entry.StartedAt.In $page.Zone)}}">
+    </div>
+
+    <div class="field">
+      <label for="edit-start">{{$page.T "entry.start"}}</label>
+      <input type="time" id="edit-start" name="start" value="{{clock $entry.StartedAt $page.Zone}}">
+    </div>
+
+    <div class="field">
+      <label for="edit-duration">{{$page.T "entry.duration"}}</label>
+      <input type="text" id="edit-duration" name="duration" inputmode="text"
+             value="{{duration $entry.DurationSeconds}}" placeholder="8h"
+             aria-describedby="edit-duration-help">
+      <p class="field-help" id="edit-duration-help">{{$page.T "entry.duration.help"}}</p>
+    </div>
+
+    <div class="field">
+      <label for="edit-end">{{$page.T "entry.end"}}</label>
+      {{/* Deliberately not prefilled. An end time in the box would silently win
+           over the duration above it, so an edited duration would be discarded -
+           exactly the correction this screen is for. Empty means "use the
+           duration"; filling it in is a choice. */}}
+      <input type="time" id="edit-end" name="end" value=""
+             aria-describedby="edit-end-help">
+      <p class="field-help" id="edit-end-help">{{$page.T "entry.end.help"}}</p>
+    </div>
+
+    <div class="field field-wide">
+      <label for="edit-note">{{$page.T "entry.note"}}</label>
+      <input type="text" id="edit-note" name="note" value="{{$entry.Note}}"
+             placeholder="{{$page.T "entry.note.placeholder"}}">
+    </div>
+
     <label class="inline-check">
-      <input type="checkbox" name="billable" {{if .Entry.Billable}}checked{{end}}> {{.Page.T "entry.billable"}}
+      <input type="checkbox" name="billable" {{if $entry.Billable}}checked{{end}}>
+      {{$page.T "entry.billable"}}
     </label>
-    <button type="submit" class="btn btn-primary">{{.Page.T "action.save"}}</button>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">{{$page.T "action.save"}}</button>
+      <a class="btn btn-quiet" href="/today?date={{date ($entry.StartedAt.In $page.Zone)}}">{{$page.T "action.cancel"}}</a>
+    </div>
   </form>
+{{end}}
+
+{{/* ------------------------------------------------------------ period state */}}
+{{/*
+  The week's status, shown wherever time is entered. A locked week that looks
+  exactly like an open one until a save fails is the worst version of this
+  feature: the banner is what makes the refusal predictable.
+*/}}
+{{define "period-banner"}}
+  {{- $page := . -}}
+  {{- with $page.PeriodView -}}
+    {{$status := printf "%s" .Period.Status}}
+    <div class="period-banner period-{{$status}}" role="status">
+      <span class="badge badge-period badge-{{$status}}">{{$page.T (printf "period.status.%s" $status)}}</span>
+
+      {{if eq $status "submitted"}}
+        <span class="period-detail">{{$page.T "period.submitted.detail" ($page.Printer.FormatDuration .Period.SubmittedSeconds)}}</span>
+      {{else if eq $status "approved"}}
+        <span class="period-detail">{{$page.T "period.approved.detail"}}</span>
+      {{else if eq $status "rejected"}}
+        {{/* The reason is the whole point of a rejection: without it the owner
+             resubmits the same hours. */}}
+        <span class="period-detail period-reason">{{$page.T "period.rejected.detail" .Period.Note}}</span>
+      {{end}}
+
+      <span class="period-total">{{$page.T "period.total" ($page.Printer.FormatDuration .TotalSeconds)}}</span>
+
+      {{if .CanSubmit}}
+        <form method="post" action="/week/submit" class="inline"
+              hx-post="/week/submit" hx-confirm="{{$page.T "period.submit.confirm"}}">
+          {{template "csrf" $page.CSRFToken}}
+          <input type="hidden" name="week" value="{{.Period.WeekStart}}">
+          <button type="submit" class="btn btn-primary btn-small">{{$page.T "period.submit"}}</button>
+        </form>
+      {{end}}
+      {{if .CanWithdraw}}
+        <form method="post" action="/week/withdraw" class="inline" hx-post="/week/withdraw">
+          {{template "csrf" $page.CSRFToken}}
+          <input type="hidden" name="week" value="{{.Period.WeekStart}}">
+          <button type="submit" class="btn btn-quiet btn-small">{{$page.T "period.withdraw"}}</button>
+        </form>
+      {{end}}
+      {{if .Period.Locked}}
+        <span class="period-locked" title="{{$page.T "period.locked.help"}}">
+          <span aria-hidden="true">🔒</span> {{$page.T "period.locked"}}
+        </span>
+      {{end}}
+    </div>
+  {{- end -}}
 {{end}}

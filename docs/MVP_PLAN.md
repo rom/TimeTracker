@@ -26,7 +26,7 @@ add it.
 | **1** | Local-mode MVP: domain, storage, timers, day/week, themes, CSV/JSON | ✅ delivered |
 | **2** | Server mode: auth, RBAC, sessions, rsyslog | ✅ delivered |
 | **3** | Attachments, paste, expenses | ✅ delivered |
-| **4** | Proxy entries and approval workflow | ✅ delivered |
+| **4** | Proxy entries, weekly submit/approve, entry correction | ✅ delivered |
 | **5** | Reports, PDF and DOCX export | ✅ delivered |
 | **6** | Semi-automatic assistance | 🔨 partial: gaps and long-timer review shipped; idle detection and reminders outstanding |
 | **7** | Hardening, packaging, performance | 🔨 partial: hardening shipped; the performance suite is not yet written |
@@ -127,12 +127,15 @@ must be copied separately. See [ADR-0021](adr/0021-json-backups-that-merge.md).
 Proxy proposals with `entered_by`, `pending` status and exclusion from all totals;
 the inbox; accept / edit-and-accept / reject with reason; overlapping-proposal
 flagging. Weekly timesheet submit → approve/reject → lock, with locked periods
-rejecting edits.
+rejecting every edit, and reopen as the audited way back
+([ADR-0023](adr/0023-week-as-the-unit-of-approval.md)). Entries are correctable
+in place - assignment, date, start time, duration, note and billable flag - which
+is what makes locking a week acceptable rather than punitive.
 
 **Done when:** proposed time is provably absent from every total and export until
-accepted, and every transition is in the audit trail. **Done.** Weekly submit and
-approve is the part of this layer still outstanding; the consent workflow that
-made it worth doing is complete.
+accepted, and every transition is in the audit trail. **Done.** The lock is
+enforced in one function that every mutation calls, and the tests prove that
+disabling it fails create, update, delete, start, stop and move.
 
 ## Layer 5 — Reports, PDF and DOCX ✅
 

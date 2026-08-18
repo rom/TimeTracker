@@ -150,6 +150,7 @@ customer ──< project ──< assignment ──< time_entry >── user
 
 tag >──< time_entry (many-to-many)          audit_event (append-only)
 rate (customer|project|person-on-project|entry override)
+timesheet_period (one row per user per week; absent ⇒ open)
 schema_migrations
 ```
 
@@ -165,6 +166,7 @@ Key entities:
 | `attachment` | owner_type, owner_id, sha256, filename, mime, size, uploaded_by | bytes on disk ([ADR-0013](adr/0013-attachment-storage.md)) |
 | `user` | display_name, email, role, password_hash (nullable), oidc_subject (nullable), totp_secret (nullable), tz, theme, active | |
 | `project_member` | project_id, user_id, role_override | the scoping dimension of RBAC |
+| `timesheet_period` | user_id, week_start, status, submitted_at, submitted_seconds, decided_by, decided_at, note | one person's week; a missing row means open ([ADR-0023](adr/0023-week-as-the-unit-of-approval.md)) |
 | `audit_event` | actor_id, on_behalf_of, action, resource_type, resource_id, diff_json, at, ip, request_id | append-only ([ADR-0010](adr/0010-audit-log-and-rsyslog.md)) |
 
 **Indexing** is driven by ASR-012. The load-bearing ones:
@@ -179,6 +181,16 @@ resource_id, at)` for record history.
 deleted, because deleting them would orphan invoiced history. Time entries can be
 deleted by their owner while unapproved; the deletion is an audit event carrying the
 prior state.
+
+**Period locking.** Every mutation of a time entry passes through one function,
+`service.checkPeriodOpen`, before it writes: create, update, delete, start,
+stop and move. That is deliberate rather than incidental - a new mutation either
+calls it or the lock does not cover that path, which is a property one `grep`
+can check. An update consults **both** weeks when the date changes, since moving
+an entry out of an open week into a submitted one alters the submitted one.
+The check is not conditional on role: reopening
+([ADR-0023](adr/0023-week-as-the-unit-of-approval.md)) is the only way through,
+and it leaves a record.
 
 ## 6. Concurrency and transactions
 
@@ -265,10 +277,14 @@ What is described above is the target architecture. As of the current release:
 | Local mode | implemented |
 | Server mode (auth, RBAC, sessions, rsyslog) | implemented; TOTP and API tokens deferred |
 | Concurrent timers, dual totals, gap detection | implemented |
-| Billing: layered rates, rounding, per-entry snapshot | implemented (the person-on-project rate level arrives with layer 2) |
-| CSV and JSON export | implemented |
-| PDF and DOCX export | **not implemented** — the endpoint returns 501 |
-| Attachments, expenses, proxy entries, approvals, tags | designed, not implemented |
+| Billing: layered rates, rounding, per-entry snapshot | implemented, including the person-on-project level and inheritance from the customer |
+| CSV, JSON, PDF and DOCX export | implemented; the PDF cross-reference table is verified by an independent parse in the tests |
+| Attachments, expenses, proxy entries | implemented |
+| Weekly submit, approve, reject, reopen; period locking | implemented |
+| Editing a recorded entry | implemented, audited with the previous value |
+| Bulk CSV import, backup and restore, YAML configuration | implemented |
+| i18n (English, Swedish), a11y, context-sensitive help | implemented |
+| Tags | designed, not implemented |
 | Client-side enhancement | `static/js/app.js` implements the HTMX subset in use (`hx-post`, `hx-confirm`, `HX-Request`/`HX-Refresh`); the upstream library is a drop-in replacement requiring no template changes |
 
 See [MVP_PLAN.md](MVP_PLAN.md) for the sequence.

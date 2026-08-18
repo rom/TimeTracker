@@ -67,6 +67,11 @@
            screen rather than only on the inbox itself. */}}
       {{if gt .InboxCount 0}}<span class="badge badge-count">{{.InboxCount}}</span>{{end}}
     </a>
+    {{/* Server mode only: with a single user there is nobody else to approve,
+         and the service refuses the action outright. */}}
+    {{if .ServerMode}}
+      <a href="/approvals" {{if eq .Active "approvals"}}class="active" aria-current="page"{{end}}>{{.T "nav.approvals"}}</a>
+    {{end}}
     <a href="/admin"   {{if eq .Active "admin"}}class="active" aria-current="page"{{end}}>{{.T "nav.admin"}}</a>
     {{if .ServerMode}}
       <a href="/users" {{if eq .Active "users"}}class="active" aria-current="page"{{end}}>{{.T "nav.users"}}</a>

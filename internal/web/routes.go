@@ -97,6 +97,14 @@ func (s *Server) routes() {
 	mux.HandleFunc("POST /assignments/{id}", s.handleUpdateAssignment)
 	mux.HandleFunc("POST /assignments/{id}/favourite", s.handleToggleFavourite)
 
+	// Weekly submit and approve.
+	mux.HandleFunc("POST /week/submit", s.handleSubmitWeek)
+	mux.HandleFunc("POST /week/withdraw", s.handleWithdrawWeek)
+	mux.HandleFunc("GET /approvals", s.handleApprovals)
+	mux.HandleFunc("POST /approvals/approve", s.handleApproveWeek)
+	mux.HandleFunc("POST /approvals/reject", s.handleRejectWeek)
+	mux.HandleFunc("POST /approvals/reopen", s.handleReopenWeek)
+
 	// Moving time that was recorded against the wrong assignment.
 	mux.HandleFunc("GET /move", s.handleMoveForm)
 	mux.HandleFunc("POST /move", s.handleMoveEntries)

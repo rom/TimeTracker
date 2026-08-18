@@ -15,6 +15,11 @@
 
   {{template "totals" .}}
 
+  {{/* Submit, withdraw, and the lock. On the week view because a week is what
+       gets submitted - offering it a day at a time would invite half-submitted
+       weeks. */}}
+  {{template "period-banner" .}}
+
   {{/* The grid: one row per assignment, one column per day. It is read across
        weeks, so the row order is stable rather than reflecting the order entries
        happened to be created in. */}}
