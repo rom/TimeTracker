@@ -20,6 +20,20 @@
        weeks. */}}
   {{template "period-banner" .}}
 
+  {{/* Copy last week onto this one, day for day: Monday's entries land on
+       Monday. It adds to whatever is already here rather than replacing it -
+       replacing would silently delete work, and there is no way to ask for
+       that. */}}
+  {{if .PeriodView}}{{if .PeriodView.Period.Editable}}
+    <form class="copy-week" method="post" action="/weeks/copy?date={{date $week.Start}}"
+          hx-post="/weeks/copy?date={{date $week.Start}}"
+          hx-confirm="{{.T "week.copy.confirm"}}">
+      {{template "csrf" $.CSRFToken}}
+      <input type="hidden" name="from" value="{{date (addDays $week.Start -7)}}">
+      <button type="submit" class="btn btn-small btn-quiet">{{.T "week.copy"}}</button>
+    </form>
+  {{end}}{{end}}
+
   {{/* Overtime the customer's contract would treat differently, not yet marked
        as such. Reported and left alone, exactly like the unaccounted-time gaps
        on the day view: whether an hour counts as overtime is a contractual
@@ -69,7 +83,7 @@
       <tbody>
         {{range $week.Rows}}
           <tr>
-            <th scope="row" class="cell-assignment">
+            <th scope="row" class="cell-assignment" data-colour="{{.Assignment.ColourKey}}">
               <span class="chip" data-colour="{{.Assignment.ColourKey}}" aria-hidden="true">
                 {{if .Assignment.Icon}}{{.Assignment.Icon}}{{else}}●{{end}}
               </span>

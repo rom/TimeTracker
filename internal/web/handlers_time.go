@@ -45,6 +45,11 @@ type pageData struct {
 	Themes      []string
 	Assignments []domain.Assignment
 	Recent      []domain.Assignment
+	// Routines are the recurring templates due on the day being viewed, and the
+	// one being edited on the management screen.
+	Routines    []domain.Routine
+	RoutinesDue []service.DueRoutine
+	EditRoutine *domain.Routine
 	Error       string
 
 	// Screen-specific payloads.
@@ -268,7 +273,19 @@ func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
 	}
 	data.PeriodView = &period
 
-	if data.Recent, err = s.svc.RecentAssignments(r.Context(), 8); err != nil {
+	// What to offer as one-click starts: favourites first, then what this person
+	// works on most. Capped at ten, because a row of thirty buttons is one
+	// nobody clicks.
+	if data.Recent, err = s.svc.QuickStart(r.Context(), 10); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	// The recurring templates due today, and whether each already looks done.
+	if data.RoutinesDue, err = s.svc.RoutinesDue(r.Context(), date); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if data.Tags, err = s.svc.Tags(r.Context()); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -733,4 +750,9 @@ func int64Param(raw string) int64 {
 		return 0
 	}
 	return value
+}
+
+// timeParseIn reads a YYYY-MM-DD date in a location.
+func timeParseIn(raw string, loc *time.Location) (time.Time, error) {
+	return time.ParseInLocation("2006-01-02", raw, loc)
 }

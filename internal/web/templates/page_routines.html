@@ -1,0 +1,171 @@
+{{/*
+  Recurring entries.
+
+  A routine is a template, not a schedule that fires. Nothing here creates time;
+  the day view offers what is due and a person clicks it. Generating billable
+  hours because the calendar said Tuesday would put time on an invoice that
+  nobody worked - see docs/adr/0027-routines-are-offered-not-fired.md.
+*/}}
+{{define "content"}}
+{{$edit := .EditRoutine}}
+<section class="routines">
+
+  <header class="screen-header">
+    <div class="screen-title"><h1>{{.T "routines.title"}}</h1></div>
+  </header>
+
+  <p class="screen-intro">{{.T "routines.intro"}}</p>
+
+  {{if .Routines}}
+    <table class="entries">
+      <thead>
+        <tr>
+          <th scope="col">{{.T "routines.name"}}</th>
+          <th scope="col">{{.T "entry.assignment"}}</th>
+          <th scope="col">{{.T "routines.days"}}</th>
+          <th scope="col">{{.T "entry.duration"}}</th>
+          <th scope="col"><span class="visually-hidden">{{.T "action.edit"}}</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{$csrf := .CSRFToken}}
+        {{$page := .}}
+        {{range .Routines}}
+          <tr class="entry-row {{if not .Active}}archived{{end}}" data-colour="{{.ColourKey}}">
+            <td>
+              <span class="entry-assignment">{{.Name}}</span>
+              {{if .Note}}<span class="entry-note">{{.Note}}</span>{{end}}
+              {{if not .Active}}<span class="badge">{{$page.T "routines.inactive"}}</span>{{end}}
+              {{range .Tags}}<span class="badge badge-tag">#{{.}}</span>{{end}}
+            </td>
+            <td>
+              <span class="entry-assignment">{{.AssignmentName}}</span>
+              <span class="entry-path">{{.CustomerName}} · {{.ProjectName}}</span>
+            </td>
+            <td>{{range .Weekdays}}<span class="weekday-mark">{{$page.T (printf "weekday.short.%d" .)}}</span>{{end}}</td>
+            <td class="cell-time">
+              {{$page.Printer.FormatDuration .DurationSeconds}}
+              {{if .StartTime}}<span class="entry-path">{{.StartTime}}</span>{{end}}
+            </td>
+            <td class="cell-actions">
+              <a class="btn btn-small btn-quiet" href="/routines?edit={{.ID}}#form">{{$page.T "action.edit"}}</a>
+              <form method="post" action="/routines/{{.ID}}/delete"
+                    hx-post="/routines/{{.ID}}/delete"
+                    hx-confirm="{{$page.T "routines.delete.confirm"}}">
+                {{template "csrf" $csrf}}
+                <button type="submit" class="btn btn-small btn-quiet">
+                  <span aria-hidden="true">×</span>
+                  <span class="visually-hidden">{{$page.T "action.delete"}}</span>
+                </button>
+              </form>
+            </td>
+          </tr>
+        {{end}}
+      </tbody>
+    </table>
+  {{else}}
+    <p class="empty">{{.T "routines.empty"}}</p>
+  {{end}}
+
+  <h2 class="section-heading" id="form">
+    {{if $edit}}{{.T "routines.edit"}}{{else}}{{.T "routines.add"}}{{end}}
+  </h2>
+
+  <form class="entry-form entry-form-full" method="post" action="/routines">
+    {{template "csrf" .CSRFToken}}
+    <input type="hidden" name="routine_id" value="{{if $edit}}{{$edit.ID}}{{end}}">
+
+    <div class="field">
+      <label for="routine-name">{{.T "routines.name"}}</label>
+      <input type="text" id="routine-name" name="name" required maxlength="120"
+             value="{{if $edit}}{{$edit.Name}}{{end}}"
+             placeholder="{{.T "routines.name.placeholder"}}">
+    </div>
+
+    <div class="field">
+      <label for="routine-assignment">{{.T "entry.assignment"}}</label>
+      <select id="routine-assignment" name="assignment_id" required>
+        {{$selected := 0}}
+        {{if $edit}}{{$selected = $edit.AssignmentID}}{{end}}
+        {{range .Assignments}}
+          <option value="{{.ID}}" {{if eq .ID $selected}}selected{{end}}>{{.Label}}</option>
+        {{end}}
+      </select>
+    </div>
+
+    <fieldset class="field">
+      <legend>{{.T "routines.days"}}</legend>
+      <div class="weekday-picker">
+        {{range weekdayNames}}
+          {{$number := .Number}}
+          <label class="inline-check">
+            <input type="checkbox" name="weekdays" value="{{$number}}"
+                   {{if $edit}}{{if hasWeekday $edit.Weekdays $number}}checked{{end}}
+                   {{else}}{{if lt $number 6}}checked{{end}}{{end}}>
+            {{$.T .Key}}
+          </label>
+        {{end}}
+      </div>
+    </fieldset>
+
+    <div class="field">
+      <label for="routine-duration">{{.T "entry.duration"}}</label>
+      <input type="text" id="routine-duration" name="duration" required placeholder="30m"
+             value="{{if $edit}}{{duration $edit.DurationSeconds}}{{end}}">
+    </div>
+
+    <div class="field">
+      <label for="routine-start">{{.T "entry.start"}}</label>
+      <input type="time" id="routine-start" name="start"
+             value="{{if $edit}}{{$edit.StartTime}}{{end}}"
+             aria-describedby="routine-start-help">
+      <p class="field-help" id="routine-start-help">{{.T "routines.start.help"}}</p>
+    </div>
+
+    <div class="field field-wide">
+      <label for="routine-note">{{.T "entry.note"}}</label>
+      <input type="text" id="routine-note" name="note"
+             value="{{if $edit}}{{$edit.Note}}{{end}}"
+             placeholder="{{.T "entry.note.placeholder"}}">
+    </div>
+
+    <div class="field field-wide">
+      <label for="routine-tags">{{.T "entry.tags"}}</label>
+      <input type="text" id="routine-tags" name="tags"
+             value="{{if $edit}}{{tagList $edit.Tags}}{{end}}"
+             placeholder="{{.T "entry.tags.placeholder"}}">
+    </div>
+
+    <div class="field">
+      <label for="routine-kind">{{.T "entry.kind"}}</label>
+      {{$kind := "work"}}
+      {{if $edit}}{{$kind = printf "%s" $edit.Kind}}{{end}}
+      <select id="routine-kind" name="kind">
+        {{range entryKinds}}
+          <option value="{{.}}" {{if eq (printf "%s" .) $kind}}selected{{end}}>{{$.T .MessageKey}}</option>
+        {{end}}
+      </select>
+    </div>
+
+    <label class="inline-check">
+      <input type="checkbox" name="billable" {{if $edit}}{{if $edit.Billable}}checked{{end}}{{end}}>
+      {{.T "entry.billable"}}
+    </label>
+    <label class="inline-check">
+      {{/* New routines are active; an existing one keeps whatever it was. An
+           inactive routine is kept rather than deleted, for the thing that
+           happens every week until the project it belongs to pauses. */}}
+      <input type="checkbox" name="active" {{if $edit}}{{if $edit.Active}}checked{{end}}{{else}}checked{{end}}>
+      {{.T "routines.active"}}
+    </label>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">
+        {{if $edit}}{{.T "action.save"}}{{else}}{{.T "routines.add"}}{{end}}
+      </button>
+      {{if $edit}}<a class="btn btn-quiet" href="/routines">{{.T "action.cancel"}}</a>{{end}}
+    </div>
+  </form>
+
+</section>
+{{end}}

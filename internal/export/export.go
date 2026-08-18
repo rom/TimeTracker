@@ -123,6 +123,7 @@ func NewReport(title string, from, to time.Time, timeZone, user string, entries 
 			EnteredBy:      e.EnteredByName,
 			Billable:       e.Billable,
 			Kind:           string(e.KindOrDefault()),
+			Tags:           e.Tags,
 			Status:         string(e.Status),
 			Seconds:        e.ElapsedSeconds(now),
 			BillableSecond: e.BillableSeconds,

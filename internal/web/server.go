@@ -279,6 +279,17 @@ func templateFuncs() template.FuncMap {
 		"hoursOf": formatHours,
 		// quantity renders a thousandths quantity as a plain decimal.
 		"quantity": domain.FormatQuantity,
+		// weekdayNames are Monday to Sunday, for a routine's day picker.
+		"weekdayNames": domain.WeekdayNames,
+		// hasWeekday reports whether a routine covers a day.
+		"hasWeekday": func(days []int, day int) bool {
+			for _, candidate := range days {
+				if candidate == day {
+					return true
+				}
+			}
+			return false
+		},
 		// tagList renders an entry's tags back into the form the field accepts,
 		// so what is displayed can be typed back.
 		"tagList": domain.FormatTagList,

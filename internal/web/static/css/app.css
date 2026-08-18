@@ -382,6 +382,94 @@ input[type="text"], input[type="date"], input[type="time"], select {
 .chip[data-colour="teal"]   { color: var(--entity-teal); }
 .chip[data-colour="slate"]  { color: var(--entity-slate); }
 
+/* The whole line carries the colour, not just a dot.
+   ---------------------------------------------------------------------------
+   A row is scanned, not read: the eye is looking for "the Acme rows" among
+   forty, and a coloured dot at the start of each is too small a target to sort
+   them by. Colouring the line itself makes the grouping visible at a glance.
+
+   Two devices together, because either alone is not enough:
+
+     * a solid bar down the leading edge, at the full entity colour. It is what
+       survives a monochrome screen (as a shade), a print-out, and the smallest
+       phone;
+     * a tint of the same colour behind the row, at ENTITY_TINT_PERCENT mixed
+       into the surface. Deliberately faint. The point is to group rows, not to
+       shout, and every percent of tint is contrast taken away from the text
+       that has to be read on top of it.
+
+   The tint is verified rather than eyeballed: TestEntityTintsKeepTextReadable
+   computes the same mix in Go for every theme and asserts the body text still
+   clears 4.5:1 on it. If a theme's palette changes, that test fails before
+   anybody has to notice a row they cannot read.
+
+   The plain background is declared first as a fallback: a browser without
+   color-mix() ignores the second declaration and gets the bar alone, which is
+   still the whole line rather than a dot. */
+.entry-row, .cell-assignment, .quick-start-item {
+  border-left: 3px solid transparent;
+}
+.entry-row[data-colour], .cell-assignment[data-colour] {
+  background: var(--surface-raised);
+}
+
+.entry-row[data-colour="blue"],   .cell-assignment[data-colour="blue"] {
+  border-left-color: var(--entity-blue);
+  background: color-mix(in srgb, var(--entity-blue) 10%, var(--surface-raised));
+}
+.entry-row[data-colour="green"],  .cell-assignment[data-colour="green"] {
+  border-left-color: var(--entity-green);
+  background: color-mix(in srgb, var(--entity-green) 10%, var(--surface-raised));
+}
+.entry-row[data-colour="amber"],  .cell-assignment[data-colour="amber"] {
+  border-left-color: var(--entity-amber);
+  background: color-mix(in srgb, var(--entity-amber) 10%, var(--surface-raised));
+}
+.entry-row[data-colour="red"],    .cell-assignment[data-colour="red"] {
+  border-left-color: var(--entity-red);
+  background: color-mix(in srgb, var(--entity-red) 10%, var(--surface-raised));
+}
+.entry-row[data-colour="purple"], .cell-assignment[data-colour="purple"] {
+  border-left-color: var(--entity-purple);
+  background: color-mix(in srgb, var(--entity-purple) 10%, var(--surface-raised));
+}
+.entry-row[data-colour="teal"],   .cell-assignment[data-colour="teal"] {
+  border-left-color: var(--entity-teal);
+  background: color-mix(in srgb, var(--entity-teal) 10%, var(--surface-raised));
+}
+.entry-row[data-colour="slate"],  .cell-assignment[data-colour="slate"] {
+  border-left-color: var(--entity-slate);
+  background: color-mix(in srgb, var(--entity-slate) 10%, var(--surface-raised));
+}
+
+/* The colour is a grouping aid, never the only signal: an entry that does not
+   count says so in words too, and those states take precedence over the
+   customer's colour because "this is not being billed" matters more than
+   "this is Acme". */
+.entry-row.pending[data-colour], .entry-row.flagged[data-colour] {
+  background: var(--surface-raised);
+}
+
+/* Someone who has asked for reduced transparency or high contrast gets the bar
+   without the wash. */
+@media (prefers-contrast: more) {
+  .entry-row[data-colour], .cell-assignment[data-colour] {
+    background: var(--surface-raised);
+    border-left-width: 5px;
+  }
+}
+
+/* The quick-start buttons carry the same bar, so the row of them groups by
+   customer the way the entry list does. */
+.quick-start-item[data-colour="blue"]   { border-left-color: var(--entity-blue); }
+.quick-start-item[data-colour="green"]  { border-left-color: var(--entity-green); }
+.quick-start-item[data-colour="amber"]  { border-left-color: var(--entity-amber); }
+.quick-start-item[data-colour="red"]    { border-left-color: var(--entity-red); }
+.quick-start-item[data-colour="purple"] { border-left-color: var(--entity-purple); }
+.quick-start-item[data-colour="teal"]   { border-left-color: var(--entity-teal); }
+.quick-start-item[data-colour="slate"]  { border-left-color: var(--entity-slate); }
+.quick-start-item { display: inline-flex; align-items: center; gap: 2px; padding-left: 4px; }
+
 /* -------------------------------------------------------------- tables ---- */
 
 .entries, .admin-table, .week-grid {

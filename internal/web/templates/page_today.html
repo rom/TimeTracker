@@ -37,26 +37,88 @@
        screen reader reads it as part of the field rather than as stray text. */}}
   <p class="field-help" id="quick-add-help">{{.T "quickadd.help"}}</p>
 
-  {{/* One-click start on what this person actually works on, ordered by recent
-       use rather than alphabetically. */}}
+  {{/* One-click start on what this person actually works on: favourites first,
+       then whatever they have used most in the last six weeks. Frequency before
+       recency on purpose - a list that reshuffles after every entry is one
+       nobody builds muscle memory for. */}}
   {{if .Recent}}
     <div class="quick-start">
       <span class="quick-start-label">{{.T "day.quickstart"}}</span>
+      {{$running := .Running}}
       {{range .Recent}}
-        <form method="post" action="/timers/start" hx-post="/timers/start" class="inline">
-    {{template "csrf" $.CSRFToken}}
-          <input type="hidden" name="assignment_id" value="{{.ID}}">
-          <button type="submit" class="chip-button" data-colour="{{.ColourKey}}"
-                  title="{{.Label}}">
-            <span class="chip" data-colour="{{.ColourKey}}" aria-hidden="true">
-              {{if .Icon}}{{.Icon}}{{else}}●{{end}}
-            </span>
-            {{.Name}}
-          </button>
-        </form>
+        <span class="quick-start-item" data-colour="{{.ColourKey}}">
+          <form method="post" action="/timers/start" hx-post="/timers/start" class="inline">
+            {{template "csrf" $.CSRFToken}}
+            <input type="hidden" name="assignment_id" value="{{.ID}}">
+            <button type="submit" class="chip-button" data-colour="{{.ColourKey}}"
+                    title="{{$.T "day.start.title" .Label}}">
+              <span class="chip" data-colour="{{.ColourKey}}" aria-hidden="true">
+                {{if .Icon}}{{.Icon}}{{else}}●{{end}}
+              </span>
+              {{.Name}}
+              {{if .Favourite}}<span class="favourite-mark" aria-hidden="true">★</span>{{end}}
+            </button>
+          </form>
+          {{/* "Switch to X" only when something is running - it means "instead
+               of what I am doing", and with nothing running it would be an
+               odder way of saying Start. Concurrent timers stay available
+               through the button above (ADR-0004); this is the one-click
+               version of the commoner case. */}}
+          {{if $running}}
+            <form method="post" action="/timers/switch" hx-post="/timers/switch" class="inline">
+              {{template "csrf" $.CSRFToken}}
+              <input type="hidden" name="assignment_id" value="{{.ID}}">
+              <button type="submit" class="btn btn-small btn-quiet"
+                      title="{{$.T "day.switch.title" .Label}}">
+                <span aria-hidden="true">⇄</span>
+                <span class="visually-hidden">{{$.T "day.switch" .Name}}</span>
+              </button>
+            </form>
+          {{end}}
+        </span>
       {{end}}
     </div>
   {{end}}
+
+  {{/* Recurring time: lunch, the stand-up, Friday admin. Offered, never
+       created on its own - see docs/adr/0027-routines-are-offered-not-fired.md.
+       One already recorded is shown greyed rather than hidden, so the list does
+       not change shape as the day fills in. */}}
+  {{if .RoutinesDue}}
+    <div class="routines-due">
+      <span class="quick-start-label">{{.T "routines.due"}}</span>
+      {{range .RoutinesDue}}
+        <form method="post" action="/routines/{{.Routine.ID}}/apply?date={{date $day.Date}}"
+              hx-post="/routines/{{.Routine.ID}}/apply?date={{date $day.Date}}" class="inline">
+          {{template "csrf" $.CSRFToken}}
+          <button type="submit" class="chip-button {{if .AlreadyRecorded}}is-done{{end}}"
+                  data-colour="{{.Routine.ColourKey}}"
+                  {{if .AlreadyRecorded}}disabled aria-disabled="true"{{end}}
+                  title="{{.Routine.AssignmentName}}">
+            {{if .AlreadyRecorded}}<span aria-hidden="true">✓</span>{{end}}
+            {{.Routine.Name}}
+            <span class="routine-length">{{$.Printer.FormatDuration .Routine.DurationSeconds}}</span>
+          </button>
+        </form>
+      {{end}}
+      <form method="post" action="/routines/apply-all?date={{date $day.Date}}"
+            hx-post="/routines/apply-all?date={{date $day.Date}}" class="inline">
+        {{template "csrf" $.CSRFToken}}
+        <button type="submit" class="btn btn-small btn-quiet">{{.T "routines.applyall"}}</button>
+      </form>
+      <a class="btn btn-small btn-quiet" href="/routines">{{.T "routines.manage"}}</a>
+    </div>
+  {{end}}
+
+  {{/* Copy yesterday. A day that repeats is the commonest shape a timesheet
+       has, and retyping it is what makes people fill the week in on Friday. */}}
+  <form class="copy-day" method="post" action="/days/copy?date={{date $day.Date}}"
+        hx-post="/days/copy?date={{date $day.Date}}"
+        hx-confirm="{{.T "day.copy.confirm"}}">
+    {{template "csrf" $.CSRFToken}}
+    <input type="hidden" name="from" value="{{date (addDays $day.Date -1)}}">
+    <button type="submit" class="btn btn-small btn-quiet">{{.T "day.copy"}}</button>
+  </form>
 
   {{/* Gaps are prompts, never auto-filled. The tool reports what it observed and
        leaves the judgement to the person who did the work. */}}
@@ -102,6 +164,11 @@
       <input type="time" name="start" value="09:00" aria-label="{{.T "entry.start"}}">
       <input type="text" name="duration" placeholder="1h30" aria-label="{{.T "entry.duration"}}">
       <input type="text" name="note" placeholder="{{.T "entry.note.placeholder"}}" aria-label="{{.T "entry.note"}}">
+      <input type="text" name="tags" list="tag-options" size="14"
+             placeholder="{{.T "entry.tags.placeholder"}}" aria-label="{{.T "entry.tags"}}">
+      <datalist id="tag-options">
+        {{range .Tags}}<option value="{{.Name}}">{{end}}
+      </datalist>
       {{/* Work, overtime or travel. What a customer pays for each is their
            contract's business; which one this was is the person's. */}}
       <select name="kind" aria-label="{{.T "entry.kind"}}">

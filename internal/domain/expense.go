@@ -46,8 +46,11 @@ type Expense struct {
 	UpdatedAt   time.Time
 
 	// Denormalised for display.
-	ProjectName     string
-	CustomerID      int64
+	ProjectName string
+	CustomerID  int64
+	// ColourKey is the customer's, so an expense row carries the same colour as
+	// the time recorded against that customer.
+	ColourKey       string
 	CustomerName    string
 	UserName        string
 	EnteredByName   string

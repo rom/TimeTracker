@@ -94,7 +94,11 @@
   {{/* The row accepts a pasted image, which attaches it to this entry. It posts
        to the same endpoint a file input does, so there is no second, laxer path
        into the blob store. */}}
+  {{/* data-colour puts the customer's colour on the whole line rather than on
+       a dot at the start of it: a row is scanned, and a dot is too small a
+       target to sort forty of them by. */}}
   <tr class="entry-row {{if $e.Flagged}}flagged{{end}} {{if eq (printf "%s" $e.Status) "pending"}}pending{{end}}"
+      data-colour="{{$e.ColourKey}}"
       data-paste-target="/attachments/time_entry/{{$e.ID}}" tabindex="0">
     <td class="cell-chip">
       <span class="chip" data-colour="{{$e.ColourKey}}" title="{{$e.CustomerName}}">

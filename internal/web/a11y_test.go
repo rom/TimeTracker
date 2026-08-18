@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -320,4 +321,121 @@ func TestHelpMarkupIsEscaped(t *testing.T) {
 	if !strings.Contains(rendered, "<code>code</code>") {
 		t.Error("code markup was not applied")
 	}
+}
+
+// TestEntityTintsKeepTextReadable is the objective check on colouring the whole
+// line rather than a dot.
+//
+// A row tinted toward the customer's colour is easier to scan and harder to
+// read: every percent of tint is contrast taken away from the text on top of
+// it. So the mix the stylesheet performs is recomputed here, for every entity
+// colour in every theme, and the body text is asserted to still clear WCAG AA.
+//
+// This is the test that lets the tint exist at all. Without it, "does 10% of
+// amber over a sand background still leave readable text" is a question nobody
+// can answer for forty-nine combinations by looking.
+func TestEntityTintsKeepTextReadable(t *testing.T) {
+	css, err := staticFS.ReadFile("static/css/app.css")
+	if err != nil {
+		t.Fatalf("read stylesheet: %v", err)
+	}
+	stylesheet := string(css)
+
+	// The mix percentage is read out of the stylesheet rather than repeated
+	// here, so raising it in the CSS is what makes this test fail.
+	percent := entityTintPercent(t, stylesheet)
+	if percent <= 0 || percent > 100 {
+		t.Fatalf("could not read the tint percentage from the stylesheet: %d", percent)
+	}
+
+	entities := []string{
+		"--entity-blue", "--entity-green", "--entity-amber",
+		"--entity-red", "--entity-purple", "--entity-teal", "--entity-slate",
+	}
+
+	for _, theme := range availableThemes {
+		block := themeBlock(stylesheet, theme)
+		if block == "" {
+			// The default theme is declared on :root rather than in a themed
+			// block, and is covered by the light entry below.
+			continue
+		}
+		tokens := parseTokens(block)
+		surface, ok := tokens["--surface-raised"]
+		if !ok {
+			continue
+		}
+		text, ok := tokens["--text"]
+		if !ok {
+			continue
+		}
+
+		for _, entity := range entities {
+			colour, ok := tokens[entity]
+			if !ok {
+				continue
+			}
+			tinted := mixColours(colour, surface, percent)
+			if ratio := contrastRatio(text, tinted); ratio < 4.5 {
+				t.Errorf("theme %s: body text on a row tinted with %s is %.2f:1, need 4.5:1 "+
+					"(tint %d%% of %s over %s gives %s)",
+					theme, entity, ratio, percent, colour, surface, tinted)
+			}
+		}
+	}
+}
+
+// entityTintPercent reads the percentage the stylesheet mixes entity colours at.
+func entityTintPercent(t *testing.T, css string) int {
+	t.Helper()
+	pattern := regexp.MustCompile(`color-mix\(in srgb, var\(--entity-[a-z]+\) (\d+)%`)
+	matches := pattern.FindAllStringSubmatch(css, -1)
+	if len(matches) == 0 {
+		t.Fatal("no entity tint found in the stylesheet")
+	}
+
+	// Every entity tint must use the same percentage; one colour quietly mixed
+	// stronger than the rest is how a single unreadable row appears.
+	highest := 0
+	for _, match := range matches {
+		value, err := strconv.Atoi(match[1])
+		if err != nil {
+			t.Fatalf("unreadable tint percentage %q", match[1])
+		}
+		if highest != 0 && value != highest {
+			t.Errorf("entity tints use different percentages: %d and %d", highest, value)
+		}
+		if value > highest {
+			highest = value
+		}
+	}
+	return highest
+}
+
+// mixColours blends percent of a into b, the way CSS color-mix does in sRGB.
+func mixColours(a, b string, percent int) string {
+	ar, ag, ab := hexToRGB(a)
+	br, bg, bb := hexToRGB(b)
+
+	blend := func(x, y int) int {
+		// Rounded rather than truncated, matching what a browser produces.
+		return (x*percent + y*(100-percent) + 50) / 100
+	}
+	return fmt.Sprintf("#%02x%02x%02x", blend(ar, br), blend(ag, bg), blend(ab, bb))
+}
+
+// hexToRGB splits a #rrggbb colour into its channels.
+func hexToRGB(hex string) (int, int, int) {
+	hex = strings.TrimPrefix(hex, "#")
+	if len(hex) != 6 {
+		return 0, 0, 0
+	}
+	channel := func(offset int) int {
+		value, err := strconv.ParseInt(hex[offset:offset+2], 16, 32)
+		if err != nil {
+			return 0
+		}
+		return int(value)
+	}
+	return channel(0), channel(2), channel(4)
 }

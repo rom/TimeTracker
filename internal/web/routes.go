@@ -105,6 +105,16 @@ func (s *Server) routes() {
 	// Weekly submit and approve.
 	mux.HandleFunc("POST /week/submit", s.handleSubmitWeek)
 	mux.HandleFunc("POST /week/withdraw", s.handleWithdrawWeek)
+	// Recording again what was recorded before.
+	mux.HandleFunc("POST /days/copy", s.handleCopyDay)
+	mux.HandleFunc("POST /weeks/copy", s.handleCopyWeek)
+	mux.HandleFunc("POST /timers/switch", s.handleSwitchTimer)
+	mux.HandleFunc("GET /routines", s.handleRoutines)
+	mux.HandleFunc("POST /routines", s.handleSaveRoutine)
+	mux.HandleFunc("POST /routines/{id}/apply", s.handleApplyRoutine)
+	mux.HandleFunc("POST /routines/{id}/delete", s.handleDeleteRoutine)
+	mux.HandleFunc("POST /routines/apply-all", s.handleApplyAllRoutines)
+
 	// Tags, and the search index they feed.
 	mux.HandleFunc("GET /tags", s.handleTags)
 	mux.HandleFunc("POST /tags/{id}", s.handleUpdateTag)
