@@ -131,7 +131,7 @@ coverage: ## Produce a coverage profile and an HTML report
 # Deliberately absent: internal/web, whose coverage is dominated by template
 # rendering that the HTTP tests exercise without the counter noticing, and
 # internal/config, which is mostly flag declarations.
-COVERAGE_FLOORS = domain:50 service:52 store:30 export:85 blob:70 auth:35
+COVERAGE_FLOORS = domain:54 service:57 store:30 export:85 blob:70 auth:35
 
 .PHONY: coverage-check
 coverage-check: ## Fail if a critical package drops below its coverage floor

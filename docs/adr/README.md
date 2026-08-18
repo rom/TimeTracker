@@ -48,6 +48,7 @@ Statuses: `proposed` → `accepted` → `superseded by ADR-NNNN` | `deprecated`.
 | [0020](0020-context-sensitive-help.md) | Context-sensitive help, translated, no-JS | accepted | 2026-08-18 | ASR-017, ASR-016 |
 | [0021](0021-json-backups-that-merge.md) | Backups are JSON, and restoring merges | accepted | 2026-08-18 | ASR-010, ASR-018 |
 | [0022](0022-two-pass-csv-import.md) | CSV import previews, then imports all or nothing | accepted | 2026-08-18 | ASR-019 |
+| [0023](0023-week-as-the-unit-of-approval.md) | The week is the unit of submission, approval and locking | accepted | 2026-08-18 | ASR-020 |
 
 ## Writing a new one
 

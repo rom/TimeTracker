@@ -36,6 +36,12 @@ func (s *Service) StartTimer(ctx context.Context, assignmentID int64, note strin
 	}); err != nil {
 		return domain.TimeEntry{}, err
 	}
+	// A timer started now lands in the current week, so a locked week refuses it
+	// like any other new time. Catching it here rather than at Stop means the
+	// person is told before they work rather than after.
+	if err := s.checkPeriodOpen(ctx, actor.ID, s.now()); err != nil {
+		return domain.TimeEntry{}, err
+	}
 
 	entry := domain.TimeEntry{
 		UserID:       actor.ID,
@@ -86,6 +92,11 @@ func (s *Service) StopTimer(ctx context.Context, entryID int64) (domain.TimeEntr
 	}
 	if !entry.Running() {
 		return entry, nil
+	}
+	// A timer started before the week was submitted would otherwise add its
+	// hours to a locked week when it stopped.
+	if err := s.checkPeriodOpen(ctx, entry.UserID, entry.StartedAt); err != nil {
+		return domain.TimeEntry{}, err
 	}
 
 	endedAt := s.now()
@@ -248,6 +259,11 @@ func (s *Service) CreateEntry(ctx context.Context, in EntryInput) (domain.TimeEn
 	if err := entry.Validate(); err != nil {
 		return domain.TimeEntry{}, err
 	}
+	// Adding work to a week somebody has already declared finished would change
+	// a figure that has been submitted or approved.
+	if err := s.checkPeriodOpen(ctx, entry.UserID, entry.StartedAt); err != nil {
+		return domain.TimeEntry{}, err
+	}
 	if err := s.applyBillingTo(ctx, &entry); err != nil {
 		return domain.TimeEntry{}, err
 	}
@@ -284,6 +300,17 @@ func (s *Service) UpdateEntry(ctx context.Context, entryID int64, in EntryInput)
 	}
 	if err := s.canModify(ctx, existing); err != nil {
 		return domain.TimeEntry{}, notFoundFor(err)
+	}
+	// Both weeks are checked, because an edit can move an entry between them:
+	// taking an hour out of an approved week is as much a change to it as
+	// editing one inside it.
+	if err := s.checkPeriodOpen(ctx, existing.UserID, existing.StartedAt); err != nil {
+		return domain.TimeEntry{}, err
+	}
+	if !in.StartedAt.IsZero() && !sameWeek(existing.StartedAt, in.StartedAt) {
+		if err := s.checkPeriodOpen(ctx, existing.UserID, in.StartedAt); err != nil {
+			return domain.TimeEntry{}, err
+		}
 	}
 
 	assignment, err := s.db.GetAssignment(ctx, in.AssignmentID)
@@ -337,6 +364,9 @@ func (s *Service) DeleteEntry(ctx context.Context, entryID int64) error {
 	}
 	if err := s.canDelete(ctx, existing); err != nil {
 		return notFoundFor(err)
+	}
+	if err := s.checkPeriodOpen(ctx, existing.UserID, existing.StartedAt); err != nil {
+		return err
 	}
 
 	err = s.db.InTx(ctx, func(tx *sql.Tx) error {
@@ -418,6 +448,16 @@ func applyEnd(entry *domain.TimeEntry, in EntryInput) {
 		entry.EndedAt = nil
 		entry.DurationSeconds = 0
 	}
+}
+
+// sameWeek reports whether two instants fall in the same ISO week.
+//
+// Used to avoid a second period lookup when an edit does not move the entry
+// between weeks, which is the overwhelmingly common case.
+func sameWeek(a, b time.Time) bool {
+	yearA, weekA := a.ISOWeek()
+	yearB, weekB := b.ISOWeek()
+	return yearA == yearB && weekA == weekB
 }
 
 // userZone returns a user's IANA zone, defaulting to UTC. An empty zone would

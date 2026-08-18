@@ -16,6 +16,11 @@
 
   {{template "totals" .}}
 
+  {{/* The state of the week this day belongs to. Shown here because this is
+       where time is entered, and a refusal after typing is worse than a notice
+       before it. */}}
+  {{template "period-banner" .}}
+
   {{/* Quick add: the two-second path. A leading duration or time range, an
        assignment reference, #tags, and the rest is the note. Anything ambiguous
        comes back as an error rather than a guess - a wrong guess that silently

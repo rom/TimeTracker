@@ -12,6 +12,11 @@ the decision.
 
 ### Fixed
 
+* **Editing an entry was implemented but unreachable.** The service, the routes
+  and the form all existed; no screen ever rendered a link to any of them, so
+  the only way in was to type a URL. Rows on the day and entries screens now
+  carry an edit control, and a regression test asserts the link rather than the
+  handler - the handler was never the broken part.
 * **A completed form was rejected as empty.** Creating a customer through the
   browser failed with "customer name is required" even with every field filled
   in. `fetch(FormData)` sends `multipart/form-data`; `r.ParseForm` does not parse
@@ -24,6 +29,24 @@ the decision.
 
 ### Added
 
+* **Weekly submit and approve.** A person declares a week finished; a manager
+  accepts it or sends it back with a reason; an approved week can be reopened,
+  deliberately and audibly. Submitting locks the week - creating, editing,
+  moving or deleting time in it is refused, as is starting a timer inside it or
+  stopping one into it - and **an administrator is not exempt**, because a lock
+  the most privileged user walks through is not a lock. Nobody decides on their
+  own timesheet whatever their role, and the single-user build refuses the
+  action outright rather than offering a control that means nothing. Enforcement
+  is one function that every mutation calls; the tests prove that disabling it
+  fails every one of those paths. See
+  [ADR-0023](adr/0023-week-as-the-unit-of-approval.md).
+* **Correcting an entry that is already recorded.** A screen of its own for the
+  mistake this exists to fix: eight minutes typed where eight hours were meant.
+  The duration is shown in the notation it accepts (`8m`, `8h`, `1h 30m`) beside
+  the day and the start time, so a wrong value is legible as wrong. The end-time
+  field is deliberately left empty: an end time takes precedence over a
+  duration, so a prefilled one would silently discard the correction just typed.
+  Every change is audited with the previous value.
 * **PDF and DOCX export**, both generated in-process. The PDF writer is
   hand-written against the standard 14 fonts; its cross-reference table is
   verified by an independent parse in the tests, which is what a strict reader

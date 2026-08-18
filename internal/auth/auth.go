@@ -122,6 +122,12 @@ func (SingleUserAuthorizer) Can(ctx context.Context, action Action, resource Res
 	if resource.OwnerID != 0 && resource.OwnerID != actor.ID {
 		return fmt.Errorf("%w: %s on %s owned by another user", ErrForbidden, action, resource.Type)
 	}
+	// Approval is refused outright in local mode. There is one person, and
+	// approving your own timesheet is not approval - so the control is simply
+	// absent rather than present and meaningless.
+	if action == ActionApprove {
+		return fmt.Errorf("%w: there is nobody else here to approve a timesheet", ErrForbidden)
+	}
 	return nil
 }
 

@@ -92,7 +92,7 @@ func post(t *testing.T, srv *Server, path string, form url.Values) *httptest.Res
 func TestEveryScreenRenders(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	for _, path := range []string{"/", "/today", "/week", "/entries", "/admin", "/healthz"} {
+	for _, path := range []string{"/", "/today", "/week", "/entries", "/admin", "/approvals", "/healthz"} {
 		t.Run(path, func(t *testing.T) {
 			rec := get(t, srv, path)
 			if rec.Code != http.StatusOK {

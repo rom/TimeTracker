@@ -1,0 +1,54 @@
+{{/*
+  Correcting an entry that is already recorded.
+
+  This screen exists for one mistake above all others: a duration entered in the
+  wrong unit - eight minutes where eight hours were meant. So it shows the entry
+  as it stands, in words, before the form: someone who arrived here from a row in
+  a table needs to be sure they are editing the row they meant.
+*/}}
+{{define "content"}}
+{{$entry := .Entry}}
+<section class="entry-edit">
+
+  <header class="screen-header">
+    <div class="screen-title">
+      <h1>{{.T "entry.edit.title"}}</h1>
+    </div>
+    <nav class="date-nav" aria-label="{{.T "day.changeday"}}">
+      <a class="btn btn-quiet" href="/today?date={{date ($entry.StartedAt.In .Zone)}}">
+        <span aria-hidden="true">‹</span> {{.T "entry.edit.back"}}
+      </a>
+    </nav>
+  </header>
+
+  {{/* What is being changed, stated plainly. The current duration is repeated
+       here rather than only sitting in a form field, because a value in an input
+       reads as something to type over and this one is the thing to check. */}}
+  <div class="entry-summary" role="note">
+    <span class="chip" data-colour="{{$entry.ColourKey}}" aria-hidden="true">
+      {{if $entry.Icon}}{{$entry.Icon}}{{else}}●{{end}}
+    </span>
+    <span class="entry-assignment">{{$entry.AssignmentName}}</span>
+    <span class="entry-path">{{$entry.CustomerName}} · {{$entry.ProjectName}}</span>
+    <span class="entry-current">
+      {{.T "entry.edit.current"
+          ($.Printer.FormatDateLong ($entry.StartedAt.In .Zone))
+          (clock $entry.StartedAt .Zone)
+          ($.Printer.FormatDuration $entry.DurationSeconds)}}
+    </span>
+  </div>
+
+  {{/* The week's state, so a refusal to save is predictable rather than a
+       surprise after the work of retyping. */}}
+  {{template "period-banner" .}}
+
+  {{if $entry.Running}}
+    <p class="field-help">{{.T "entry.edit.running"}}</p>
+  {{end}}
+
+  {{template "entry-edit-form" (dict "Page" . "Entry" $entry)}}
+
+  <p class="field-help">{{.T "entry.edit.audit"}}</p>
+
+</section>
+{{end}}

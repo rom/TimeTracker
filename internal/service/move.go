@@ -83,6 +83,12 @@ func (s *Service) MoveEntries(ctx context.Context, entryIDs []int64, targetAssig
 			result.Skipped++
 			continue
 		}
+		// Moving an entry out of a submitted or approved week changes that
+		// week's figures, so it is refused for the same reason editing is.
+		if err := s.checkPeriodOpen(ctx, entry.UserID, entry.StartedAt); err != nil {
+			result.Skipped++
+			continue
+		}
 
 		moved := entry
 		moved.AssignmentID = targetAssignmentID
