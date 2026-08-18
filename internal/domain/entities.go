@@ -60,6 +60,10 @@ type User struct {
 	// an entry belongs to; see docs/adr/0015-utc-storage-local-display.md.
 	TimeZone string
 	Theme    string
+	// Language is a BCP 47 tag such as "sv". Empty means the browser's
+	// Accept-Language header decides, which is the right default for someone who
+	// has never expressed a preference.
+	Language string
 	Active   bool
 	// ClientCustomerID scopes a user with the client role to one customer. It is
 	// zero for every other role.

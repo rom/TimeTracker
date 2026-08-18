@@ -45,8 +45,12 @@ func newTestServer(t *testing.T) (*Server, domain.User) {
 		t.Fatalf("create user: %v", err)
 	}
 
+	// Re-read on each request, exactly as local mode does, so a preference
+	// change takes effect on the next page load rather than being invisible.
 	srv, err := New(svc, config.Config{Mode: config.ModeLocal}, logger, Options{
-		Identity: func(*http.Request) (domain.User, error) { return user, nil },
+		Identity: func(r *http.Request) (domain.User, error) {
+			return db.GetUser(r.Context(), user.ID)
+		},
 	})
 	if err != nil {
 		t.Fatalf("build server: %v", err)
@@ -142,7 +146,7 @@ func TestFullFlow(t *testing.T) {
 	}
 
 	body := get(t, srv, "/today").Body.String()
-	if !strings.Contains(body, "2 running") {
+	if !strings.Contains(body, "2 timers running") {
 		t.Error("the running-timer bar does not show both timers")
 	}
 	if !strings.Contains(body, "Development") {

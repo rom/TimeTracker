@@ -19,7 +19,7 @@
 {{define "running-timers"}}
   {{if .Running}}
     <div class="running-timers" role="status" aria-live="polite">
-      <span class="running-label">{{len .Running}} running</span>
+      <span class="running-label">{{.N "timer.running" (len .Running)}}</span>
       <ul class="running-list">
         {{range .Running}}
           <li class="running-item" data-colour="{{.ColourKey}}">
@@ -30,10 +30,12 @@
             <span class="running-customer">{{.CustomerName}}</span>
             {{/* The clock ticks client-side from this start instant, so the most
                  latency-sensitive element on the page never round-trips. */}}
-            <time class="live-clock" data-started="{{iso .StartedAt}}">0:00:00</time>
+            <time class="live-clock" data-started="{{iso .StartedAt}}"
+                  aria-label="{{$.T "timer.elapsed"}}">0:00:00</time>
             <form method="post" action="/timers/{{.ID}}/stop" hx-post="/timers/{{.ID}}/stop">
               {{template "csrf" $.CSRFToken}}
-              <button type="submit" class="btn btn-stop" title="Stop this timer">Stop</button>
+              <button type="submit" class="btn btn-stop"
+                      title="{{$.T "timer.stop.title"}}">{{$.T "action.stop"}}</button>
             </form>
           </li>
         {{end}}
@@ -41,7 +43,7 @@
       {{if gt (len .Running) 1}}
         <form method="post" action="/timers/stop-all" hx-post="/timers/stop-all">
           {{template "csrf" .CSRFToken}}
-          <button type="submit" class="btn btn-quiet">Stop all</button>
+          <button type="submit" class="btn btn-quiet">{{.T "action.stopall"}}</button>
         </form>
       {{end}}
     </div>
@@ -52,32 +54,43 @@
 {{define "totals"}}
   {{/* Summed and elapsed are always shown together. They differ when timers
        overlapped, and showing only one makes a genuinely parallel day look like
-       either an error or under-billing. */}}
-  <dl class="totals">
+       either an error or under-billing.
+
+       aria-live="polite" because these numbers change under the user when a
+       timer is stopped elsewhere on the page: a screen reader user would
+       otherwise have no way to know the totals moved. "polite" rather than
+       "assertive" so it waits for a pause instead of interrupting. */}}
+  <dl class="totals" role="group" aria-label="{{$.T "totals.region"}}" aria-live="polite">
     <div class="total">
-      <dt>Tracked</dt>
-      <dd class="total-value">{{duration .SummedSeconds}}</dd>
+      <dt>{{$.T "totals.tracked"}}</dt>
+      <dd class="total-value">{{$.Printer.FormatDuration .Totals.SummedSeconds}}</dd>
     </div>
     <div class="total">
-      <dt>Billable</dt>
-      <dd class="total-value">{{duration .BillableSeconds}}</dd>
+      <dt>{{$.T "totals.billable"}}</dt>
+      <dd class="total-value">{{$.Printer.FormatDuration .Totals.BillableSeconds}}</dd>
     </div>
     <div class="total">
-      <dt title="Wall-clock time covered by at least one entry">Elapsed</dt>
-      <dd class="total-value">{{duration .ElapsedSeconds}}</dd>
+      <dt title="{{$.T "totals.elapsed.help"}}">{{$.T "totals.elapsed"}}</dt>
+      <dd class="total-value">{{$.Printer.FormatDuration .Totals.ElapsedSeconds}}</dd>
     </div>
-    {{if gt .OverlapSeconds 0}}
+    {{if gt .Totals.OverlapSeconds 0}}
       <div class="total total-overlap">
-        <dt title="Time counted more than once because work ran in parallel">Overlap</dt>
-        <dd class="total-value">{{duration .OverlapSeconds}}</dd>
+        <dt title="{{$.T "totals.overlap.help"}}">{{$.T "totals.overlap"}}</dt>
+        <dd class="total-value">{{$.Printer.FormatDuration .Totals.OverlapSeconds}}</dd>
       </div>
     {{end}}
   </dl>
 {{end}}
 
 {{/* ------------------------------------------------------------- entry rows */}}
+{{/*
+  entry-row is rendered inside a range, so it cannot see the page data through
+  $ - the dot has already been rebound. The caller therefore passes both: the
+  entry, and the page itself for the translator and the CSRF token.
+*/}}
 {{define "entry-row"}}
 {{- $e := .Entry -}}
+{{- $page := .Page -}}
   <tr class="entry-row {{if $e.Flagged}}flagged{{end}} {{if eq (printf "%s" $e.Status) "pending"}}pending{{end}}">
     <td class="cell-chip">
       <span class="chip" data-colour="{{$e.ColourKey}}" title="{{$e.CustomerName}}">
@@ -91,36 +104,44 @@
       {{if $e.IsProxy}}
         {{/* Proxy entries always show who recorded them. Time in someone's name
              that they did not enter must never look like their own. */}}
-        <span class="badge badge-proxy" title="Recorded by someone else">
-          entered by {{$e.EnteredByName}}
+        <span class="badge badge-proxy" title="{{$page.T "entry.enteredby.title"}}">
+          {{$page.T "entry.enteredby" $e.EnteredByName}}
         </span>
       {{end}}
       {{if eq (printf "%s" $e.Status) "pending"}}
-        <span class="badge badge-pending" title="Not counted until confirmed">pending</span>
+        <span class="badge badge-pending" title="{{$page.T "entry.pending.title"}}">{{$page.T "entry.pending"}}</span>
       {{end}}
       {{if $e.Flagged}}
-        <span class="badge badge-flagged" title="Excluded from totals until reviewed">needs review</span>
+        <span class="badge badge-flagged" title="{{$page.T "entry.flagged.title"}}">{{$page.T "entry.flagged"}}</span>
       {{end}}
     </td>
     <td class="cell-time">
       {{if $e.Running}}
-        <time class="live-clock" data-started="{{iso $e.StartedAt}}">running</time>
+        <time class="live-clock" data-started="{{iso $e.StartedAt}}">{{$page.T "entry.running"}}</time>
       {{else}}
-        {{duration $e.DurationSeconds}}
+        {{$page.Printer.FormatDuration $e.DurationSeconds}}
       {{end}}
     </td>
-    <td class="cell-billable">{{if $e.Billable}}<span title="Billable">€</span>{{end}}</td>
+    <td class="cell-billable">
+      {{/* An icon alone would carry meaning by shape only; the visually hidden
+           text is what a screen reader announces. */}}
+      {{if $e.Billable}}<span aria-hidden="true">€</span><span class="visually-hidden">{{$page.T "entry.billable"}}</span>{{end}}
+    </td>
     <td class="cell-actions">
       {{if $e.Running}}
         <form method="post" action="/timers/{{$e.ID}}/stop" hx-post="/timers/{{$e.ID}}/stop">
-          {{template "csrf" $.CSRF}}
-          <button type="submit" class="btn btn-small btn-stop">Stop</button>
+          {{template "csrf" $page.CSRFToken}}
+          <button type="submit" class="btn btn-small btn-stop">{{$page.T "action.stop"}}</button>
         </form>
       {{end}}
       <form method="post" action="/entries/{{$e.ID}}/delete" hx-post="/entries/{{$e.ID}}/delete"
-            hx-confirm="Delete this entry?">
-        {{template "csrf" $.CSRF}}
-        <button type="submit" class="btn btn-small btn-quiet" title="Delete">×</button>
+            hx-confirm="{{$page.T "entry.delete.confirm"}}">
+        {{template "csrf" $page.CSRFToken}}
+        <button type="submit" class="btn btn-small btn-quiet"
+                title="{{$page.T "action.delete"}}">
+          <span aria-hidden="true">×</span>
+          <span class="visually-hidden">{{$page.T "action.delete"}}</span>
+        </button>
       </form>
     </td>
   </tr>
@@ -144,13 +165,15 @@
         <option value="{{.ID}}" {{if eq .ID $selected}}selected{{end}}>{{.Label}}</option>
       {{end}}
     </select>
-    <input type="date" name="date" value="{{date .Entry.StartedAt}}" required>
+    <input type="date" name="date" value="{{date .Entry.StartedAt}}" required
+           aria-label="{{.Page.T "entry.date"}}">
     <input type="text" name="duration" value="{{duration .Entry.DurationSeconds}}"
-           placeholder="1h30" aria-label="Duration">
-    <input type="text" name="note" value="{{.Entry.Note}}" placeholder="Note">
+           placeholder="1h30" aria-label="{{.Page.T "entry.duration"}}">
+    <input type="text" name="note" value="{{.Entry.Note}}"
+           placeholder="{{.Page.T "entry.note"}}" aria-label="{{.Page.T "entry.note"}}">
     <label class="inline-check">
-      <input type="checkbox" name="billable" {{if .Entry.Billable}}checked{{end}}> Billable
+      <input type="checkbox" name="billable" {{if .Entry.Billable}}checked{{end}}> {{.Page.T "entry.billable"}}
     </label>
-    <button type="submit" class="btn btn-primary">Save</button>
+    <button type="submit" class="btn btn-primary">{{.Page.T "action.save"}}</button>
   </form>
 {{end}}

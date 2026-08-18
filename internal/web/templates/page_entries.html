@@ -2,7 +2,7 @@
 <section class="entries-screen">
 
   <header class="screen-header">
-    <div class="screen-title"><h1>Entries</h1></div>
+    <div class="screen-title"><h1>{{.T "entries.title"}}</h1></div>
   </header>
 
   {{/* The filter is a GET form, so a filtered view is a URL that can be
@@ -10,11 +10,11 @@
        query string, which is what guarantees a download matches what is on
        screen. */}}
   <form class="filter" method="get" action="/entries">
-    <label>From <input type="date" name="from" value="{{.Filter.From}}"></label>
-    <label>To <input type="date" name="to" value="{{.Filter.To}}"></label>
-    <label>Customer
+    <label>{{.T "entries.from"}} <input type="date" name="from" value="{{.Filter.From}}"></label>
+    <label>{{.T "entries.to"}} <input type="date" name="to" value="{{.Filter.To}}"></label>
+    <label>{{.T "entries.customer"}}
       <select name="customer">
-        <option value="">All</option>
+        <option value="">{{.T "entries.all"}}</option>
         {{$selected := .Filter.CustomerID}}
         {{range .Customers}}
           <option value="{{.ID}}" {{if eq .ID $selected}}selected{{end}}>{{.Name}}</option>
@@ -23,37 +23,37 @@
     </label>
     <label class="inline-check">
       <input type="checkbox" name="billable" value="1" {{if .Filter.BillableOnly}}checked{{end}}>
-      Billable only
+      {{.T "entries.billableonly"}}
     </label>
-    <button type="submit" class="btn btn-primary">Apply</button>
+    <button type="submit" class="btn btn-primary">{{.T "action.apply"}}</button>
   </form>
 
-  {{template "totals" .Totals}}
+  {{template "totals" .}}
 
   <div class="export-bar">
-    <span>Export:</span>
+    <span>{{.T "entries.export"}}</span>
     <a class="btn btn-quiet" href="/export/csv?from={{.Filter.From}}&to={{.Filter.To}}&customer={{.Filter.CustomerID}}{{if .Filter.BillableOnly}}&billable=1{{end}}">CSV</a>
     <a class="btn btn-quiet" href="/export/json?from={{.Filter.From}}&to={{.Filter.To}}&customer={{.Filter.CustomerID}}{{if .Filter.BillableOnly}}&billable=1{{end}}">JSON</a>
-    <span class="hint">PDF and DOCX arrive in a later layer.</span>
+    <span class="hint">{{.T "entries.export.pending"}}</span>
   </div>
 
   {{if .Entries}}
     <table class="entries">
       <thead>
         <tr>
-          <th scope="col"><span class="visually-hidden">Colour</span></th>
-          <th scope="col">Assignment</th>
-          <th scope="col">Duration</th>
-          <th scope="col"><span class="visually-hidden">Billable</span></th>
-          <th scope="col"><span class="visually-hidden">Actions</span></th>
+          <th scope="col"><span class="visually-hidden">{{.T "entry.colour"}}</span></th>
+          <th scope="col">{{.T "entry.assignment"}}</th>
+          <th scope="col">{{.T "entry.duration"}}</th>
+          <th scope="col"><span class="visually-hidden">{{.T "entry.billable"}}</span></th>
+          <th scope="col"><span class="visually-hidden">{{.T "action.save"}}</span></th>
         </tr>
       </thead>
       <tbody>
-        {{range .Entries}}{{template "entry-row" (dict "Entry" . "CSRF" $.CSRFToken)}}{{end}}
+        {{range .Entries}}{{template "entry-row" (dict "Entry" . "Page" $)}}{{end}}
       </tbody>
     </table>
   {{else}}
-    <p class="empty">No entries match this filter.</p>
+    <p class="empty">{{.T "entries.empty"}}</p>
   {{end}}
 
 </section>

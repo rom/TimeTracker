@@ -1,0 +1,39 @@
+{{define "content"}}
+{{template "help-panel" .}}
+{{end}}
+
+{{/*
+  The help panel, rendered either on its own page (no JavaScript) or swapped
+  into the aside in the layout. One definition serves both, so the two cannot
+  drift apart.
+*/}}
+{{define "help-panel"}}
+<section class="help" aria-labelledby="help-heading">
+  <header class="help-header">
+    <h1 id="help-heading">{{.T "help.title"}}</h1>
+    <button type="button" class="btn btn-quiet help-close"
+            aria-label="{{.T "help.close"}}">×</button>
+  </header>
+
+  {{range .Help}}
+    <article class="help-topic">
+      <h2>{{.Title}}</h2>
+      {{/* Body is built from a restricted markup subset over already-escaped
+           text; see renderHelpBody in help.go. */}}
+      {{.Body}}
+    </article>
+  {{end}}
+
+  <footer class="help-footer">
+    <h2>{{.T "shortcuts.title"}}</h2>
+    <dl class="shortcuts">
+      <div><dt><kbd>n</kbd></dt><dd>{{.T "shortcuts.new"}}</dd></div>
+      <div><dt><kbd>t</kbd></dt><dd>{{.T "shortcuts.today"}}</dd></div>
+      <div><dt><kbd>w</kbd></dt><dd>{{.T "shortcuts.week"}}</dd></div>
+      <div><dt><kbd>e</kbd></dt><dd>{{.T "shortcuts.entries"}}</dd></div>
+      <div><dt><kbd>?</kbd></dt><dd>{{.T "shortcuts.help"}}</dd></div>
+      <div><dt><kbd>Esc</kbd></dt><dd>{{.T "shortcuts.escape"}}</dd></div>
+    </dl>
+  </footer>
+</section>
+{{end}}

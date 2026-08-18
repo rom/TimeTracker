@@ -44,6 +44,8 @@ Statuses: `proposed` → `accepted` → `superseded by ADR-NNNN` | `deprecated`.
 | [0016](0016-scoped-listing-queries.md) | Listing queries take the actor's scope | accepted | 2026-08-18 | ASR-005 |
 | [0017](0017-defence-in-depth-hardening.md) | Layered platform hardening, opt-in in the process | accepted | 2026-08-18 | ASR-002, ASR-005, ASR-015 |
 | [0018](0018-tls-termination.md) | The application can terminate TLS itself | accepted | 2026-08-18 | ASR-003, ASR-005 |
+| [0019](0019-message-catalogues-and-server-side-localisation.md) | Message catalogues, resolved on the server | accepted | 2026-08-18 | ASR-016 |
+| [0020](0020-context-sensitive-help.md) | Context-sensitive help, translated, no-JS | accepted | 2026-08-18 | ASR-017, ASR-016 |
 
 ## Writing a new one
 

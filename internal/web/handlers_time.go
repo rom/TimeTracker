@@ -8,6 +8,7 @@ import (
 
 	"github.com/rom/timetracker/internal/auth"
 	"github.com/rom/timetracker/internal/domain"
+	"github.com/rom/timetracker/internal/i18n"
 	"github.com/rom/timetracker/internal/service"
 )
 
@@ -19,6 +20,21 @@ type pageData struct {
 	Active string // which navigation item to highlight
 	User   domain.User
 	Now    time.Time
+
+	// Printer renders every user-visible string in the request's language.
+	// Templates reach it as {{.T "key"}}, so no template needs to know how the
+	// language was chosen.
+	Printer *i18n.Printer
+	// Lang is the BCP 47 tag for the document's lang attribute. A screen reader
+	// picks its voice from this, so claiming Swedish while rendering English is
+	// actively harmful rather than merely untidy.
+	Lang      string
+	Languages []i18n.Language
+
+	// Help is the context-sensitive help for the current screen.
+	Help       []helpSection
+	HelpScreen string
+	HasHelp    bool
 	// Running is drawn in the header on every screen, so a timer left going is
 	// impossible to miss.
 	Running     []domain.TimeEntry
@@ -48,6 +64,36 @@ type pageData struct {
 	ServerMode bool
 }
 
+// T translates a key in the page's language. Templates call it directly, which
+// keeps the language selection entirely out of the templates themselves.
+func (d pageData) T(key string, args ...any) string {
+	if d.Printer == nil {
+		return key
+	}
+	return d.Printer.T(key, args...)
+}
+
+// N translates a countable message, choosing singular or plural.
+func (d pageData) N(key string, count int, args ...any) string {
+	if d.Printer == nil {
+		return key
+	}
+	return d.Printer.N(key, count, args...)
+}
+
+// printerFor picks the language for a request.
+//
+// The order is: the user's stored preference, then the browser's Accept-Language
+// header, then English. A stored preference wins because it is an explicit
+// choice, and a browser configured by an employer should not override what
+// someone selected here.
+func printerFor(r *http.Request, user domain.User) *i18n.Printer {
+	if user.Language != "" && i18n.Supported(user.Language) {
+		return i18n.NewPrinter(user.Language)
+	}
+	return i18n.NewPrinter(i18n.Negotiate(r.Header.Get("Accept-Language")))
+}
+
 // availableThemes is the list offered in the theme switcher. It is defined here
 // and in the stylesheet's token blocks; a theme missing from either is caught by
 // the contrast test described in docs/TEST.md.
@@ -61,6 +107,8 @@ func (s *Server) newPageData(r *http.Request, title, active string) (pageData, e
 	if err != nil {
 		return pageData{}, err
 	}
+	printer := printerFor(r, user)
+
 	return pageData{
 		Title:      title,
 		Active:     active,
@@ -70,7 +118,36 @@ func (s *Server) newPageData(r *http.Request, title, active string) (pageData, e
 		Themes:     availableThemes,
 		CSRFToken:  csrfTokenFrom(r),
 		ServerMode: s.accounts != nil,
+		Printer:    printer,
+		Lang:       printer.Code(),
+		Languages:  languageOptions(),
+		HasHelp:    helpAvailable(active),
+		HelpScreen: active,
 	}, nil
+}
+
+// handleSetLanguage stores the acting user's language.
+//
+// Like the theme, the browser applies nothing itself: the page reloads in the
+// new language, because translating the current DOM in place would need the
+// whole catalogue on the client for no benefit.
+func (s *Server) handleSetLanguage(w http.ResponseWriter, r *http.Request) {
+	if err := parseForm(r); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	language := r.FormValue("language")
+
+	// An allow-list, because the value ends up in the document's lang attribute.
+	if language != "" && !i18n.Supported(language) {
+		http.Error(w, "Unknown language.", http.StatusBadRequest)
+		return
+	}
+	if err := s.svc.SetLanguage(r.Context(), language); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleHealth reports that the process is up.
@@ -315,9 +392,15 @@ func (s *Server) handleEditEntryForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	page, err := s.newPageData(r, "", "today")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	s.renderFragment(w, r, "page_today.html", "entry-edit-form", map[string]any{
 		"Entry":       entry,
 		"Assignments": assignments,
+		"Page":        page,
 	})
 }
 

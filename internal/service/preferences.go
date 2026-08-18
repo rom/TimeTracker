@@ -26,7 +26,27 @@ func (s *Service) SetTheme(ctx context.Context, theme string) error {
 	}
 	// Not audited: a theme choice is a display preference with no bearing on
 	// billing or access. Auditing it would bury the events that matter.
-	return s.db.UpdateUserPreferences(ctx, actor.ID, theme, actor.TimeZone)
+	return s.db.UpdateUserPreferences(ctx, actor.ID, theme, actor.TimeZone, actor.Language)
+}
+
+// SetLanguage stores the acting user's interface language.
+//
+// Per user rather than per browser, so it follows a person to another device,
+// and so the server can render the right language in the first response instead
+// of the page arriving in English and being corrected afterwards.
+//
+// Like the theme, it is a display preference and is not audited.
+func (s *Service) SetLanguage(ctx context.Context, language string) error {
+	actor, err := auth.MustUser(ctx)
+	if err != nil {
+		return err
+	}
+	if err := s.authz.Can(ctx, auth.ActionUpdate, auth.Resource{
+		Type: "user", ID: actor.ID, OwnerID: actor.ID,
+	}); err != nil {
+		return err
+	}
+	return s.db.UpdateUserPreferences(ctx, actor.ID, actor.Theme, actor.TimeZone, language)
 }
 
 // SetTimeZone stores the acting user's time zone.
@@ -44,7 +64,7 @@ func (s *Service) SetTimeZone(ctx context.Context, timeZone string) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.db.UpdateUserPreferences(ctx, actor.ID, actor.Theme, timeZone); err != nil {
+	if err := s.db.UpdateUserPreferences(ctx, actor.ID, actor.Theme, timeZone, actor.Language); err != nil {
 		return err
 	}
 	return s.recordAudit(ctx, "user.set_time_zone", "user", actor.ID, map[string]any{

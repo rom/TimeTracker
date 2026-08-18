@@ -4,32 +4,32 @@
 
   <header class="screen-header">
     <div class="screen-title">
-      <h1>Week of {{date $week.Start}}</h1>
+      <h1>{{.T "week.title" ($.Printer.FormatDate $week.Start)}}</h1>
     </div>
-    <nav class="date-nav" aria-label="Change week">
-      <a class="btn btn-quiet" href="/week?date={{date (addDays $week.Start -7)}}">‹ Previous</a>
-      <a class="btn btn-quiet" href="/week">This week</a>
-      <a class="btn btn-quiet" href="/week?date={{date (addDays $week.Start 7)}}">Next ›</a>
+    <nav class="date-nav" aria-label="{{.T "week.changeweek"}}">
+      <a class="btn btn-quiet" href="/week?date={{date (addDays $week.Start -7)}}"><span aria-hidden="true">‹</span> {{.T "action.previous"}}</a>
+      <a class="btn btn-quiet" href="/week">{{.T "week.thisweek"}}</a>
+      <a class="btn btn-quiet" href="/week?date={{date (addDays $week.Start 7)}}">{{.T "action.next"}} <span aria-hidden="true">›</span></a>
     </nav>
   </header>
 
-  {{template "totals" .Totals}}
+  {{template "totals" .}}
 
   {{/* The grid: one row per assignment, one column per day. It is read across
        weeks, so the row order is stable rather than reflecting the order entries
        happened to be created in. */}}
   <div class="grid-scroll">
-    <table class="week-grid">
+    <table class="week-grid" aria-label="{{.T "week.title" ($.Printer.FormatDate $week.Start)}}">
       <thead>
         <tr>
-          <th scope="col" class="col-assignment">Assignment</th>
+          <th scope="col" class="col-assignment">{{.T "week.assignment"}}</th>
           {{range $week.Days}}
             <th scope="col" class="col-day {{if isToday . $.Now}}is-today{{end}}">
-              <span class="day-name">{{weekday .}}</span>
+              <span class="day-name">{{$.Printer.FormatWeekday .}}</span>
               <span class="day-num">{{dayNum .}}</span>
             </th>
           {{end}}
-          <th scope="col" class="col-total">Total</th>
+          <th scope="col" class="col-total">{{.T "week.total"}}</th>
         </tr>
       </thead>
       <tbody>
@@ -46,22 +46,22 @@
             {{range $i, $d := $week.Days}}
               {{$seconds := index $row.Seconds $i}}
               <td class="cell-day {{if eq $seconds 0}}empty{{end}}">
-                {{if gt $seconds 0}}{{hours $seconds}}{{end}}
+                {{if gt $seconds 0}}{{$.Printer.FormatDecimal (hours $seconds)}}{{end}}
               </td>
             {{end}}
-            <td class="cell-total">{{hours .Total}}</td>
+            <td class="cell-total">{{$.Printer.FormatDecimal (hours .Total)}}</td>
           </tr>
         {{else}}
-          <tr><td colspan="9" class="empty">No time recorded this week.</td></tr>
+          <tr><td colspan="9" class="empty">{{.T "week.empty"}}</td></tr>
         {{end}}
       </tbody>
       <tfoot>
         <tr>
-          <th scope="row">Day total</th>
+          <th scope="row">{{.T "week.daytotal"}}</th>
           {{range $week.DayTotals}}
-            <td class="cell-day-total">{{if gt .SummedSeconds 0}}{{hours .SummedSeconds}}{{end}}</td>
+            <td class="cell-day-total">{{if gt .SummedSeconds 0}}{{$.Printer.FormatDecimal (hours .SummedSeconds)}}{{end}}</td>
           {{end}}
-          <td class="cell-total">{{hours $week.Totals.SummedSeconds}}</td>
+          <td class="cell-total">{{$.Printer.FormatDecimal (hours $week.Totals.SummedSeconds)}}</td>
         </tr>
       </tfoot>
     </table>
