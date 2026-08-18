@@ -146,8 +146,26 @@ vulncheck: ## Scan dependencies for known vulnerabilities
 		echo "govulncheck not installed: go install golang.org/x/vuln/cmd/govulncheck@latest"; \
 	fi
 
+# A compile check for every supported platform, without producing artefacts.
+#
+# This exists because a symbol defined only in a _linux.go file compiled fine on
+# the development machine and broke the macOS and Windows builds - a class of
+# regression that only a cross-compile can catch, and that the test suite never
+# will.
+.PHONY: build-check
+build-check: ## Compile for every supported OS/arch without writing artefacts
+	@for platform in $(PLATFORMS); do \
+		os=$${platform%/*}; arch=$${platform#*/}; \
+		printf '  %-16s' "$$os/$$arch"; \
+		if GOOS=$$os GOARCH=$$arch go build -o /dev/null ./... 2>/tmp/tt-build-check.err; then \
+			echo 'ok'; \
+		else \
+			echo 'FAILED'; cat /tmp/tt-build-check.err; exit 1; \
+		fi; \
+	done
+
 .PHONY: check
-check: fmt-check vet lint test ## Everything CI runs
+check: fmt-check vet lint build-check test ## Everything CI runs
 
 ## --------------------------------------------------------------- tidy up ----
 

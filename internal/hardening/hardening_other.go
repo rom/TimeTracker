@@ -12,7 +12,7 @@ import "runtime"
 // account, the data directory ACL, and WDAC or AppLocker policy. In both cases
 // the mechanism is external by design, and applying it belongs to the deployment
 // rather than to the process. See deploy/macos/ and deploy/windows/.
-func apply(policy Policy) (Result, error) {
+func apply(_ Policy) (Result, error) {
 	return Result{
 		Unavailable: []string{
 			"no in-process sandboxing on " + runtime.GOOS +

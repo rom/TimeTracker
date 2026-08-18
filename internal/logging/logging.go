@@ -17,8 +17,19 @@ import (
 // level is one of debug, info, warn, error; format is "text" (readable at a
 // terminal) or "json" (for a collector that parses it).
 func New(w io.Writer, level, format string) *slog.Logger {
+	return NewWithSource(w, level, format, false)
+}
+
+// NewWithSource builds the logger, optionally annotating every record with the
+// file and line that produced it.
+//
+// Source positions are off by default because they cost a stack walk per record
+// and clutter an operational log. They are exactly what is wanted under --debug,
+// where the reader is trying to find the code rather than watch the service.
+func NewWithSource(w io.Writer, level, format string, addSource bool) *slog.Logger {
 	options := &slog.HandlerOptions{
 		Level:       parseLevel(level),
+		AddSource:   addSource,
 		ReplaceAttr: redact,
 	}
 

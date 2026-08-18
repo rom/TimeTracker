@@ -8,12 +8,14 @@
 package config
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // Mode selects how the application runs. See
@@ -44,6 +46,17 @@ type Config struct {
 	LogFormat string
 	// TimeZone is the default IANA zone for a newly created user.
 	TimeZone string
+	// Language is the default interface language for a newly created user.
+	Language string
+	// ConfigFile records which file the settings came from, for the start-up log
+	// - an operator debugging a setting needs to know which file was actually
+	// read, not which one they think they edited.
+	ConfigFile string
+	// Verbose and Debug are convenience flags over LogLevel. Verbose raises it
+	// to debug; Debug additionally switches to the structured format and adds
+	// source positions, which is what someone reporting a problem should send.
+	Verbose bool
+	Debug   bool
 	// TrustedProxies lists the addresses whose X-Forwarded-For header may be
 	// believed. Empty means believe nobody, which is the safe default: an
 	// unchecked forwarded header makes the audit trail record whatever an
@@ -104,6 +117,13 @@ type Config struct {
 	AdminEmail    string
 	AdminPassword string
 	AdminName     string
+
+	// Automatic backups. Disabled by default: writing copies of someone's data
+	// on a schedule they did not ask for is a decision for them, not for us.
+	BackupEnabled  bool
+	BackupDir      string
+	BackupInterval string
+	BackupKeep     int
 }
 
 // OIDCEnabled reports whether single sign-on is configured.
@@ -117,12 +137,14 @@ func (c Config) OIDCEnabled() bool {
 // set a baseline in a unit file and still override it for one run.
 func Parse(args []string) (Config, error) {
 	cfg := Config{
-		Mode:        ModeLocal,
-		Addr:        "127.0.0.1:8420",
-		LogLevel:    "info",
-		LogFormat:   "text",
-		OpenBrowser: false,
-		Hardening:   "off",
+		Mode:           ModeLocal,
+		Addr:           "127.0.0.1:8420",
+		LogLevel:       "info",
+		LogFormat:      "text",
+		OpenBrowser:    false,
+		Hardening:      "off",
+		BackupInterval: "24h",
+		BackupKeep:     7,
 	}
 
 	defaultDataDir, err := DefaultDataDir()
@@ -131,10 +153,37 @@ func Parse(args []string) (Config, error) {
 	}
 	cfg.DataDir = defaultDataDir
 
-	// Environment first, so flags can override it.
+	// The configuration file is read first, so the environment and the flags can
+	// both override it. Finding out which file to read needs an early pass over
+	// the arguments, because --config itself is a flag.
+	configPath, err := configPathFrom(args)
+	if err != nil {
+		return Config{}, err
+	}
+	explicit := configPath != ""
+	if !explicit {
+		// A data directory named in the environment moves where the default
+		// file is looked for, so that is applied before searching.
+		if envDir := os.Getenv("TT_DATA_DIR"); envDir != "" {
+			cfg.DataDir = envDir
+		}
+		configPath = findConfigFile(cfg.DataDir)
+	}
+	if configPath != "" {
+		if err := LoadFile(configPath, &cfg); err != nil {
+			if explicit || !os.IsNotExist(errors.Unwrap(err)) {
+				return Config{}, err
+			}
+		}
+	}
+
+	// Environment next, so flags can override it.
 	applyEnv(&cfg)
 
 	fs := flag.NewFlagSet("timetracker", flag.ContinueOnError)
+	// Declared so --help lists it and so the early pass does not make it an
+	// unknown flag; the value has already been used above.
+	fs.String("config", configPath, "path to a YAML configuration file")
 	mode := fs.String("mode", string(cfg.Mode), "run mode: local (single user, no login) or server (multi-user)")
 	fs.StringVar(&cfg.Addr, "addr", cfg.Addr, "address to listen on")
 	fs.StringVar(&cfg.DataDir, "data-dir", cfg.DataDir, "directory for the database and attachments")
@@ -143,6 +192,11 @@ func Parse(args []string) (Config, error) {
 	fs.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "log level: debug, info, warn, error")
 	fs.StringVar(&cfg.LogFormat, "log-format", cfg.LogFormat, "log format: text or json")
 	fs.StringVar(&cfg.TimeZone, "tz", cfg.TimeZone, "default IANA time zone for new users")
+	fs.StringVar(&cfg.Language, "lang", cfg.Language, "default interface language for new users")
+	fs.BoolVar(&cfg.Verbose, "verbose", cfg.Verbose,
+		"log at debug level: every request, every query decision, every background task")
+	fs.BoolVar(&cfg.Debug, "debug", cfg.Debug,
+		"verbose plus structured output and source positions; what to send with a bug report")
 	proxies := fs.String("trusted-proxies", strings.Join(cfg.TrustedProxies, ","),
 		"comma-separated proxy addresses whose X-Forwarded-For header is believed")
 
@@ -188,11 +242,52 @@ func Parse(args []string) (Config, error) {
 	if cfg.DatabasePath == "" {
 		cfg.DatabasePath = filepath.Join(cfg.DataDir, "timetracker.db")
 	}
+	if cfg.BackupDir == "" {
+		cfg.BackupDir = filepath.Join(cfg.DataDir, "backups")
+	}
+
+	// The convenience flags are applied last, so they win over whatever set the
+	// level. --debug implies --verbose, since asking for the harder one and
+	// getting less would be surprising.
+	if cfg.Debug {
+		cfg.Verbose = true
+		cfg.LogFormat = "json"
+	}
+	if cfg.Verbose {
+		cfg.LogLevel = "debug"
+	}
 
 	if err := cfg.validate(); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+// configPathFrom scans the arguments for --config before the real flag parse.
+//
+// The file has to be read before the flag set is built, because the file
+// supplies the defaults that the flags then override. Go's flag package cannot
+// express that ordering, so this small hand-rolled pass does it - accepting
+// every spelling the standard package would.
+func configPathFrom(args []string) (string, error) {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			break
+		}
+		name, value, hasValue := strings.Cut(strings.TrimLeft(arg, "-"), "=")
+		if name != "config" {
+			continue
+		}
+		if hasValue {
+			return value, nil
+		}
+		if i+1 >= len(args) {
+			return "", fmt.Errorf("-config needs a file path")
+		}
+		return args[i+1], nil
+	}
+	return "", nil
 }
 
 // applyEnv reads the TT_* environment variables.
@@ -252,6 +347,18 @@ func applyEnv(cfg *Config) {
 	if os.Getenv("TT_SECURE_COOKIES") == "1" {
 		cfg.ForceSecureCookies = true
 	}
+	if os.Getenv("TT_VERBOSE") == "1" {
+		cfg.Verbose = true
+	}
+	if os.Getenv("TT_DEBUG") == "1" {
+		cfg.Debug = true
+	}
+	cfg.Language = envOr("TT_LANG", cfg.Language)
+	cfg.BackupDir = envOr("TT_BACKUP_DIR", cfg.BackupDir)
+	cfg.BackupInterval = envOr("TT_BACKUP_INTERVAL", cfg.BackupInterval)
+	if os.Getenv("TT_BACKUP_ENABLED") == "1" {
+		cfg.BackupEnabled = true
+	}
 }
 
 // envOr returns the environment value when set, otherwise the current value.
@@ -280,6 +387,16 @@ func (c Config) validate() error {
 	case "text", "json":
 	default:
 		return fmt.Errorf("unknown log format %q: expected 'text' or 'json'", c.LogFormat)
+	}
+
+	if c.BackupEnabled {
+		if _, err := time.ParseDuration(c.BackupInterval); err != nil {
+			return fmt.Errorf("backup interval %q is not a duration such as 24h or 6h: %w",
+				c.BackupInterval, err)
+		}
+		if c.BackupKeep < 1 {
+			return fmt.Errorf("backups must keep at least one copy, got %d", c.BackupKeep)
+		}
 	}
 
 	switch c.Hardening {

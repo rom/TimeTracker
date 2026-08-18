@@ -1,0 +1,92 @@
+# TimeTracker configuration.
+#
+# Every setting is optional; this file only overrides the defaults. Precedence
+# is defaults → this file → environment (TT_*) → command-line flags, so a flag
+# always wins over the file and the file provides the baseline.
+#
+# Looked for automatically, most specific first:
+#   <data-dir>/timetracker.yaml
+#   ~/.config/timetracker/config.yaml
+#   /etc/timetracker/config.yaml
+#
+# Or name one explicitly:
+#   timetracker --config /path/to/config.yaml
+#
+# An unknown key here is an error rather than a warning: a typo in a settings
+# file is otherwise silent, and you find out months later that the setting never
+# took effect.
+
+# local  - one person on their own machine, loopback only, no login
+# server - a shared instance with authentication, roles and audit logging
+mode: local
+
+addr: 127.0.0.1:8420
+
+# Where the database, attachments and backups live. Defaults to the platform's
+# conventional application-data directory.
+#data_dir: /var/lib/timetracker
+
+# Defaults for newly created users.
+#time_zone: Europe/Stockholm
+#language: sv
+
+log:
+  level: info        # debug, info, warn, error
+  format: text       # text for a terminal, json for a log collector
+  #verbose: true     # same as --verbose: everything at debug level
+  #debug: true       # verbose, plus json and source positions; for bug reports
+
+# TLS terminated by this process. Generate certificates with
+# scripts/gen-cert.sh. Omit cert and key when a reverse proxy terminates TLS,
+# and set secure_cookies instead so the session cookie still carries Secure.
+#tls:
+#  cert: /etc/timetracker/server.crt
+#  key: /etc/timetracker/server.key
+#  redirect_http_from: ":8080"   # answer plain HTTP with a redirect
+#  hsts_max_age: 31536000        # off by default: hard to undo once a browser sees it
+#  secure_cookies: true
+#  allow_insecure: false         # only if you accept passwords in clear
+
+security:
+  # off | auto | enforce. See deploy/README.md and
+  # docs/adr/0017-defence-in-depth-hardening.md.
+  hardening: off
+  # Addresses of proxies whose X-Forwarded-For may be believed. Leave empty if
+  # nothing proxies this service: an unchecked header makes the audit trail
+  # record whatever an attacker types.
+  #trusted_proxies:
+  #  - 127.0.0.1
+
+# Detected automatically on a systemd host; set these for a remote collector.
+#syslog:
+#  network: tcp+tls
+#  address: logs.example.com:6514
+#  facility: 10
+
+# Single sign-on. Issuer, client_id and redirect_url are required together.
+#oidc:
+#  issuer: https://login.example.com/tenant
+#  client_id: timetracker
+#  client_secret: ""
+#  redirect_url: https://timetracker.example.com/auth/oidc/callback
+#  label: Sign in with Entra ID
+#  role_claim: groups
+#  role_mapping:
+#    timetracker-admins: admin
+#    timetracker-leads: manager
+
+# The first administrator, created once on an empty instance and ignored
+# afterwards. Prefer the environment for the password: a file on disk is one
+# more place a secret lives.
+#admin:
+#  email: admin@example.com
+#  password: ""
+#  name: Administrator
+
+# Automatic backups. Disabled by default - writing copies of someone's data on a
+# schedule they did not ask for is their decision, not ours.
+#backup:
+#  enabled: true
+#  dir: /var/lib/timetracker/backups
+#  interval: 24h
+#  keep: 7

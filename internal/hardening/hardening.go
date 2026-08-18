@@ -92,6 +92,31 @@ func (r Result) Summary() string {
 	return summary
 }
 
+// DefaultReadOnlyPaths lists what a server typically needs to read.
+//
+// It lives here rather than in the Linux file because it is plain data that
+// every platform's policy can draw on, and because a symbol used by
+// platform-neutral code must not be defined behind a build tag - doing exactly
+// that broke the macOS and Windows builds once already.
+//
+// The list is deliberately generous and spans several distributions'
+// conventions: paths that do not exist are skipped, and being too narrow here
+// breaks the application in ways that are tedious to diagnose. Paths that mean
+// nothing on a given platform are simply never matched.
+func DefaultReadOnlyPaths() []string {
+	return []string{
+		"/usr", "/lib", "/lib64", "/bin", "/sbin",
+		"/etc",  // resolv.conf, ssl/certs, localtime, nsswitch.conf
+		"/proc", // the Go runtime reads /proc/sys/... at start-up
+		"/sys",  // cgroup limits, CPU topology
+		"/dev",  // urandom, null
+		"/run",  // the syslog socket on systemd hosts
+		"/var/run",
+		"/System/Library", // macOS
+		"/private/etc",    // macOS
+	}
+}
+
 // Apply imposes the policy. It is a no-op on platforms with nothing to apply.
 //
 // It must be called after the data directory exists and after any file the
