@@ -21,6 +21,7 @@
        comes back as an error rather than a guess - a wrong guess that silently
        becomes billable time is worse than a second attempt. */}}
   <form class="quick-add" method="post" action="/entries/quick" hx-post="/entries/quick">
+    {{template "csrf" $.CSRFToken}}
     <input type="text" name="text" id="quick-add-input"
            placeholder="2h acme/migration fixed the login redirect #travel"
            aria-label="Quick add" autocomplete="off">
@@ -34,6 +35,7 @@
       <span class="quick-start-label">Start:</span>
       {{range .Recent}}
         <form method="post" action="/timers/start" hx-post="/timers/start" class="inline">
+    {{template "csrf" $.CSRFToken}}
           <input type="hidden" name="assignment_id" value="{{.ID}}">
           <button type="submit" class="chip-button" data-colour="{{.ColourKey}}"
                   title="{{.Label}}">
@@ -72,7 +74,7 @@
         </tr>
       </thead>
       <tbody>
-        {{range $day.Entries}}{{template "entry-row" .}}{{end}}
+        {{range $day.Entries}}{{template "entry-row" (dict "Entry" . "CSRF" $.CSRFToken)}}{{end}}
       </tbody>
     </table>
   {{else}}
@@ -82,6 +84,7 @@
   <details class="manual-entry">
     <summary>Add time manually</summary>
     <form class="entry-form" method="post" action="/entries" hx-post="/entries">
+    {{template "csrf" $.CSRFToken}}
       <select name="assignment_id" required aria-label="Assignment">
         <option value="">Choose an assignment…</option>
         {{template "assignment-options" .Assignments}}

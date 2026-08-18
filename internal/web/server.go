@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rom/timetracker/internal/auth"
 	"github.com/rom/timetracker/internal/config"
 	"github.com/rom/timetracker/internal/domain"
 	"github.com/rom/timetracker/internal/service"
@@ -42,14 +43,36 @@ type Server struct {
 	templates map[string]*template.Template
 	mux       *http.ServeMux
 	// identity resolves the acting user for a request. In local mode it returns
-	// the single user; in server mode it will consult the session. Keeping it as
-	// a function is what lets both modes share every handler.
+	// the single user; in server mode it consults the session. Keeping it as a
+	// function is what lets both modes share every handler, rather than each
+	// handler asking which mode it is in.
 	identity func(r *http.Request) (domain.User, error)
+	// accounts is nil in local mode. Every authentication route checks it, so a
+	// local instance cannot be talked into a login flow it has no state for.
+	accounts *service.Accounts
+	// oidc is nil unless single sign-on is configured.
+	oidc *auth.OIDCProvider
+}
+
+// Options are the collaborators the run mode selects at start-up.
+type Options struct {
+	// Identity resolves the acting user. Required.
+	Identity func(*http.Request) (domain.User, error)
+	// Accounts enables the authentication routes. Nil in local mode.
+	Accounts *service.Accounts
+	// OIDC enables the single sign-on routes. Nil unless configured.
+	OIDC *auth.OIDCProvider
 }
 
 // New builds the HTTP server.
-func New(svc *service.Service, cfg config.Config, log *slog.Logger, identity func(*http.Request) (domain.User, error)) (*Server, error) {
-	s := &Server{svc: svc, cfg: cfg, log: log, identity: identity}
+func New(svc *service.Service, cfg config.Config, log *slog.Logger, opts Options) (*Server, error) {
+	if opts.Identity == nil {
+		return nil, fmt.Errorf("an identity resolver is required")
+	}
+	s := &Server{
+		svc: svc, cfg: cfg, log: log,
+		identity: opts.Identity, accounts: opts.Accounts, oidc: opts.OIDC,
+	}
 
 	var err error
 	if s.templates, err = parseTemplates(); err != nil {
@@ -62,12 +85,20 @@ func New(svc *service.Service, cfg config.Config, log *slog.Logger, identity fun
 
 // ServeHTTP applies the middleware chain and dispatches.
 //
-// The order matters and is not arbitrary: recovery is outermost so a panic in any
-// later layer still produces a response; the request id is established before
-// logging so every line can be correlated; identity is resolved before any
-// handler runs so services can read the actor from the context.
+// The order is not arbitrary, and each position is load-bearing:
+//
+//	recovery         outermost, so a panic anywhere still produces a response
+//	request id       established before logging, so every line correlates
+//	logging          sees the final status of everything below it
+//	security headers set before any handler can write a body
+//	identity         resolves the actor into the context for the service layer
+//	CSRF             runs after identity, because the token lives on the session
+//
+// Reordering identity and CSRF would be a real bug: the check needs the session
+// the identity layer resolved.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	handler := s.withIdentity(s.mux)
+	handler := s.requireCSRF(s.mux)
+	handler = s.withIdentity(handler)
 	handler = s.withSecurityHeaders(handler)
 	handler = s.withLogging(handler)
 	handler = s.withRequestID(handler)

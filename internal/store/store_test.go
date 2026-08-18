@@ -168,14 +168,14 @@ func TestCustomerCRUD(t *testing.T) {
 	if err := db.SetCustomerArchived(ctx, created.ID, true); err != nil {
 		t.Fatalf("archive: %v", err)
 	}
-	active, err := db.ListCustomers(ctx, false)
+	active, err := db.ListCustomers(ctx, UnrestrictedScope(), false)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
 	if len(active) != 0 {
 		t.Errorf("archived customer still listed: %+v", active)
 	}
-	all, err := db.ListCustomers(ctx, true)
+	all, err := db.ListCustomers(ctx, UnrestrictedScope(), true)
 	if err != nil {
 		t.Fatalf("list including archived: %v", err)
 	}
@@ -339,6 +339,7 @@ func TestEntryFilterRanges(t *testing.T) {
 
 	entries, err := db.ListEntries(ctx, EntryFilter{
 		UserID: user.ID, From: day, To: day.Add(24 * time.Hour),
+		Scope: UnrestrictedScope(),
 	})
 	if err != nil {
 		t.Fatalf("list: %v", err)

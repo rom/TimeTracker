@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"runtime/debug"
 	"time"
 
@@ -100,6 +101,20 @@ func isStaticPath(path string) bool {
 	return len(path) >= 8 && path[:8] == "/static/"
 }
 
+// isPublicPath names the only routes reachable without an identity.
+//
+// The list is deliberately short and explicit rather than pattern-based: every
+// entry is a decision to expose something to an unauthenticated caller, and a
+// wildcard would let a future route join it by accident.
+func isPublicPath(path string) bool {
+	switch path {
+	case "/login", "/logout", "/auth/oidc/start", "/auth/oidc/callback", "/healthz":
+		return true
+	default:
+		return false
+	}
+}
+
 // withSecurityHeaders sets the response headers that constrain what a browser
 // will do with our pages.
 //
@@ -141,12 +156,25 @@ func (s *Server) withIdentity(next http.Handler) http.Handler {
 			return
 		}
 
+		// The login routes and the health check are the only unauthenticated
+		// surface. Everything else requires an identity before it runs.
+		if isPublicPath(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		user, err := s.identity(r)
 		if err != nil {
 			if errors.Is(err, auth.ErrUnauthenticated) {
-				// Server mode will redirect to the login page here. Local mode
-				// cannot reach this branch, because its identity function always
-				// resolves.
+				// Never data: an unauthenticated request gets the login page and
+				// nothing else (ASR-005). The original path travels as ?next= so
+				// the user lands where they were going, sanitised by safeNext so
+				// it cannot become an open redirect.
+				if s.accounts != nil {
+					http.Redirect(w, r, "/login?next="+url.QueryEscape(r.URL.RequestURI()),
+						http.StatusSeeOther)
+					return
+				}
 				http.Error(w, "Not authenticated.", http.StatusUnauthorized)
 				return
 			}
@@ -154,7 +182,20 @@ func (s *Server) withIdentity(next http.Handler) http.Handler {
 			return
 		}
 
-		next.ServeHTTP(w, r.WithContext(auth.WithUser(r.Context(), user)))
+		request := r.WithContext(auth.WithUser(r.Context(), user))
+
+		// In server mode the session carries the CSRF token the next middleware
+		// checks and the templates render into every form.
+		if s.accounts != nil {
+			if cookie, cookieErr := r.Cookie(auth.SessionCookieName); cookieErr == nil {
+				if _, session, sessErr := s.accounts.ResolveSession(r.Context(), cookie.Value); sessErr == nil {
+					request = withSession(request, session)
+					request = withCSRFToken(request, session.CSRFToken)
+				}
+			}
+		}
+
+		next.ServeHTTP(w, request)
 	})
 }
 

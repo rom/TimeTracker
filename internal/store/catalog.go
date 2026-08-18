@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/rom/timetracker/internal/domain"
@@ -145,18 +146,39 @@ func (db *DB) GetCustomer(ctx context.Context, id int64) (domain.Customer, error
 	return scanCustomer(row)
 }
 
-// ListCustomers returns customers ordered by name, optionally including archived
-// ones (needed when reporting over a historical period).
-func (db *DB) ListCustomers(ctx context.Context, includeArchived bool) ([]domain.Customer, error) {
+// ListCustomers returns customers ordered by name, restricted to the actor's
+// scope and optionally including archived ones (needed when reporting over a
+// historical period).
+func (db *DB) ListCustomers(ctx context.Context, scope Scope, includeArchived bool) ([]domain.Customer, error) {
+	var conditions []string
+	var args []any
+	if !includeArchived {
+		conditions = append(conditions, `archived_at IS NULL`)
+	}
+	// A customer is in scope if the actor is a client of it, or is a member of
+	// one of its projects.
+	if !scope.Unrestricted {
+		switch {
+		case scope.CustomerID != 0:
+			conditions = append(conditions, `id = ?`)
+			args = append(args, scope.CustomerID)
+		case len(scope.ProjectIDs) == 0:
+			conditions = append(conditions, `1 = 0`)
+		default:
+			placeholders := strings.TrimSuffix(strings.Repeat("?,", len(scope.ProjectIDs)), ",")
+			conditions = append(conditions,
+				`id IN (SELECT customer_id FROM projects WHERE id IN (`+placeholders+`))`)
+			for _, id := range scope.ProjectIDs {
+				args = append(args, id)
+			}
+		}
+	}
+
 	query := `
 		SELECT id, name, code, currency, colour_key, icon, notes, rate_minor, archived_at, created_at
-		FROM customers`
-	if !includeArchived {
-		query += ` WHERE archived_at IS NULL`
-	}
-	query += ` ORDER BY name COLLATE NOCASE`
+		FROM customers` + whereClause(conditions) + ` ORDER BY name COLLATE NOCASE`
 
-	rows, err := db.read.QueryContext(ctx, query)
+	rows, err := db.read.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list customers: %w", err)
 	}
@@ -264,11 +286,16 @@ func (db *DB) GetProject(ctx context.Context, id int64) (domain.Project, error) 
 	return scanProject(row)
 }
 
-// ListProjects returns projects, optionally filtered to one customer.
-func (db *DB) ListProjects(ctx context.Context, customerID int64, includeArchived bool) ([]domain.Project, error) {
+// ListProjects returns projects within the actor's scope, optionally filtered to
+// one customer.
+func (db *DB) ListProjects(ctx context.Context, scope Scope, customerID int64, includeArchived bool) ([]domain.Project, error) {
 	query := projectSelect
 	var args []any
 	var conditions []string
+	if scoped, scopeArgs := scope.condition("p.id", "p.customer_id"); scoped != "" {
+		conditions = append(conditions, scoped)
+		args = append(args, scopeArgs...)
+	}
 	if customerID != 0 {
 		conditions = append(conditions, `p.customer_id = ?`)
 		args = append(args, customerID)
@@ -388,12 +415,17 @@ func (db *DB) GetAssignment(ctx context.Context, id int64) (domain.Assignment, e
 	return scanAssignment(row)
 }
 
-// ListAssignments returns assignments, optionally filtered to one project.
-// Favourites sort first, since the point of marking one is to reach it quickly.
-func (db *DB) ListAssignments(ctx context.Context, projectID int64, includeArchived bool) ([]domain.Assignment, error) {
+// ListAssignments returns assignments within the actor's scope, optionally
+// filtered to one project. Favourites sort first, since the point of marking one
+// is to reach it quickly.
+func (db *DB) ListAssignments(ctx context.Context, scope Scope, projectID int64, includeArchived bool) ([]domain.Assignment, error) {
 	query := assignmentSelect
 	var args []any
 	var conditions []string
+	if scoped, scopeArgs := scope.condition("a.project_id", "p.customer_id"); scoped != "" {
+		conditions = append(conditions, scoped)
+		args = append(args, scopeArgs...)
+	}
 	if projectID != 0 {
 		conditions = append(conditions, `a.project_id = ?`)
 		args = append(args, projectID)

@@ -62,6 +62,11 @@ func (s *Service) Day(ctx context.Context, date time.Time) (DayView, error) {
 		return DayView{}, err
 	}
 
+	scope, err := s.effectiveScope(ctx)
+	if err != nil {
+		return DayView{}, err
+	}
+
 	loc := locationFor(actor)
 	// The day boundary is local, not UTC: "Monday" means the user's Monday.
 	// See docs/adr/0015-utc-storage-local-display.md.
@@ -69,7 +74,7 @@ func (s *Service) Day(ctx context.Context, date time.Time) (DayView, error) {
 	end := start.AddDate(0, 0, 1)
 
 	entries, err := s.db.ListEntries(ctx, store.EntryFilter{
-		UserID: actor.ID, From: start, To: end,
+		UserID: actor.ID, From: start, To: end, Scope: scope,
 	})
 	if err != nil {
 		return DayView{}, err
@@ -102,12 +107,17 @@ func (s *Service) Week(ctx context.Context, date time.Time) (WeekView, error) {
 	if err != nil {
 		return WeekView{}, err
 	}
+	scope, err := s.effectiveScope(ctx)
+	if err != nil {
+		return WeekView{}, err
+	}
+
 	loc := locationFor(actor)
 	start := startOfWeek(date.In(loc), settings.WeekStart, loc)
 	end := start.AddDate(0, 0, 7)
 
 	entries, err := s.db.ListEntries(ctx, store.EntryFilter{
-		UserID: actor.ID, From: start, To: end,
+		UserID: actor.ID, From: start, To: end, Scope: scope,
 	})
 	if err != nil {
 		return WeekView{}, err
@@ -189,6 +199,9 @@ type EntryFilter struct {
 	AssignmentID int64
 	BillableOnly bool
 	Limit        int
+	// UserID narrows to one person. Zero means "the acting user"; a manager or
+	// administrator may name someone else, and the scope still applies on top.
+	UserID int64
 }
 
 // Entries lists entries matching a filter, for the Entries screen and as the
@@ -203,12 +216,28 @@ func (s *Service) Entries(ctx context.Context, filter EntryFilter) ([]domain.Tim
 	}); err != nil {
 		return nil, err
 	}
-	// The owner is set here, from the context, and is not a field a caller can
-	// supply. Cross-user reporting is a manager capability that arrives with the
-	// RBAC authoriser; until then a crafted request cannot widen the scope
-	// because there is nothing in the filter to widen.
+	// Whose entries: your own unless you asked for someone else's and the
+	// authoriser agrees. The scope below applies on top regardless, so even an
+	// approved cross-user read stays inside the actor's projects.
+	subjectID := actor.ID
+	if filter.UserID != 0 && filter.UserID != actor.ID {
+		if err := s.authz.Can(ctx, auth.ActionView, auth.Resource{
+			Type: "time_entry", OwnerID: filter.UserID, ProjectID: filter.ProjectID,
+			CustomerID: filter.CustomerID,
+		}); err != nil {
+			return nil, notFoundFor(err)
+		}
+		subjectID = filter.UserID
+	}
+
+	scope, err := s.effectiveScope(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	return s.db.ListEntries(ctx, store.EntryFilter{
-		UserID:       actor.ID,
+		UserID:       subjectID,
+		Scope:        scope,
 		From:         filter.From,
 		To:           filter.To,
 		CustomerID:   filter.CustomerID,

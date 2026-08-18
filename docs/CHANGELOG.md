@@ -10,7 +10,52 @@ the decision.
 
 ## [Unreleased]
 
+### Fixed
+
+* **A completed form was rejected as empty.** Creating a customer through the
+  browser failed with "customer name is required" even with every field filled
+  in. `fetch(FormData)` sends `multipart/form-data`; `r.ParseForm` does not parse
+  a multipart body but *does* set `r.Form`, so the later `r.FormValue` never fell
+  back to the multipart parser and every field arrived empty. Form decoding now
+  goes through one helper that picks the parser from the content type, and the
+  client sends URL-encoded bodies so the JavaScript and no-JavaScript paths are
+  handled by identical code. Covered by a regression test that submits the same
+  form in both encodings.
+
 ### Added
+
+* **Server mode** (layer 2 of [MVP_PLAN.md](MVP_PLAN.md)). `--mode=server` now
+  runs a real multi-user service.
+  * **Local accounts** with Argon2id hashing (OWASP parameters, stored inside the
+    hash so they can be raised later and upgraded transparently on next login),
+    constant-time verification, and a uniform failure response so the login form
+    cannot be used to discover which accounts exist.
+  * **OIDC single sign-on** — Authorization Code with PKCE, `state` and `nonce`
+    verified, ID token signature checked against the provider's JWKS with an
+    RS256 allow-list, issuer, audience and expiry validated. Accounts link on the
+    immutable `sub` claim, never on email.
+  * **Server-side sessions** with an opaque cookie whose SHA-256 is what gets
+    stored, `HttpOnly`/`Secure`/`SameSite=Lax`, host-only, idle *and* absolute
+    lifetimes, and immediate revocation on sign-out, password change, role change
+    or account disablement.
+  * **CSRF protection** on every unsafe request, with the token bound to the
+    session and carried both as a hidden field and a header, so the
+    no-JavaScript path is protected too.
+  * **Login rate limiting** per account *and* per source address, with capped
+    exponential backoff.
+  * **RBAC**: admin, manager, member and client, scoped by project membership,
+    enforced at one point in the service layer and covered by an exhaustive
+    role × action × scope test matrix.
+  * **Scoped listing queries** ([ADR-0016](adr/0016-scoped-listing-queries.md)) —
+    the store offers no unscoped list, and the empty scope renders as "match
+    nothing", so a forgotten scope shows an empty screen rather than everyone's
+    data.
+  * **rsyslog forwarding** in RFC 5424 through a bounded non-blocking queue, so a
+    dead collector can never block or fail a user's request; drops are counted.
+  * **Per-person project rates**, the level between the assignment and the
+    project in rate resolution.
+  * **Users screen** for accounts, roles and project access, and a first-admin
+    bootstrap that refuses once any account exists.
 
 * **Working local-mode application** (layer 1 of [MVP_PLAN.md](MVP_PLAN.md)).
   `bin/timetracker` starts, migrates its own database, and serves the UI on
@@ -82,10 +127,8 @@ the decision.
 
 ### Known gaps
 
-* **Server mode refuses to start.** Authentication, RBAC and rsyslog arrive in
-  layer 2; starting with `--mode=server` fails with an explanatory message
-  rather than silently serving everyone's timesheet under the single-user
-  identity.
+* **TOTP and API tokens are designed for but not built.** Neither is
+  load-bearing for a small team behind SSO, and both are additive.
 * **PDF and DOCX export return 501.** Both arrive in layer 5. CSV and JSON are
   complete.
 * **The HTMX library is not vendored yet.** The templates use HTMX's attribute

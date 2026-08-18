@@ -34,7 +34,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 
 // handleCreateCustomer adds a customer.
 func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
+	if err := parseForm(r); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -73,7 +73,7 @@ func (s *Server) handleArchiveCustomer(w http.ResponseWriter, r *http.Request) {
 
 // handleCreateProject adds a project to a customer.
 func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
+	if err := parseForm(r); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -112,7 +112,7 @@ func (s *Server) handleArchiveProject(w http.ResponseWriter, r *http.Request) {
 
 // handleCreateAssignment adds an assignment - the thing a timer runs against.
 func (s *Server) handleCreateAssignment(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
+	if err := parseForm(r); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -156,7 +156,7 @@ func (s *Server) handleArchiveAssignment(w http.ResponseWriter, r *http.Request)
 // the correct theme is applied server-side on the next first paint rather than
 // flashing the default.
 func (s *Server) handleSetTheme(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
+	if err := parseForm(r); err != nil {
 		s.fail(w, r, err)
 		return
 	}

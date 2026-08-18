@@ -115,12 +115,29 @@
     var submitButtons = form.querySelectorAll("button[type=submit]");
     submitButtons.forEach(function (b) { b.disabled = true; });
 
+    /* The token also travels as a header. The hidden field in the form body
+       already carries it - which is what protects the no-JavaScript path - and
+       sending both means the check works even for a submission assembled
+       without the field. */
+    var headers = { "HX-Request": "true" };
+    var tokenField = form.querySelector('input[name="csrf_token"]');
+    if (tokenField && tokenField.value) {
+      headers["X-CSRF-Token"] = tokenField.value;
+    }
+
+    /* URL-encoded, not FormData. FormData sends multipart/form-data, which is
+       parsed by a different code path on the server; sending what a plain HTML
+       form post sends means the JavaScript and no-JavaScript paths are handled
+       by identical code and cannot diverge. A form that uploads a file will need
+       multipart and must opt into it explicitly. */
+    headers["Content-Type"] = "application/x-www-form-urlencoded;charset=UTF-8";
+
     fetch(url, {
       method: "POST",
       /* HX-Request tells the handler this is a background request, so it
          answers with a refresh instruction rather than a redirect. */
-      headers: { "HX-Request": "true" },
-      body: new FormData(form),
+      headers: headers,
+      body: new URLSearchParams(new FormData(form)).toString(),
       credentials: "same-origin",
     })
       .then(function (response) {

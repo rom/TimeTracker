@@ -263,7 +263,7 @@ What is described above is the target architecture. As of the current release:
 |---|---|
 | Layers, service boundary, audit-in-transaction | implemented, enforced by an architecture test |
 | Local mode | implemented |
-| Server mode (auth, RBAC, sessions, rsyslog) | **not implemented** — the binary refuses to start with `--mode=server` rather than degrading to an unauthenticated multi-user service |
+| Server mode (auth, RBAC, sessions, rsyslog) | implemented; TOTP and API tokens deferred |
 | Concurrent timers, dual totals, gap detection | implemented |
 | Billing: layered rates, rounding, per-entry snapshot | implemented (the person-on-project rate level arrives with layer 2) |
 | CSV and JSON export | implemented |

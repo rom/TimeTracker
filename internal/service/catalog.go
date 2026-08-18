@@ -74,12 +74,16 @@ func (s *Service) SetCustomerArchived(ctx context.Context, id int64, archived bo
 	return s.recordAudit(ctx, action, "customer", id, nil)
 }
 
-// Customers lists customers the actor may see.
+// Customers lists the customers the actor may see.
 func (s *Service) Customers(ctx context.Context, includeArchived bool) ([]domain.Customer, error) {
-	if err := s.authz.Can(ctx, auth.ActionView, auth.Resource{Type: "customer"}); err != nil {
+	if err := s.authz.Can(ctx, auth.ActionView, listResource(ctx, "customer")); err != nil {
 		return nil, err
 	}
-	return s.db.ListCustomers(ctx, includeArchived)
+	scope, err := s.effectiveScope(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.db.ListCustomers(ctx, scope, includeArchived)
 }
 
 // Customer loads one customer.
@@ -166,14 +170,20 @@ func (s *Service) SetProjectArchived(ctx context.Context, id int64, archived boo
 	return s.recordAudit(ctx, action, "project", id, nil)
 }
 
-// Projects lists projects, optionally for one customer.
+// Projects lists the projects the actor may see, optionally for one customer.
 func (s *Service) Projects(ctx context.Context, customerID int64, includeArchived bool) ([]domain.Project, error) {
-	if err := s.authz.Can(ctx, auth.ActionView, auth.Resource{
-		Type: "project", CustomerID: customerID,
-	}); err != nil {
+	resource := listResource(ctx, "project")
+	if customerID != 0 {
+		resource.CustomerID = customerID
+	}
+	if err := s.authz.Can(ctx, auth.ActionView, resource); err != nil {
 		return nil, err
 	}
-	return s.db.ListProjects(ctx, customerID, includeArchived)
+	scope, err := s.effectiveScope(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.db.ListProjects(ctx, scope, customerID, includeArchived)
 }
 
 // Project loads one project.
@@ -270,14 +280,19 @@ func (s *Service) SetAssignmentArchived(ctx context.Context, id int64, archived 
 	return s.recordAudit(ctx, action, "assignment", id, nil)
 }
 
-// Assignments lists assignments, optionally for one project.
+// Assignments lists the assignments the actor may see, optionally for one
+// project.
 func (s *Service) Assignments(ctx context.Context, projectID int64, includeArchived bool) ([]domain.Assignment, error) {
-	if err := s.authz.Can(ctx, auth.ActionView, auth.Resource{
-		Type: "assignment", ProjectID: projectID,
-	}); err != nil {
+	resource := listResource(ctx, "assignment")
+	resource.ProjectID = projectID
+	if err := s.authz.Can(ctx, auth.ActionView, resource); err != nil {
 		return nil, err
 	}
-	return s.db.ListAssignments(ctx, projectID, includeArchived)
+	scope, err := s.effectiveScope(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.db.ListAssignments(ctx, scope, projectID, includeArchived)
 }
 
 // Assignment loads one assignment.

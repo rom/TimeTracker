@@ -171,7 +171,9 @@ func TestPendingProxyEntriesAreNotCounted(t *testing.T) {
 		t.Fatalf("create proxy entry: %v", err)
 	}
 
-	entries, err := f.db.ListEntries(context.Background(), store.EntryFilter{})
+	entries, err := f.db.ListEntries(context.Background(), store.EntryFilter{
+		Scope: store.UnrestrictedScope(),
+	})
 	if err != nil {
 		t.Fatalf("list entries: %v", err)
 	}
