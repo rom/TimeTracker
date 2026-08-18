@@ -39,6 +39,8 @@ Status legend: **A** = accepted, **P** = proposed, **R** = retired.
 | [ASR-015](#asr-015) | Security / Least privilege | The process runs with the least privilege each platform allows | A |
 | [ASR-016](#asr-016) | Internationalisation | The interface is fully localisable, not merely translated | A |
 | [ASR-017](#asr-017) | Learnability | Deliberate but surprising behaviour is explained in context | A |
+| [ASR-018](#asr-018) | Recoverability | A user can take and restore their own backups, whole or partial | A |
+| [ASR-019](#asr-019) | Interoperability | Existing hours can be brought in from a spreadsheet | A |
 
 ---
 
@@ -410,3 +412,52 @@ without JavaScript and to manage focus is what stops it from being a decorative
 panel that only some users can actually reach.
 
 *Addressed by:* [ADR-0020](adr/0020-context-sensitive-help.md)
+
+---
+
+### ASR-018
+**A user can take and restore their own backups, whole or partial.**
+
+*Quality attribute:* Recoverability
+
+*Requirement:* Someone must be able to take a copy of their data without an
+administrator, keep it somewhere else, and put it back - in whole, or only the
+part they need.
+
+*Fit criterion:* A backup is a single file, produced in one action, covering
+everything or narrowed to one customer, one project or one date range. Restoring
+merges: restoring the same file twice creates nothing the second time, and
+restoring an older backup does not remove newer work. A backup written by a
+newer version is refused rather than partially read. Automatic backups run on an
+interval when enabled, keep a bounded number, and a retention of zero removes
+nothing.
+
+*Rationale:* Backup features are used exactly once, under pressure, by someone
+who has already lost something. Every property above exists so that the feature
+cannot make that situation worse - which is why merge rather than replace is a
+requirement and not an implementation detail.
+
+*Addressed by:* [ADR-0021](adr/0021-json-backups-that-merge.md)
+
+---
+
+### ASR-019
+**Existing hours can be brought in from a spreadsheet.**
+
+*Quality attribute:* Interoperability / Suitability
+
+*Requirement:* Hours already recorded elsewhere must be importable from CSV
+without retyping, and without the user having to rearrange their file first.
+
+*Fit criterion:* An import previews every row with its problems before writing
+anything, and then imports every valid row or none. Column names are matched
+across several common spellings. An ambiguous date format is reported rather than
+guessed. Catalogue records are created only when explicitly requested, and the
+preview lists exactly what would be created.
+
+*Rationale:* Retyping a month of hours is what stops people adopting a tool at
+all. The all-or-nothing rule is the requirement rather than a nicety: a partial
+import leaves the user reconciling two sources, which is more work than the
+retyping it replaced.
+
+*Addressed by:* [ADR-0022](adr/0022-two-pass-csv-import.md)

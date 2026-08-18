@@ -24,6 +24,43 @@ the decision.
 
 ### Added
 
+* **PDF and DOCX export**, both generated in-process. The PDF writer is
+  hand-written against the standard 14 fonts; its cross-reference table is
+  verified by an independent parse in the tests, which is what a strict reader
+  checks. DOCX is OOXML written into a zip with the standard library.
+* **Attachments** on time entries and expenses: a content-addressed blob store
+  (identical files stored once), uploads size-capped and type-sniffed rather
+  than trusted, SVG refused as script-capable, the extension required to agree
+  with the content, and every byte served through an authorising handler.
+  Pasting an image from the clipboard attaches it, through the same endpoint and
+  the same checks as a file input.
+* **Expenses**, keeping billable and reimbursable as independent questions
+  throughout, with markup on the billable side only and the billed amount frozen
+  when recorded.
+* **Proxy entries**, completing the consent workflow: time proposed for a
+  colleague counts for nothing until they accept it, only the subject can
+  decide, a rejection is kept with its reason, and overlapping proposals are
+  flagged.
+* **CSV import of hours** — previews every row with its problems and writes
+  nothing, then imports all or none ([ADR-0022](adr/0022-two-pass-csv-import.md)).
+  Ambiguous dates are refused rather than guessed.
+* **Backup and restore** as a single JSON file, whole or partial by customer,
+  project or date range, merging rather than replacing so a mistaken restore
+  cannot lose data, with optional scheduled backups
+  ([ADR-0021](adr/0021-json-backups-that-merge.md)).
+* **A YAML configuration file**, found automatically or named with `--config`,
+  plus `--verbose` and `--debug`.
+* **Minimum 2h/4h/8h rounding presets**, alongside the increment rules.
+* **Editable customers, projects and assignments**, one-click favourites, and
+  **moving time between assignments** — across projects and customers — with the
+  billing snapshot recomputed from the target and the move recorded in the audit
+  trail.
+* **Rate inheritance from the customer** when neither the assignment nor the
+  project sets one.
+* **Administrator toggles** for the header clock and the current date.
+* **Regression tests** for every defect that reached a running build, and
+  `make coverage-check` with per-package floors, wired into `make check`.
+
 * **HTTPS, certificate scripts and platform hardening.**
   * TLS terminated by the application itself (`--tls-cert`, `--tls-key`), with a
     TLS 1.2 floor and 1.2 suites restricted to AEAD constructions with forward
@@ -173,6 +210,18 @@ the decision.
 
 ### Known gaps
 
+* **A backup carries attachment metadata but not the bytes.** The blobs live on
+  disk and must be copied separately. Stated in the help text and in
+  [ADR-0021](adr/0021-json-backups-that-merge.md); a zip container holding both
+  is the obvious fix.
+* **CSV import writes row by row rather than in one transaction.** The preview
+  makes a mid-import failure vanishingly unlikely, but it is not impossible.
+* **The PDF layout engine is minimal**: text, rules, tables and page breaks. No
+  images, no embedded fonts. Its output is structurally verified but has not
+  been opened in a viewer here — see the manual checks in
+  [TEST.md](TEST.md) §5.
+* **Weekly submit-and-approve** is still outstanding from layer 4, as are budget
+  burn reporting and the narrowed `client` projection from layer 5.
 * **TOTP and API tokens are designed for but not built.** Neither is
   load-bearing for a small team behind SSO, and both are additive.
 * **PDF and DOCX export return 501.** Both arrive in layer 5. CSV and JSON are

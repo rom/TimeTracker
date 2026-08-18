@@ -496,6 +496,10 @@ kbd {
   font-variant-numeric: tabular-nums;
 }
 
+/* A row that accepts a pasted image shows it is doing something. */
+.is-uploading { opacity: 0.5; }
+[data-paste-target]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
 /* A file input inside a table row, kept narrow so it does not dominate. */
 .file-input { max-width: 11rem; font-size: 0.8em; }
 

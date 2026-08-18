@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/rom/timetracker/internal/auth"
+	"github.com/rom/timetracker/internal/blob"
 	"github.com/rom/timetracker/internal/config"
 	"github.com/rom/timetracker/internal/domain"
 	"github.com/rom/timetracker/internal/service"
@@ -36,6 +37,15 @@ func newTestServer(t *testing.T) (*Server, domain.User) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc := service.New(db, auth.SingleUserAuthorizer{}, logger, time.Now)
+
+	// A blob store, as the real server wires one. Without it every attachment
+	// operation is refused as unconfigured - which would make an upload test
+	// pass for entirely the wrong reason.
+	blobs, err := blob.Open(filepath.Join(t.TempDir(), "blobs"))
+	if err != nil {
+		t.Fatalf("open blob store: %v", err)
+	}
+	svc = svc.WithBlobs(blobs)
 
 	user, err := db.CreateUser(ctx, domain.User{
 		DisplayName: "Test User", Role: domain.RoleAdmin,
@@ -342,6 +352,12 @@ func newServerModeTestServer(t *testing.T) (*Server, *service.Accounts) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc := service.New(db, auth.RoleAuthorizer{IsProjectMember: db.IsProjectMember}, logger, time.Now)
+	blobs, err := blob.Open(filepath.Join(t.TempDir(), "blobs"))
+	if err != nil {
+		t.Fatalf("open blob store: %v", err)
+	}
+	svc = svc.WithBlobs(blobs)
+
 	accounts := service.NewAccounts(db, svc, time.Now)
 
 	if _, err := accounts.BootstrapFirstAdmin(ctx, service.NewUserInput{
