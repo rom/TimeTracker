@@ -58,10 +58,10 @@
             {{/* Contract terms: overtime, travel time, reimbursement. Badged
                  when any are set, because a customer that bills differently
                  from the rest should say so where it is listed. */}}
-            <a class="btn btn-small btn-quiet" href="/customers/{{.ID}}/rules"
-               title="{{$.T "rules.title" .Name}}">
+            <a class="btn btn-small btn-quiet" href="/terms/customer/{{.ID}}"
+               title="{{$.T "terms.title" .Name}}">
               {{$.T "rules.link"}}
-              {{if .Rules.Configured}}<span class="badge badge-rules" aria-hidden="true">•</span>{{end}}
+              {{if .HasTerms}}<span class="badge badge-rules" aria-hidden="true">•</span>{{end}}
             </a>
             <form method="post" action="/customers/{{.ID}}/archive" hx-post="/customers/{{.ID}}/archive">
     {{template "csrf" $.CSRFToken}}

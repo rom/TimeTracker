@@ -279,6 +279,13 @@ func templateFuncs() template.FuncMap {
 		"hoursOf": formatHours,
 		// quantity renders a thousandths quantity as a plain decimal.
 		"quantity": domain.FormatQuantity,
+		// tagList renders an entry's tags back into the form the field accepts,
+		// so what is displayed can be typed back.
+		"tagList": domain.FormatTagList,
+		// zeroRules is an empty rule set, for a form that is adding rather than
+		// editing. A template cannot construct a struct, and rendering the form
+		// against nil would need every field guarded.
+		"zeroRules": func() domain.RateRules { return domain.RateRules{} },
 		// reportStatuses are the marks used in the approval grid, for its key.
 		"reportStatuses": service.ApprovalStatuses,
 		// entryKinds are work, overtime and travel.

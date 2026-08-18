@@ -21,12 +21,69 @@
         {{end}}
       </select>
     </label>
+    <label>{{.T "entries.kind"}}
+      <select name="kind">
+        <option value="">{{.T "entries.all"}}</option>
+        {{$kind := .Filter.Kind}}
+        {{range entryKinds}}
+          <option value="{{.}}" {{if eq (printf "%s" .) $kind}}selected{{end}}>{{$.T .MessageKey}}</option>
+        {{end}}
+      </select>
+    </label>
+    {{/* Tags are a text field rather than a multi-select: there can be many,
+         they are created by use, and typing two of them is faster than
+         hunting through a list. The datalist offers what exists. */}}
+    <label>{{.T "entries.tags"}}
+      <input type="text" name="tags" value="{{.Filter.Tags}}" list="tag-options"
+             placeholder="{{.T "entries.tags.placeholder"}}" size="16">
+    </label>
+    <datalist id="tag-options">
+      {{range .Tags}}<option value="{{.Name}}">{{end}}
+    </datalist>
     <label class="inline-check">
       <input type="checkbox" name="billable" value="1" {{if .Filter.BillableOnly}}checked{{end}}>
       {{.T "entries.billableonly"}}
     </label>
     <button type="submit" class="btn btn-primary">{{.T "action.apply"}}</button>
   </form>
+
+  {{/* Free text over the note, the assignment, the project, the customer and
+       the tags. Its own row because it is the control people reach for most,
+       and because the regexp switch needs explaining next to it. */}}
+  <form class="filter search-bar" method="get" action="/entries">
+    {{/* The rest of the filter travels with the search, so searching does not
+         silently widen the range back to the default. */}}
+    <input type="hidden" name="from" value="{{.Filter.From}}">
+    <input type="hidden" name="to" value="{{.Filter.To}}">
+    <input type="hidden" name="customer" value="{{if .Filter.CustomerID}}{{.Filter.CustomerID}}{{end}}">
+    <input type="hidden" name="tags" value="{{.Filter.Tags}}">
+    <input type="hidden" name="kind" value="{{.Filter.Kind}}">
+    {{if .Filter.BillableOnly}}<input type="hidden" name="billable" value="1">{{end}}
+
+    <label class="search-field">
+      {{.T "entries.search"}}
+      <input type="search" name="q" value="{{.Filter.Query}}"
+             placeholder="{{.T "entries.search.placeholder"}}"
+             aria-describedby="search-help">
+    </label>
+    <label class="inline-check">
+      <input type="checkbox" name="regexp" value="1" {{if .Filter.UseRegexp}}checked{{end}}>
+      {{.T "entries.regexp"}}
+    </label>
+    <button type="submit" class="btn btn-primary">{{.T "action.search"}}</button>
+    {{if .Filter.Query}}
+      <a class="btn btn-quiet" href="/entries?from={{.Filter.From}}&to={{.Filter.To}}">{{.T "action.clear"}}</a>
+    {{end}}
+  </form>
+  <p class="field-help" id="search-help">
+    {{if .Filter.UseRegexp}}{{.T "entries.regexp.help"}}{{else}}{{.T "entries.search.help"}}{{end}}
+    {{/* Which mechanism actually answered. A short query cannot use the index,
+         and saying so is better than leaving somebody to wonder why two
+         similar searches behaved differently. */}}
+    {{if .Filter.SearchMode}}
+      <span class="search-mode">{{.T (printf "search.mode.%s" .Filter.SearchMode)}}</span>
+    {{end}}
+  </p>
 
   {{template "totals" .}}
 

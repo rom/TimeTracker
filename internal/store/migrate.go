@@ -38,7 +38,17 @@ type migration struct {
 // interesting or destroys data, and is invariably the least-tested code in the
 // repository. Recovery from a bad migration is by restoring a backup, which is a
 // path we test. See docs/adr/0009-embedded-assets-and-migrations.md.
-func (db *DB) migrate(ctx context.Context) error {
+
+// allMigrations means "apply everything available".
+const allMigrations = 1 << 30
+
+// migrateTo applies migrations up to and including a version.
+//
+// The cap exists for the tests. A migration that carries existing data forward
+// only executes its data statements when there is data, so a suite that always
+// starts from an empty database never runs them; testing an upgrade means
+// building the old schema, putting rows in, and then applying the rest.
+func (db *DB) migrateTo(ctx context.Context, maxVersion int) error {
 	if _, err := db.write.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			version    INTEGER PRIMARY KEY,
@@ -76,6 +86,9 @@ func (db *DB) migrate(ctx context.Context) error {
 
 	var pending []migration
 	for _, m := range available {
+		if m.version > maxVersion {
+			continue
+		}
 		recorded, ok := applied[m.version]
 		if !ok {
 			pending = append(pending, m)

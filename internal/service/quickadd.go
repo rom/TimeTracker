@@ -268,6 +268,10 @@ func (s *Service) QuickAdd(ctx context.Context, input string) (domain.TimeEntry,
 	if parsed.Ambiguous {
 		return domain.TimeEntry{}, parsed, nil
 	}
+	// The tags the parser pulled out of the line actually go on the entry. They
+	// were parsed from the first release and then discarded, which made `#travel`
+	// a way of deleting a word from your own note.
+	parsed.Entry.Tags = parsed.Tags
 	entry, err := s.CreateEntry(ctx, parsed.Entry)
 	return entry, parsed, err
 }

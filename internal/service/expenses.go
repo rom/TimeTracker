@@ -115,11 +115,13 @@ func (s *Service) CreateExpense(ctx context.Context, in ExpenseInput) (domain.Ex
 	// The customer's reimbursement terms fill in what the user did not say: the
 	// default markup, the mileage rate or per diem that prices a quantity, and
 	// whether this customer is invoiced for expenses at all.
-	customer, err := s.db.GetCustomer(ctx, project.CustomerID)
+	// The terms in force on the day the cost was incurred, not today's: a claim
+	// entered late still belongs to the contract period it was spent in.
+	rules, err := s.db.ResolveTerms(ctx, project.CustomerID, project.ID, in.SpentOn)
 	if err != nil {
 		return domain.Expense{}, err
 	}
-	applyCustomerExpenseRules(&expense, customer.Rules, in.MarkupGiven)
+	applyCustomerExpenseRules(&expense, rules, in.MarkupGiven)
 
 	// The billed amount is computed once and frozen, for the same reason a time
 	// entry freezes its rate: a markup change tomorrow must not alter what was
@@ -194,11 +196,11 @@ func (s *Service) UpdateExpense(ctx context.Context, id int64, in ExpenseInput) 
 	// distance re-prices it at the rate that applies now.
 	updated.UnitRateMinor = 0
 
-	customer, err := s.db.GetCustomer(ctx, project.CustomerID)
+	rules, err := s.db.ResolveTerms(ctx, project.CustomerID, project.ID, in.SpentOn)
 	if err != nil {
 		return domain.Expense{}, err
 	}
-	applyCustomerExpenseRules(&updated, customer.Rules, in.MarkupGiven)
+	applyCustomerExpenseRules(&updated, rules, in.MarkupGiven)
 	updated.ApplyMarkup()
 
 	if err := updated.Validate(); err != nil {

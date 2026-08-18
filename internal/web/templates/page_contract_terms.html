@@ -1,0 +1,248 @@
+{{/*
+  One customer's or project's contract terms, as a dated history.
+
+  The whole history rather than only what applies now: a renegotiation is a new
+  revision, not an edit, and "what were we charging in March" has to be
+  answerable without going to a backup. What actually applies today is stated
+  above the list, because a project's terms are merged over its customer's field
+  by field and the result of that merge is the part people get wrong.
+
+  Every field is optional. Left empty, it takes whatever the wider scope says.
+*/}}
+{{define "content"}}
+{{$view := .Terms}}
+{{$edit := .EditTerms}}
+<section class="contract-terms">
+
+  <header class="screen-header">
+    <div class="screen-title">
+      <h1>{{.T "terms.title" $view.ScopeName}}</h1>
+    </div>
+    <nav class="date-nav">
+      {{if eq (printf "%s" $view.Scope) "project"}}
+        {{/* Most terms live on the account, so a project screen has to offer
+             the way there rather than implying it is the only place. */}}
+        <a class="btn btn-quiet" href="/terms/customer/{{$view.CustomerID}}">
+          {{.T "terms.customerterms" $view.CustomerName}}
+        </a>
+      {{end}}
+      <a class="btn btn-quiet" href="/admin"><span aria-hidden="true">‹</span> {{.T "rules.back"}}</a>
+    </nav>
+  </header>
+
+  <p class="screen-intro">{{.T "terms.intro"}}</p>
+
+  {{/* What applies today, after the merge. */}}
+  <div class="terms-effective" role="note">
+    <h2>{{.T "terms.effective"}}</h2>
+    {{template "terms-summary" (dict "Rules" $view.Effective "Page" $ "Currency" $view.Currency)}}
+    {{if eq (printf "%s" $view.Scope) "project"}}
+      <p class="field-help">{{.T "terms.merge.help"}}</p>
+    {{end}}
+  </div>
+
+  {{/* The revisions, newest first - the order they are resolved in. */}}
+  <h2 class="section-heading" id="revisions">{{.T "terms.revisions"}}</h2>
+  {{if $view.Terms}}
+    <table class="entries" aria-labelledby="revisions">
+      <thead>
+        <tr>
+          <th scope="col">{{.T "terms.from"}}</th>
+          <th scope="col">{{.T "terms.summary"}}</th>
+          <th scope="col">{{.T "terms.note"}}</th>
+          <th scope="col"><span class="visually-hidden">{{.T "action.edit"}}</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{$today := date $.Now}}
+        {{range $view.Terms}}
+          {{/* The first revision whose date has arrived is the one in force;
+               later ones are agreed but not yet applying, and are marked so
+               nobody reads the top row as current. */}}
+          <tr class="entry-row {{if gt .EffectiveFrom $today}}terms-future{{end}}">
+            <td>
+              {{if .EffectiveFrom}}{{.EffectiveFrom}}{{else}}{{$.T "terms.always"}}{{end}}
+              {{if gt .EffectiveFrom $today}}
+                <span class="badge badge-flagged">{{$.T "terms.notyet"}}</span>
+              {{end}}
+            </td>
+            <td>{{template "terms-summary" (dict "Rules" .Rules "Page" $ "Currency" $view.Currency)}}</td>
+            <td class="entry-note">{{.Note}}</td>
+            <td class="cell-actions">
+              <a class="btn btn-small btn-quiet"
+                 href="/terms/{{$view.Scope}}/{{$view.ScopeID}}?edit={{.ID}}#form">{{$.T "action.edit"}}</a>
+              <form method="post" action="/terms/{{$view.Scope}}/{{$view.ScopeID}}/delete"
+                    hx-post="/terms/{{$view.Scope}}/{{$view.ScopeID}}/delete"
+                    hx-confirm="{{$.T "terms.delete.confirm"}}">
+                {{template "csrf" $.CSRFToken}}
+                <input type="hidden" name="terms_id" value="{{.ID}}">
+                <button type="submit" class="btn btn-small btn-quiet">
+                  <span aria-hidden="true">×</span>
+                  <span class="visually-hidden">{{$.T "action.delete"}}</span>
+                </button>
+              </form>
+            </td>
+          </tr>
+        {{end}}
+      </tbody>
+    </table>
+  {{else}}
+    <p class="empty">{{.T "terms.empty"}}</p>
+  {{end}}
+
+  <h2 class="section-heading" id="form">
+    {{if $edit}}{{.T "terms.edit"}}{{else}}{{.T "terms.add"}}{{end}}
+  </h2>
+
+  <form class="entry-form entry-form-full rules-form" method="post"
+        action="/terms/{{$view.Scope}}/{{$view.ScopeID}}">
+    {{template "csrf" $.CSRFToken}}
+    <input type="hidden" name="terms_id" value="{{if $edit}}{{$edit.ID}}{{end}}">
+
+    {{/* When these terms start. Empty means they have always applied, which is
+         what carried-over terms say and what a first revision usually wants. */}}
+    <div class="field">
+      <label for="effective-from">{{.T "terms.from"}}</label>
+      <input type="date" id="effective-from" name="effective_from"
+             value="{{if $edit}}{{$edit.EffectiveFrom}}{{end}}"
+             aria-describedby="effective-from-help">
+      <p class="field-help" id="effective-from-help">{{.T "terms.from.help"}}</p>
+    </div>
+
+    <div class="field">
+      <label for="terms-note">{{.T "terms.note"}}</label>
+      <input type="text" id="terms-note" name="note" maxlength="1000"
+             value="{{if $edit}}{{$edit.Note}}{{end}}"
+             placeholder="{{.T "terms.note.placeholder"}}">
+    </div>
+
+    {{$rules := zeroRules}}
+    {{if $edit}}{{$rules = $edit.Rules}}{{end}}
+
+    {{/* ------------------------------------------------------- overtime --- */}}
+    <fieldset>
+      <legend>{{.T "rules.overtime"}}</legend>
+      <p class="field-help">{{.T "rules.overtime.help"}}</p>
+
+      <div class="field">
+        <label for="overtime-rate">{{.T "rules.overtime.rate"}}</label>
+        <input type="text" id="overtime-rate" name="overtime_rate" size="12"
+               value="{{if gt $rules.OvertimeRateMinor 0}}{{money $rules.OvertimeRateMinor ""}}{{end}}"
+               aria-describedby="overtime-rate-help">
+        <p class="field-help" id="overtime-rate-help">{{.T "rules.overtime.rate.help"}}</p>
+      </div>
+
+      <div class="field">
+        <label for="overtime-multiplier">{{.T "rules.overtime.multiplier"}}</label>
+        <input type="number" id="overtime-multiplier" name="overtime_multiplier"
+               min="0" max="1000" step="1"
+               value="{{if gt $rules.OvertimeMultiplierPct 0}}{{$rules.OvertimeMultiplierPct}}{{end}}"
+               aria-describedby="overtime-multiplier-help">
+        <p class="field-help" id="overtime-multiplier-help">{{.T "rules.overtime.multiplier.help"}}</p>
+      </div>
+
+      <div class="field">
+        <label for="overtime-daily">{{.T "rules.overtime.daily"}}</label>
+        <input type="text" id="overtime-daily" name="overtime_daily_threshold" size="8"
+               value="{{hoursOf $rules.OvertimeDailyThresholdSeconds}}" placeholder="8">
+      </div>
+      <div class="field">
+        <label for="overtime-weekly">{{.T "rules.overtime.weekly"}}</label>
+        <input type="text" id="overtime-weekly" name="overtime_weekly_threshold" size="8"
+               value="{{hoursOf $rules.OvertimeWeeklyThresholdSeconds}}" placeholder="40"
+               aria-describedby="overtime-threshold-help">
+        <p class="field-help" id="overtime-threshold-help">{{.T "rules.overtime.threshold.help"}}</p>
+      </div>
+    </fieldset>
+
+    {{/* --------------------------------------------------------- travel --- */}}
+    <fieldset>
+      <legend>{{.T "rules.travel"}}</legend>
+      <p class="field-help">{{.T "rules.travel.help"}}</p>
+
+      <div class="field">
+        <label for="travel-billing">{{.T "rules.travel.billing"}}</label>
+        {{$travel := printf "%s" $rules.TravelBilling}}
+        <select id="travel-billing" name="travel_billing">
+          {{/* "Say nothing" is a real answer and a different one from "bill it
+               as work": a project that says nothing keeps following its
+               customer's terms. */}}
+          <option value=""         {{if eq $travel ""}}selected{{end}}>{{.T "terms.inherit"}}</option>
+          <option value="work"     {{if eq $travel "work"}}selected{{end}}>{{.T "rules.travel.aswork"}}</option>
+          <option value="rate"     {{if eq $travel "rate"}}selected{{end}}>{{.T "rules.travel.atrate"}}</option>
+          <option value="unbilled" {{if eq $travel "unbilled"}}selected{{end}}>{{.T "rules.travel.unbilled"}}</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="travel-rate">{{.T "rules.travel.rate"}}</label>
+        <input type="text" id="travel-rate" name="travel_rate" size="12"
+               value="{{if gt $rules.TravelRateMinor 0}}{{money $rules.TravelRateMinor ""}}{{end}}">
+      </div>
+      <div class="field">
+        <label for="travel-multiplier">{{.T "rules.travel.multiplier"}}</label>
+        <input type="number" id="travel-multiplier" name="travel_multiplier"
+               min="0" max="1000" step="1"
+               value="{{if gt $rules.TravelMultiplierPct 0}}{{$rules.TravelMultiplierPct}}{{end}}"
+               aria-describedby="travel-multiplier-help">
+        <p class="field-help" id="travel-multiplier-help">{{.T "rules.travel.multiplier.help"}}</p>
+      </div>
+    </fieldset>
+
+    {{/* -------------------------------------------------- reimbursement --- */}}
+    <fieldset>
+      <legend>{{.T "rules.reimbursement"}}</legend>
+      <p class="field-help">{{.T "rules.reimbursement.help"}}</p>
+
+      <div class="field">
+        <label for="expense-billing">{{.T "rules.expense.billing"}}</label>
+        {{$expense := printf "%s" $rules.ExpenseBilling}}
+        <select id="expense-billing" name="expense_billing">
+          <option value=""    {{if eq $expense ""}}selected{{end}}>{{.T "terms.inherit"}}</option>
+          <option value="yes" {{if eq $expense "yes"}}selected{{end}}>{{.T "rules.expense.billed"}}</option>
+          <option value="no"  {{if eq $expense "no"}}selected{{end}}>{{.T "rules.expense.notbilled"}}</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="expense-markup">{{.T "rules.expense.markup"}}</label>
+        <input type="number" id="expense-markup" name="expense_markup"
+               min="0" max="1000" step="1"
+               value="{{if gt $rules.ExpenseMarkupPct 0}}{{$rules.ExpenseMarkupPct}}{{end}}"
+               aria-describedby="expense-markup-help">
+        <p class="field-help" id="expense-markup-help">{{.T "rules.expense.markup.help"}}</p>
+      </div>
+
+      <div class="field">
+        <label for="mileage-rate">{{.T "rules.mileage"}}</label>
+        <input type="text" id="mileage-rate" name="mileage_rate" size="12"
+               value="{{if gt $rules.MileageRateMinor 0}}{{money $rules.MileageRateMinor ""}}{{end}}"
+               aria-describedby="mileage-help">
+        <p class="field-help" id="mileage-help">{{.T "rules.mileage.help"}}</p>
+      </div>
+
+      <div class="field">
+        <label for="per-diem">{{.T "rules.perdiem"}}</label>
+        <input type="text" id="per-diem" name="per_diem" size="12"
+               value="{{if gt $rules.PerDiemMinor 0}}{{money $rules.PerDiemMinor ""}}{{end}}">
+      </div>
+
+      <div class="field">
+        <label for="receipt-above">{{.T "rules.receipt"}}</label>
+        <input type="text" id="receipt-above" name="receipt_required_above" size="12"
+               value="{{if gt $rules.ReceiptRequiredAboveMinor 0}}{{money $rules.ReceiptRequiredAboveMinor ""}}{{end}}"
+               aria-describedby="receipt-help">
+        <p class="field-help" id="receipt-help">{{.T "rules.receipt.help"}}</p>
+      </div>
+    </fieldset>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">
+        {{if $edit}}{{.T "action.save"}}{{else}}{{.T "terms.add"}}{{end}}
+      </button>
+      <a class="btn btn-quiet" href="/terms/{{$view.Scope}}/{{$view.ScopeID}}">{{.T "action.cancel"}}</a>
+    </div>
+  </form>
+
+</section>
+{{end}}

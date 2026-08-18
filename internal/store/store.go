@@ -41,6 +41,15 @@ type DB struct {
 // Open opens (creating if necessary) the database at path, applies the connection
 // settings the application depends on, and runs any outstanding migrations.
 func Open(ctx context.Context, path string) (*DB, error) {
+	return openAt(ctx, path, allMigrations)
+}
+
+// openAt opens a database and migrates it only as far as a version.
+//
+// The cap exists for the tests, which need to build an older schema, put rows
+// in it, and then upgrade - see TestMigrationsUpgradeExistingData. Open is the
+// only caller outside them, and it asks for everything.
+func openAt(ctx context.Context, path string, maxVersion int) (*DB, error) {
 	// The settings below are not optional tuning; the application's correctness
 	// assumptions depend on them:
 	//
@@ -88,7 +97,7 @@ func Open(ctx context.Context, path string) (*DB, error) {
 		return nil, fmt.Errorf("connect to database at %s: %w", path, err)
 	}
 
-	if err := db.migrate(ctx); err != nil {
+	if err := db.migrateTo(ctx, maxVersion); err != nil {
 		_ = db.Close()
 		return nil, err
 	}

@@ -30,15 +30,23 @@ type billingContext struct {
 	// is set. It is the level between the assignment and the project, and it is
 	// what expresses "a senior costs more than a junior on the same work".
 	memberRateMinor int64
+	// rules are the contract terms in force for this project on the day the
+	// entry belongs to. Resolved at load time rather than carried on the
+	// customer, because terms are dated and can also attach to the project
+	// (docs/adr/0026-dated-contract-terms.md).
+	rules domain.RateRules
 	// defaults are the instance-wide fallbacks from the settings row.
 	defaultRateMinor int64
 	defaultCurrency  string
 	defaultRounding  string
 }
 
-// billingContextFor loads the assignment, its project, its customer and the
-// subject's per-project rate.
-func (s *Service) billingContextFor(ctx context.Context, assignmentID, subjectID int64) (billingContext, error) {
+// billingContextFor loads the hierarchy for an entry on a given day.
+//
+// The day matters: contract terms are dated, so an entry backdated into an
+// earlier period prices at the terms that were in force then. Callers pass the
+// entry's own local day rather than today.
+func (s *Service) billingContextFor(ctx context.Context, assignmentID, subjectID int64, day string) (billingContext, error) {
 	assignment, err := s.db.GetAssignment(ctx, assignmentID)
 	if err != nil {
 		return billingContext{}, err
@@ -62,11 +70,17 @@ func (s *Service) billingContextFor(ctx context.Context, assignmentID, subjectID
 	if err != nil {
 		return billingContext{}, err
 	}
+	rules, err := s.db.ResolveTerms(ctx, customer.ID, project.ID, day)
+	if err != nil {
+		return billingContext{}, err
+	}
+
 	return billingContext{
 		assignment:       assignment,
 		project:          project,
 		customer:         customer,
 		memberRateMinor:  memberRate,
+		rules:            rules,
 		defaultRateMinor: settings.DefaultRateMinor,
 		defaultCurrency:  settings.DefaultCurrency,
 		defaultRounding:  settings.DefaultRounding,
@@ -87,7 +101,7 @@ func (s *Service) billingContextFor(ctx context.Context, assignmentID, subjectID
 // different statement from "worth zero per hour" and reads differently on a
 // timesheet.
 func (b billingContext) rateForKind(kind domain.EntryKind) (domain.Money, bool) {
-	return b.customer.Rules.RateForKind(kind, b.rate())
+	return b.rules.RateForKind(kind, b.rate())
 }
 
 // rate resolves the hourly rate, most specific level first.
@@ -171,8 +185,11 @@ func (b billingContext) applyBilling(entry *domain.TimeEntry) {
 }
 
 // applyBillingTo loads the hierarchy and writes the snapshot onto an entry.
+//
+// The terms are resolved for the entry's own day, so moving an entry to a date
+// in a different contract period re-prices it at the terms that applied then.
 func (s *Service) applyBillingTo(ctx context.Context, entry *domain.TimeEntry) error {
-	context, err := s.billingContextFor(ctx, entry.AssignmentID, entry.UserID)
+	context, err := s.billingContextFor(ctx, entry.AssignmentID, entry.UserID, entry.LocalDay().Format("2006-01-02"))
 	if err != nil {
 		return err
 	}

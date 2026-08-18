@@ -18,8 +18,10 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, errBadForm):
 		http.Error(w, "The submitted form could not be read.", http.StatusBadRequest)
-	case errors.Is(err, service.ErrValidation):
+	case errors.Is(err, service.ErrValidation), errors.Is(err, service.ErrInvalidQuery):
 		// The user's input was wrong, and the message describes what to fix.
+		// A malformed regular expression belongs here rather than in the
+		// internal bucket: it is the searcher's typo, and only they can fix it.
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, service.ErrNotFound):
 		http.Error(w, "Not found.", http.StatusNotFound)

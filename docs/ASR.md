@@ -529,7 +529,14 @@ because somebody forgot to stop a timer, and the resulting invoice cannot be
 defended by the person who has to defend it. The requirement is to express the
 terms without making the judgement.
 
-*Addressed by:* [ADR-0024](adr/0024-customer-rate-rules.md)
+*Addressed by:* [ADR-0024](adr/0024-customer-rate-rules.md),
+[ADR-0026](adr/0026-dated-contract-terms.md)
+
+*Extended:* terms are dated and can attach to a project as well as a customer.
+A revision records when it takes effect and why; the terms that price an entry
+are the latest ones in force on the day that entry belongs to, with a project's
+laid over its customer's field by field. Backdating an entry into an earlier
+contract period prices it at that period's agreement.
 
 ---
 

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -15,16 +16,21 @@ import (
 // frozen onto the entry as every other rate is, and that a threshold prompts
 // rather than reclassifies.
 
-// withRules sets contract terms on the fixture's customer.
+// withRules agrees contract terms on the fixture's customer, in force from the
+// beginning of time so every entry the tests record is priced by them.
 func (f *fixture) withRules(t *testing.T, rules domain.RateRules) {
 	t.Helper()
-	customer, err := f.svc.Customer(f.ctx, 1)
+	f.withTerms(t, domain.TermsForCustomer, 1, "", rules)
+}
+
+// withTerms agrees one dated revision on a customer or a project.
+func (f *fixture) withTerms(t *testing.T, scope domain.TermsScope, id int64, from string, rules domain.RateRules) {
+	t.Helper()
+	err := f.svc.SaveContractTerms(f.ctx, domain.ContractTerms{
+		Scope: scope, ScopeID: id, EffectiveFrom: from, Rules: rules,
+	})
 	if err != nil {
-		t.Fatalf("load customer: %v", err)
-	}
-	customer.Rules = rules
-	if err := f.svc.UpdateCustomer(f.ctx, customer); err != nil {
-		t.Fatalf("save rules: %v", err)
+		t.Fatalf("save terms: %v", err)
 	}
 }
 
@@ -356,5 +362,146 @@ func TestReceiptIsRequiredBeforeAWeekCanBeSubmitted(t *testing.T) {
 	// The message has to name the claim, or the person has nothing to act on.
 	if !strings.Contains(err.Error(), "Flight") {
 		t.Errorf("the refusal does not say which claim: %v", err)
+	}
+}
+
+// TestBackdatedEntryPricesAtTheTermsInForceThen. The point of dating terms: an
+// entry recorded today for work done in March prices at March's agreement, not
+// at the one that replaced it.
+func TestBackdatedEntryPricesAtTheTermsInForceThen(t *testing.T) {
+	f := newFixture(t)
+
+	// The account agreed time-and-a-half from the start, and double time from
+	// the first of this month.
+	f.withTerms(t, domain.TermsForCustomer, 1, "", domain.RateRules{OvertimeMultiplierPct: 150})
+	f.withTerms(t, domain.TermsForCustomer, 1,
+		f.now.Format("2006-01")+"-01", domain.RateRules{OvertimeMultiplierPct: 200})
+
+	// Work done last month, entered now.
+	lastMonth := f.now.AddDate(0, -1, 0)
+	old, err := f.svc.CreateEntry(f.ctx, EntryInput{
+		AssignmentID: f.assignment.ID, StartedAt: lastMonth,
+		DurationSeconds: 3600, Billable: true, Kind: domain.KindOvertime,
+	})
+	if err != nil {
+		t.Fatalf("record last month's overtime: %v", err)
+	}
+	if old.RateMinor != 187500 { // 1250.00 x 150%
+		t.Errorf("backdated overtime billed at %d, want last month's terms (187500)", old.RateMinor)
+	}
+
+	// And work done now takes the current terms.
+	current, err := f.svc.CreateEntry(f.ctx, EntryInput{
+		AssignmentID: f.assignment.ID, StartedAt: f.now,
+		DurationSeconds: 3600, Billable: true, Kind: domain.KindOvertime,
+	})
+	if err != nil {
+		t.Fatalf("record this month's overtime: %v", err)
+	}
+	if current.RateMinor != 250000 { // 1250.00 x 200%
+		t.Errorf("current overtime billed at %d, want 250000", current.RateMinor)
+	}
+
+	// Moving the old entry into the current period re-prices it, because the
+	// terms are resolved for the day the entry belongs to.
+	moved, err := f.svc.UpdateEntry(f.ctx, old.ID, EntryInput{
+		AssignmentID: f.assignment.ID, StartedAt: f.now,
+		DurationSeconds: 3600, Billable: true, Kind: domain.KindOvertime,
+	})
+	if err != nil {
+		t.Fatalf("move the entry: %v", err)
+	}
+	if moved.RateMinor != 250000 {
+		t.Errorf("after moving into the new period the rate is %d, want 250000", moved.RateMinor)
+	}
+}
+
+// TestProjectTermsOverrideTheAccountsThroughTheService, end to end: a project
+// that differs only in overtime keeps following the account for everything else.
+func TestProjectTermsOverrideTheAccountsThroughTheService(t *testing.T) {
+	f := newFixture(t)
+
+	f.withTerms(t, domain.TermsForCustomer, 1, "", domain.RateRules{
+		OvertimeMultiplierPct: 150,
+		TravelBilling:         domain.TravelUnbilled,
+	})
+	f.withTerms(t, domain.TermsForProject, f.assignment.ProjectID, "", domain.RateRules{
+		OvertimeMultiplierPct: 200,
+	})
+
+	overtime, err := f.svc.CreateEntry(f.ctx, EntryInput{
+		AssignmentID: f.assignment.ID, StartedAt: f.now,
+		DurationSeconds: 3600, Billable: true, Kind: domain.KindOvertime,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if overtime.RateMinor != 250000 {
+		t.Errorf("overtime rate = %d, want the project's 200%% (250000)", overtime.RateMinor)
+	}
+
+	// Travel was never mentioned by the project, so the account's rule still
+	// holds: recorded in full, worth nothing.
+	travel, err := f.svc.CreateEntry(f.ctx, EntryInput{
+		AssignmentID: f.assignment.ID, StartedAt: f.now.Add(2 * time.Hour),
+		DurationSeconds: 3600, Billable: true, Kind: domain.KindTravel,
+	})
+	if err != nil {
+		t.Fatalf("create travel: %v", err)
+	}
+	if travel.AmountMinor != 0 {
+		t.Errorf("travel billed %d; the project's terms cancelled the account's", travel.AmountMinor)
+	}
+	if travel.DurationSeconds != 3600 {
+		t.Error("the travel time was not recorded in full")
+	}
+}
+
+// TestTermsRevisionsCannotCollide: two revisions starting the same day would
+// make "which applies" a coin toss, so the second is refused by name.
+func TestTermsRevisionsCannotCollide(t *testing.T) {
+	f := newFixture(t)
+	f.withTerms(t, domain.TermsForCustomer, 1, "2026-01-01", domain.RateRules{OvertimeMultiplierPct: 150})
+
+	err := f.svc.SaveContractTerms(f.ctx, domain.ContractTerms{
+		Scope: domain.TermsForCustomer, ScopeID: 1, EffectiveFrom: "2026-01-01",
+		Rules: domain.RateRules{OvertimeMultiplierPct: 200},
+	})
+	if err == nil {
+		t.Fatal("two revisions were accepted for the same day")
+	}
+	if !errors.Is(err, ErrConflict) {
+		t.Errorf("error = %v, want a conflict", err)
+	}
+}
+
+// TestTermsViewShowsWhatAppliesToday, including the merge - which is the part
+// people get wrong, so the screen states the answer rather than leaving it to
+// be worked out from two lists.
+func TestTermsViewShowsWhatAppliesToday(t *testing.T) {
+	f := newFixture(t)
+	f.withTerms(t, domain.TermsForCustomer, 1, "", domain.RateRules{
+		OvertimeMultiplierPct: 150, MileageRateMinor: 2500,
+	})
+	f.withTerms(t, domain.TermsForProject, f.assignment.ProjectID, "", domain.RateRules{
+		OvertimeMultiplierPct: 200,
+	})
+
+	view, err := f.svc.ContractTerms(f.ctx, domain.TermsForProject, f.assignment.ProjectID)
+	if err != nil {
+		t.Fatalf("terms view: %v", err)
+	}
+	if view.Effective.OvertimeMultiplierPct != 200 {
+		t.Errorf("effective overtime = %d, want 200", view.Effective.OvertimeMultiplierPct)
+	}
+	if view.Effective.MileageRateMinor != 2500 {
+		t.Errorf("effective mileage = %d, want the inherited 2500", view.Effective.MileageRateMinor)
+	}
+	// And what it is overriding is shown separately.
+	if view.Inherited.OvertimeMultiplierPct != 150 {
+		t.Errorf("inherited overtime = %d, want the account's 150", view.Inherited.OvertimeMultiplierPct)
+	}
+	if len(view.Terms) != 1 {
+		t.Errorf("the project's own revisions = %d, want 1", len(view.Terms))
 	}
 }

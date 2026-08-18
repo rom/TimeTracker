@@ -92,8 +92,10 @@ func (s *Server) routes() {
 	mux.HandleFunc("GET /customers/{id}/edit", s.handleEditCustomer)
 	mux.HandleFunc("POST /customers/{id}", s.handleUpdateCustomer)
 	// Contract terms beyond the base rate: overtime, travel, reimbursement.
-	mux.HandleFunc("GET /customers/{id}/rules", s.handleCustomerRules)
-	mux.HandleFunc("POST /customers/{id}/rules", s.handleUpdateCustomerRules)
+	// Dated, and attached to a customer or a project.
+	mux.HandleFunc("GET /terms/{scope}/{id}", s.handleContractTerms)
+	mux.HandleFunc("POST /terms/{scope}/{id}", s.handleSaveContractTerms)
+	mux.HandleFunc("POST /terms/{scope}/{id}/delete", s.handleDeleteContractTerms)
 	mux.HandleFunc("GET /projects/{id}/edit", s.handleEditProject)
 	mux.HandleFunc("POST /projects/{id}", s.handleUpdateProject)
 	mux.HandleFunc("GET /assignments/{id}/edit", s.handleEditAssignment)
@@ -103,6 +105,12 @@ func (s *Server) routes() {
 	// Weekly submit and approve.
 	mux.HandleFunc("POST /week/submit", s.handleSubmitWeek)
 	mux.HandleFunc("POST /week/withdraw", s.handleWithdrawWeek)
+	// Tags, and the search index they feed.
+	mux.HandleFunc("GET /tags", s.handleTags)
+	mux.HandleFunc("POST /tags/{id}", s.handleUpdateTag)
+	mux.HandleFunc("POST /tags/{id}/delete", s.handleDeleteTag)
+	mux.HandleFunc("POST /search/reindex", s.handleReindexSearch)
+
 	// The user guide: how to do things, as opposed to what a screen is.
 	mux.HandleFunc("GET /guide", s.handleGuide)
 	mux.HandleFunc("GET /guide/{topic}", s.handleGuide)

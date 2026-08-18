@@ -281,3 +281,140 @@ func TestUnitRateFor(t *testing.T) {
 		t.Error("a customer with no mileage rule reported one")
 	}
 }
+
+// Dated terms, and the merge of a project's over its customer's.
+//
+// Two rules decide every figure this feature produces: the latest revision on
+// or before the day wins, and a project's fields lie over its customer's. Both
+// are pinned here because getting either wrong changes an invoice quietly.
+
+func TestResolveTermsPicksTheRevisionInForce(t *testing.T) {
+	// Newest first, which is the order the store returns them in.
+	customer := []ContractTerms{
+		{EffectiveFrom: "2026-07-01", Rules: RateRules{OvertimeMultiplierPct: 200}},
+		{EffectiveFrom: "2026-01-01", Rules: RateRules{OvertimeMultiplierPct: 150}},
+		{EffectiveFrom: "", Rules: RateRules{OvertimeMultiplierPct: 125}},
+	}
+
+	cases := []struct {
+		day  string
+		want int64
+	}{
+		{"2025-12-31", 125}, // before any dated revision: the open-ended one
+		{"2026-01-01", 150}, // the day a revision starts, it applies
+		{"2026-06-30", 150},
+		{"2026-07-01", 200},
+		{"2027-01-01", 200}, // the latest keeps applying until superseded
+	}
+	for _, tc := range cases {
+		got := ResolveTerms(customer, nil, tc.day).OvertimeMultiplierPct
+		if got != tc.want {
+			t.Errorf("on %s: overtime = %d%%, want %d%%", tc.day, got, tc.want)
+		}
+	}
+}
+
+func TestResolveTermsWithNoRevisionYet(t *testing.T) {
+	// Terms agreed for a future date do not apply before it, and with nothing
+	// else in force the answer is "no terms" rather than the future ones.
+	future := []ContractTerms{
+		{EffectiveFrom: "2027-01-01", Rules: RateRules{OvertimeMultiplierPct: 200}},
+	}
+	if got := ResolveTerms(future, nil, "2026-08-18"); got.Configured() {
+		t.Errorf("terms that start next year applied today: %+v", got)
+	}
+	if got := ResolveTerms(nil, nil, "2026-08-18"); got.Configured() {
+		t.Errorf("no terms at all resolved to %+v", got)
+	}
+}
+
+// TestProjectTermsMergeOverTheCustomers is the per-project requirement: a
+// project that differs only in overtime says only that, and everything else
+// keeps following the account.
+func TestProjectTermsMergeOverTheCustomers(t *testing.T) {
+	customer := []ContractTerms{{Rules: RateRules{
+		OvertimeMultiplierPct: 150,
+		TravelBilling:         TravelUnbilled,
+		MileageRateMinor:      2500,
+		ExpenseMarkupPct:      10,
+	}}}
+	project := []ContractTerms{{Rules: RateRules{
+		OvertimeMultiplierPct: 200,
+	}}}
+
+	got := ResolveTerms(customer, project, "2026-08-18")
+
+	if got.OvertimeMultiplierPct != 200 {
+		t.Errorf("overtime = %d, want the project's 200", got.OvertimeMultiplierPct)
+	}
+	// Everything the project said nothing about still follows the account.
+	if got.TravelBilling != TravelUnbilled {
+		t.Errorf("travel = %q, want the customer's unbilled", got.TravelBilling)
+	}
+	if got.MileageRateMinor != 2500 {
+		t.Errorf("mileage = %d, want the customer's", got.MileageRateMinor)
+	}
+	if got.ExpenseMarkupPct != 10 {
+		t.Errorf("markup = %d, want the customer's", got.ExpenseMarkupPct)
+	}
+}
+
+// TestProjectCanOverrideTravelBackToWork is why the enumerations needed an
+// explicit value for their default. Without one, "travel is billed as work
+// here" and "say nothing about travel" would be the same string, and a project
+// could never override a customer that does not pay for travel.
+func TestProjectCanOverrideTravelBackToWork(t *testing.T) {
+	customer := []ContractTerms{{Rules: RateRules{TravelBilling: TravelUnbilled}}}
+
+	silent := ResolveTerms(customer, []ContractTerms{{Rules: RateRules{OvertimeMultiplierPct: 150}}}, "2026-08-18")
+	if silent.TravelBilling != TravelUnbilled {
+		t.Errorf("a project saying nothing changed travel to %q", silent.TravelBilling)
+	}
+
+	explicit := ResolveTerms(customer, []ContractTerms{{Rules: RateRules{TravelBilling: TravelAsWork}}}, "2026-08-18")
+	if explicit.TravelBilling != TravelAsWork {
+		t.Errorf("a project saying travel is work resolved to %q", explicit.TravelBilling)
+	}
+	// And that actually changes the money.
+	base := NewMoney(100000, "SEK")
+	if _, billable := explicit.RateForKind(KindTravel, base); !billable {
+		t.Error("travel is still unbilled after the project overrode it")
+	}
+}
+
+// TestMergeDoesNotMutateTheBase: the customer's terms are resolved once and may
+// be laid under several projects.
+func TestMergeDoesNotMutateTheBase(t *testing.T) {
+	base := RateRules{OvertimeMultiplierPct: 150, MileageRateMinor: 2500}
+	overlay := RateRules{OvertimeMultiplierPct: 200}
+
+	merged := overlay.Merge(base)
+	if base.OvertimeMultiplierPct != 150 {
+		t.Errorf("the base was modified: %d", base.OvertimeMultiplierPct)
+	}
+	if merged.OvertimeMultiplierPct != 200 || merged.MileageRateMinor != 2500 {
+		t.Errorf("the merge is wrong: %+v", merged)
+	}
+}
+
+func TestContractTermsValidate(t *testing.T) {
+	valid := ContractTerms{Scope: TermsForCustomer, ScopeID: 1, EffectiveFrom: "2026-01-01"}
+	if err := valid.Validate(); err != nil {
+		t.Errorf("valid terms were rejected: %v", err)
+	}
+	// Empty means "always", which is what carried-over terms carry.
+	open := ContractTerms{Scope: TermsForProject, ScopeID: 2}
+	if err := open.Validate(); err != nil {
+		t.Errorf("open-ended terms were rejected: %v", err)
+	}
+
+	for _, bad := range []ContractTerms{
+		{Scope: "team", ScopeID: 1},
+		{Scope: TermsForCustomer},
+		{Scope: TermsForCustomer, ScopeID: 1, EffectiveFrom: "last April"},
+	} {
+		if err := bad.Validate(); err == nil {
+			t.Errorf("accepted %+v", bad)
+		}
+	}
+}

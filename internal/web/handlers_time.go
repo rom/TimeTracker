@@ -54,6 +54,7 @@ type pageData struct {
 	Totals    domain.Totals
 	Customers []domain.Customer
 	Projects  []domain.Project
+	Tags      []domain.Tag
 	Entry     *domain.TimeEntry
 	Filter    entryFilterForm
 	// Zone is the acting user's IANA zone, for templates that render a stored
@@ -69,6 +70,10 @@ type pageData struct {
 	Inbox        *service.Inbox
 	Proposed     []domain.TimeEntry
 	Attachments  []domain.Attachment
+
+	// Dated contract terms: one scope's history, and the revision being edited.
+	Terms     *service.TermsView
+	EditTerms *domain.ContractTerms
 
 	// Editing the catalogue. Non-nil when an edit form is being rendered.
 	EditCustomer   *domain.Customer
@@ -327,6 +332,16 @@ type entryFilterForm struct {
 	ProjectID    int64
 	AssignmentID int64
 	BillableOnly bool
+	// Tags and Query drive the search box; UseRegexp switches it from substring
+	// to regular expression. Kind narrows to work, overtime or travel.
+	Tags      string
+	Query     string
+	UseRegexp bool
+	Kind      string
+	// SearchMode is which mechanism answered, so the screen can say. A search
+	// that quietly used a different one from the one asked for produces results
+	// nobody can explain.
+	SearchMode string
 }
 
 // handleEntries renders the filterable entry list, which is also what every
@@ -341,11 +356,21 @@ func (s *Server) handleEntries(w http.ResponseWriter, r *http.Request) {
 	filter, form := s.entryFilter(r)
 	data.Filter = form
 
-	if data.Entries, err = s.svc.Entries(r.Context(), filter); err != nil {
+	entries, mode, err := s.svc.SearchEntries(r.Context(), filter)
+	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
+	data.Entries = entries
+	form.SearchMode = string(mode)
+	data.Filter = form
 	data.Totals = s.svc.Totals(data.Entries)
+
+	// The tags that exist, for the filter's suggestions.
+	if data.Tags, err = s.svc.Tags(r.Context()); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 
 	if data.Customers, err = s.svc.Customers(r.Context(), false); err != nil {
 		s.fail(w, r, err)
@@ -384,6 +409,15 @@ func (s *Server) entryFilter(r *http.Request) (service.EntryFilter, entryFilterF
 	form.ProjectID = int64Param(r.URL.Query().Get("project"))
 	form.AssignmentID = int64Param(r.URL.Query().Get("assignment"))
 	form.BillableOnly = r.URL.Query().Get("billable") == "1"
+	form.Tags = r.URL.Query().Get("tags")
+	form.Query = r.URL.Query().Get("q")
+	form.UseRegexp = r.URL.Query().Get("regexp") == "1"
+	form.Kind = r.URL.Query().Get("kind")
+
+	var kinds []domain.EntryKind
+	if kind := domain.EntryKind(form.Kind); kind.Valid() {
+		kinds = []domain.EntryKind{kind}
+	}
 
 	return service.EntryFilter{
 		// The end of the range is exclusive, so "to" is inclusive of that whole
@@ -394,6 +428,10 @@ func (s *Server) entryFilter(r *http.Request) (service.EntryFilter, entryFilterF
 		ProjectID:    form.ProjectID,
 		AssignmentID: form.AssignmentID,
 		BillableOnly: form.BillableOnly,
+		Tags:         domain.ParseTagList(form.Tags),
+		Query:        form.Query,
+		UseRegexp:    form.UseRegexp,
+		Kinds:        kinds,
 		Limit:        1000,
 	}, form
 }
@@ -500,6 +538,10 @@ func (s *Server) handleEditEntryForm(w http.ResponseWriter, r *http.Request) {
 	}
 	data.Title = data.Printer.T("entry.edit.title")
 	data.Entry = &entry
+	if data.Tags, err = s.svc.Tags(r.Context()); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	if data.Assignments, err = s.svc.Assignments(r.Context(), 0, false); err != nil {
 		s.fail(w, r, err)
 		return
@@ -569,6 +611,7 @@ func (s *Server) entryInputFromForm(r *http.Request) (service.EntryInput, error)
 		Note:         r.FormValue("note"),
 		Billable:     r.FormValue("billable") != "",
 		Kind:         kind,
+		Tags:         domain.ParseTagList(r.FormValue("tags")),
 		OnBehalfOf:   int64Param(r.FormValue("on_behalf_of")),
 	}
 

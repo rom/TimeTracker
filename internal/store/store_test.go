@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -386,5 +387,170 @@ func TestRecentAssignments(t *testing.T) {
 	}
 	if recent[0].ID != second.ID {
 		t.Errorf("most recently used assignment should sort first, got %q", recent[0].Name)
+	}
+}
+
+// TestMigrationsUpgradeExistingData is the test the fresh-database one cannot
+// be.
+//
+// A migration that carries data forward only executes when there is data to
+// carry, so a suite that always starts from an empty database never runs those
+// statements at all. 0007 moved the contract terms off the customer table, and
+// wrote their timestamps with SQLite's datetime() - which separates the date
+// and the time with a space, a format the reader refuses. Nothing on a fresh
+// database could have noticed.
+//
+// This applies the schema in two halves with real rows in between, which is
+// what an upgrade actually is.
+func TestMigrationsUpgradeExistingData(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "upgrade.db")
+
+	all, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+	if len(all) < 2 {
+		t.Skip("needs at least two migrations to have an upgrade path")
+	}
+
+	// Build the previous schema, put real rows in it, then let Open apply the
+	// rest - which is what an upgrade is.
+	previous := all[len(all)-2].version
+	old, err := openAt(ctx, path, previous)
+	if err != nil {
+		t.Fatalf("build the previous schema: %v", err)
+	}
+	seedForUpgrade(ctx, t, old, previous)
+	if err := old.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	db, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("upgrade: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	if version, err := db.SchemaVersion(ctx); err != nil {
+		t.Fatalf("schema version: %v", err)
+	} else if version != all[len(all)-1].version {
+		t.Errorf("after upgrade the version is %d, want %d", version, all[len(all)-1].version)
+	}
+
+	assertTimestampsParse(ctx, t, db)
+}
+
+// seedForUpgrade puts rows in the old schema that its successor has to carry
+// forward. Version-specific by necessity: what an upgrade must preserve depends
+// on which upgrade it is.
+func seedForUpgrade(ctx context.Context, t *testing.T, db *DB, version int) {
+	t.Helper()
+
+	if version == 6 {
+		// 0007 moves contract terms off the customer table. Only a customer
+		// that actually has terms exercises the statement that moves them.
+		if _, err := db.write.ExecContext(ctx, `
+			INSERT INTO customers (name, currency, rate_minor, created_at,
+			    overtime_multiplier_pct, travel_billing, mileage_rate_minor)
+			VALUES ('Acme', 'SEK', 100000, ?, 150, 'rate', 2500)`,
+			formatTime(time.Now())); err != nil {
+			t.Fatalf("seed a customer with terms: %v", err)
+		}
+	}
+}
+
+// assertTimestampsParse reads every timestamp column in the database back
+// through the parser the application uses.
+//
+// A stored timestamp the reader refuses takes a whole screen down, and it is
+// invisible until somebody has a row of that kind - which for a data-carrying
+// migration means invisible until an upgrade in production.
+func assertTimestampsParse(ctx context.Context, t *testing.T, db *DB) {
+	t.Helper()
+
+	tables, err := db.read.QueryContext(ctx,
+		`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`)
+	if err != nil {
+		t.Fatalf("list tables: %v", err)
+	}
+	var names []string
+	for tables.Next() {
+		var name string
+		if err := tables.Scan(&name); err != nil {
+			t.Fatalf("scan table name: %v", err)
+		}
+		names = append(names, name)
+	}
+	_ = tables.Close()
+
+	for _, table := range names {
+		columns, err := db.read.QueryContext(ctx, `SELECT name FROM pragma_table_info(?)`, table)
+		if err != nil {
+			t.Fatalf("columns of %s: %v", table, err)
+		}
+		var timestamps []string
+		for columns.Next() {
+			var name string
+			if err := columns.Scan(&name); err != nil {
+				t.Fatalf("scan column: %v", err)
+			}
+			// The convention throughout is that an instant column ends in _at.
+			if strings.HasSuffix(name, "_at") {
+				timestamps = append(timestamps, name)
+			}
+		}
+		_ = columns.Close()
+
+		for _, column := range timestamps {
+			rows, err := db.read.QueryContext(ctx,
+				`SELECT `+column+` FROM `+table+` WHERE `+column+` IS NOT NULL AND `+column+` <> ''`)
+			if err != nil {
+				t.Fatalf("read %s.%s: %v", table, column, err)
+			}
+			for rows.Next() {
+				var value string
+				if err := rows.Scan(&value); err != nil {
+					t.Fatalf("scan %s.%s: %v", table, column, err)
+				}
+				if _, err := parseTime(value); err != nil {
+					t.Errorf("%s.%s holds %q, which the application cannot read: %v",
+						table, column, value, err)
+				}
+			}
+			_ = rows.Close()
+		}
+	}
+}
+
+// TestMigrationsWriteTimestampsInTheStoredFormat is the cheap general guard for
+// the same defect.
+//
+// SQLite's datetime() and date() produce a space-separated form; every
+// timestamp this application writes is RFC 3339. A migration that populates a
+// timestamp has to say so explicitly, and this catches the one that forgets
+// without needing an upgrade with the right data in it.
+func TestMigrationsWriteTimestampsInTheStoredFormat(t *testing.T) {
+	entries, err := migrationFS.ReadDir("migrations")
+	if err != nil {
+		t.Fatalf("read migrations: %v", err)
+	}
+
+	for _, entry := range entries {
+		body, err := migrationFS.ReadFile("migrations/" + entry.Name())
+		if err != nil {
+			t.Fatalf("read %s: %v", entry.Name(), err)
+		}
+		for _, line := range strings.Split(string(body), "\n") {
+			// Comments explain the rule; they are not breaking it.
+			if strings.HasPrefix(strings.TrimSpace(line), "--") {
+				continue
+			}
+			if strings.Contains(line, "datetime('now')") || strings.Contains(line, "date('now')") {
+				t.Errorf("%s writes a timestamp with datetime()/date(), which is not "+
+					"the RFC 3339 form the application reads:\n  %s",
+					entry.Name(), strings.TrimSpace(line))
+			}
+		}
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rom/timetracker/internal/domain"
 	"github.com/rom/timetracker/internal/service"
 )
 
@@ -53,11 +54,6 @@ func (s *Server) handleUpdateCustomer(w http.ResponseWriter, r *http.Request) {
 	existing.Icon = r.FormValue("icon")
 	existing.Notes = r.FormValue("notes")
 	existing.RateMinor = rate
-
-	if existing.Rules, err = rateRulesFromForm(r, existing.Currency); err != nil {
-		s.fail(w, r, err)
-		return
-	}
 
 	if err := s.svc.UpdateCustomer(r.Context(), existing); err != nil {
 		s.fail(w, r, err)
@@ -494,13 +490,28 @@ func (s *Server) backupOptions(r *http.Request) service.BackupOptions {
 	return opts
 }
 
-// handleCustomerRules renders one customer's contract terms.
+// ------------------------------------------------------- contract terms ----
+
+// Contract terms are dated, and attach to a customer or to a project.
 //
-// A screen of its own rather than a dozen more boxes on the customer row: these
-// are read off a signed agreement and typed in once, and they need labels and
-// units to be entered correctly.
-func (s *Server) handleCustomerRules(w http.ResponseWriter, r *http.Request) {
-	customer, err := s.svc.Customer(r.Context(), int64Param(r.PathValue("id")))
+// One screen serves both scopes and shows the whole history: what applies now,
+// what applied before, and what has been agreed for a date still to come. A
+// screen that showed only the current terms would make a renegotiation look
+// like an edit, and there would be no way to answer "what were we charging in
+// March" except from a backup.
+
+// termsScopeFromPath reads the scope and its record from the URL.
+func (s *Server) termsScopeFromPath(r *http.Request) (domain.TermsScope, int64, error) {
+	scope := domain.TermsScope(r.PathValue("scope"))
+	if !scope.Valid() {
+		return "", 0, domainValidation("unknown contract scope: " + r.PathValue("scope"))
+	}
+	return scope, int64Param(r.PathValue("id")), nil
+}
+
+// handleContractTerms lists one customer's or project's dated terms.
+func (s *Server) handleContractTerms(w http.ResponseWriter, r *http.Request) {
+	scope, id, err := s.termsScopeFromPath(r)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -511,31 +522,87 @@ func (s *Server) handleCustomerRules(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	data.Title = data.Printer.T("rules.title", customer.Name)
-	data.EditCustomer = &customer
-	s.render(w, r, "page_customer_rules.html", data)
-}
 
-// handleUpdateCustomerRules saves them.
-func (s *Server) handleUpdateCustomerRules(w http.ResponseWriter, r *http.Request) {
-	if err := parseForm(r); err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	customer, err := s.svc.Customer(r.Context(), int64Param(r.PathValue("id")))
+	view, err := s.svc.ContractTerms(r.Context(), scope, id)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	// The customer's own currency, so a rate typed as "2.50" is 2.50 of what
-	// this customer is invoiced in rather than of the instance default.
-	if customer.Rules, err = rateRulesFromForm(r, customer.Currency); err != nil {
+	data.Terms = &view
+	data.Title = data.Printer.T("terms.title", view.ScopeName)
+
+	// The set being edited, when one was asked for. A form with values in it is
+	// an edit; an empty one adds a revision.
+	if editID := int64Param(r.URL.Query().Get("edit")); editID != 0 {
+		for i := range view.Terms {
+			if view.Terms[i].ID == editID {
+				data.EditTerms = &view.Terms[i]
+				break
+			}
+		}
+	}
+	s.render(w, r, "page_contract_terms.html", data)
+}
+
+// handleSaveContractTerms adds or updates one dated set.
+func (s *Server) handleSaveContractTerms(w http.ResponseWriter, r *http.Request) {
+	if err := parseForm(r); err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	if err := s.svc.UpdateCustomer(r.Context(), customer); err != nil {
+	scope, id, err := s.termsScopeFromPath(r)
+	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+
+	// The currency the amounts are typed in is the customer's, so "2.50" means
+	// 2.50 of what this account is invoiced in.
+	currency, err := s.svc.TermsCurrency(r.Context(), scope, id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	rules, err := rateRulesFromForm(r, currency)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	terms := domain.ContractTerms{
+		ID:            int64Param(r.FormValue("terms_id")),
+		Scope:         scope,
+		ScopeID:       id,
+		EffectiveFrom: strings.TrimSpace(r.FormValue("effective_from")),
+		Rules:         rules,
+		Note:          r.FormValue("note"),
+	}
+	if err := s.svc.SaveContractTerms(r.Context(), terms); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	http.Redirect(w, r, termsPath(scope, id), http.StatusSeeOther)
+}
+
+// handleDeleteContractTerms removes one dated set.
+func (s *Server) handleDeleteContractTerms(w http.ResponseWriter, r *http.Request) {
+	if err := parseForm(r); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	scope, id, err := s.termsScopeFromPath(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if err := s.svc.DeleteContractTerms(r.Context(), int64Param(r.FormValue("terms_id"))); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	http.Redirect(w, r, termsPath(scope, id), http.StatusSeeOther)
+}
+
+// termsPath is the URL of one scope's terms screen.
+func termsPath(scope domain.TermsScope, id int64) string {
+	return "/terms/" + string(scope) + "/" + strconv.FormatInt(id, 10)
 }

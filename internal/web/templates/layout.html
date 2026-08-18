@@ -76,6 +76,7 @@
     {{/* The guide is how-to documentation, as opposed to the ? button's help
          for the screen in front of you. Both exist because they answer
          different questions. */}}
+    <a href="/tags"    {{if eq .Active "tags"}}class="active" aria-current="page"{{end}}>{{.T "nav.tags"}}</a>
     <a href="/guide"   {{if eq .Active "guide"}}class="active" aria-current="page"{{end}}>{{.T "nav.guide"}}</a>
     {{if .ServerMode}}
       <a href="/users" {{if eq .Active "users"}}class="active" aria-current="page"{{end}}>{{.T "nav.users"}}</a>
