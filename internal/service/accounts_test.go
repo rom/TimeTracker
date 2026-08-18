@@ -61,6 +61,54 @@ func (f *serverFixture) asUser(u domain.User) context.Context {
 	return auth.WithUser(context.Background(), u)
 }
 
+// team builds a customer, project and assignment, plus a colleague who is a
+// member of that project.
+//
+// Proxy entry is inherently a multi-user feature: there is nobody to record time
+// for in local mode, and the single-user authoriser correctly refuses it. These
+// tests therefore run against the RBAC authoriser, which is where the feature
+// actually lives.
+func (f *serverFixture) team(t *testing.T) (assignment domain.Assignment, colleague domain.User) {
+	t.Helper()
+
+	customer, err := f.svc.CreateCustomer(f.ctx, domain.Customer{
+		Name: "Acme", Currency: "SEK", RateMinor: 125000,
+	})
+	if err != nil {
+		t.Fatalf("create customer: %v", err)
+	}
+	project, err := f.svc.CreateProject(f.ctx, domain.Project{
+		CustomerID: customer.ID, Name: "Migration", BillableDefault: true,
+	})
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	assignment, err = f.svc.CreateAssignment(f.ctx, domain.Assignment{
+		ProjectID: project.ID, Name: "Development", BillableDefault: true,
+	})
+	if err != nil {
+		t.Fatalf("create assignment: %v", err)
+	}
+
+	colleague, err = f.accounts.CreateUser(f.ctx, NewUserInput{
+		DisplayName: "Colleague", Email: "colleague@example.com",
+		Password: "a-long-enough-password", Role: domain.RoleMember,
+	})
+	if err != nil {
+		t.Fatalf("create colleague: %v", err)
+	}
+	// Both parties belong to the project: proposing for someone requires a
+	// shared project, which is what stops a stranger recording time in your name.
+	for _, user := range []domain.User{f.admin, colleague} {
+		if err := f.accounts.AddMember(f.ctx, Membership{
+			ProjectID: project.ID, UserID: user.ID,
+		}); err != nil {
+			t.Fatalf("add membership: %v", err)
+		}
+	}
+	return assignment, colleague
+}
+
 // TestBootstrapOnlyOnce: the one account-creation path that runs without an
 // identity must refuse once the instance has accounts, or it is a way to mint an
 // administrator at any time.

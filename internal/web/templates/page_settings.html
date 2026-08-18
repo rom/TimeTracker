@@ -1,0 +1,82 @@
+{{define "content"}}
+<section class="settings-screen">
+
+  <header class="screen-header">
+    <div class="screen-title"><h1>{{.T "settings.title"}}</h1></div>
+  </header>
+
+  <p class="hint">{{.T "settings.intro"}}</p>
+
+  <form class="settings-form" method="post" action="/settings" hx-post="/settings">
+    {{template "csrf" $.CSRFToken}}
+
+    <fieldset>
+      <legend>{{.T "admin.rate"}}</legend>
+
+      <label>
+        {{.T "settings.defaultcurrency"}}
+        <input type="text" name="default_currency" maxlength="3" size="4"
+               value="{{.Settings.DefaultCurrency}}">
+      </label>
+
+      <label>
+        {{.T "settings.defaultrounding"}}
+        {{$current := .Settings.DefaultRounding}}
+        <select name="default_rounding">
+          {{range .Rounding}}
+            <option value="{{.Key}}" {{if eq .Key $current}}selected{{end}}>
+              {{$.T .MessageKey}}
+            </option>
+          {{end}}
+        </select>
+      </label>
+
+      <label>
+        {{.T "admin.defaultrate"}}
+        <input type="text" name="default_rate" size="10"
+               value="{{if gt .Settings.DefaultRateMinor 0}}{{money .Settings.DefaultRateMinor ""}}{{end}}">
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>{{.T "settings.title"}}</legend>
+
+      {{/* Whether a clock belongs in the header is a matter of taste, not a
+           decision the designer should make for everybody. */}}
+      <label class="inline-check">
+        <input type="checkbox" name="show_clock" {{if .Settings.ShowClock}}checked{{end}}>
+        {{.T "settings.showclock"}}
+      </label>
+
+      <label class="inline-check">
+        <input type="checkbox" name="show_time_and_date"
+               {{if .Settings.ShowTimeAndDate}}checked{{end}}>
+        {{.T "settings.showdatetime"}}
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>{{.T "week.title" ""}}</legend>
+
+      <label>
+        {{.T "settings.weekstart"}}
+        {{$week := .Settings.WeekStart}}
+        <select name="week_start">
+          <option value="1" {{if eq $week 1}}selected{{end}}>{{.T "weekday.monday"}}</option>
+          <option value="7" {{if eq $week 7}}selected{{end}}>{{.T "weekday.sunday"}}</option>
+          <option value="6" {{if eq $week 6}}selected{{end}}>{{.T "weekday.saturday"}}</option>
+        </select>
+      </label>
+
+      <label>
+        {{.T "settings.maxtimer"}}
+        <input type="number" name="max_timer_hours" min="1" max="168"
+               value="{{divide .Settings.MaxTimerSeconds 3600}}">
+      </label>
+    </fieldset>
+
+    <button type="submit" class="btn btn-primary">{{.T "settings.save"}}</button>
+  </form>
+
+</section>
+{{end}}

@@ -1,0 +1,93 @@
+{{define "content"}}
+<section class="backup-screen">
+
+  <header class="screen-header">
+    <div class="screen-title"><h1>{{.T "backup.title"}}</h1></div>
+  </header>
+
+  <p class="hint">{{.T "backup.intro"}}</p>
+
+  {{with .RestoreResult}}
+    <div class="banner" role="status">
+      {{$.T "backup.restored" .Total}}
+      {{if gt .Skipped 0}} ({{.Skipped}} already present){{end}}
+      {{range .Problems}}<div class="entry-note">{{.}}</div>{{end}}
+    </div>
+  {{end}}
+
+  {{/* ------------------------------------------------------------ create */}}
+  <h2 class="section-heading">{{.T "backup.create"}}</h2>
+
+  <form class="entry-form" method="get" action="/backup/download">
+    <label>
+      {{.T "backup.customer"}}
+      <select name="customer_id">
+        <option value="">{{.T "backup.full"}}</option>
+        {{range .Customers}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+      </select>
+    </label>
+    <label>
+      {{.T "backup.project"}}
+      <select name="project_id">
+        <option value="">{{.T "backup.full"}}</option>
+        {{range .Projects}}
+          <option value="{{.ID}}">{{.CustomerName}} / {{.Name}}</option>
+        {{end}}
+      </select>
+    </label>
+    <label>{{.T "entries.from"}} <input type="date" name="from"></label>
+    <label>{{.T "entries.to"}} <input type="date" name="to"></label>
+    <button type="submit" class="btn btn-primary">{{.T "action.download"}}</button>
+  </form>
+
+  <form class="entry-form" method="post" action="/backup/create" hx-post="/backup/create">
+    {{template "csrf" $.CSRFToken}}
+    <span class="hint">{{.T "backup.list"}}</span>
+    <button type="submit" class="btn">{{.T "action.backup"}}</button>
+  </form>
+
+  {{/* ----------------------------------------------------------- restore */}}
+  <h2 class="section-heading">{{.T "backup.restore.title"}}</h2>
+  <p class="hint">{{.T "backup.restore.intro"}}</p>
+
+  <form class="entry-form" method="post" action="/backup/restore" enctype="multipart/form-data">
+    {{template "csrf" $.CSRFToken}}
+    <input type="file" name="file" accept=".json,application/json" required
+           aria-label="{{.T "backup.restore.file"}}">
+    <button type="submit" class="btn btn-primary">{{.T "action.restore"}}</button>
+  </form>
+
+  {{/* --------------------------------------------------------- automatic */}}
+  <h2 class="section-heading">{{.T "backup.automatic"}}</h2>
+  {{if .BackupEnabled}}
+    <p class="hint">{{.T "backup.automatic.on" .BackupInterval .BackupKeep}}</p>
+  {{else}}
+    <p class="hint">{{.T "backup.automatic.off"}}</p>
+  {{end}}
+
+  {{if .Backups}}
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>{{.T "backup.when"}}</th>
+          <th>{{.T "admin.name"}}</th>
+          <th>{{.T "backup.size"}}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{$page := .}}
+        {{range .Backups}}
+          <tr>
+            <td>{{$page.Printer.FormatDate .CreatedAt}} {{$page.Printer.FormatTime .CreatedAt nil}}</td>
+            <td>{{.Name}}</td>
+            <td class="cell-time">{{humanBytes .SizeBytes}}</td>
+          </tr>
+        {{end}}
+      </tbody>
+    </table>
+  {{else}}
+    <p class="empty">{{.T "backup.none"}}</p>
+  {{end}}
+
+</section>
+{{end}}

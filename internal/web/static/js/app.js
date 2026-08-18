@@ -185,6 +185,26 @@
     banner.scrollIntoView({ block: "nearest" });
   }
 
+  /*
+   * The optional header clock. Ticking it client-side rather than re-rendering
+   * the page is the only sane way to show seconds, and it is decorative - the
+   * server's clock is what decides what gets recorded.
+   */
+  function initHeaderClock() {
+    var clock = document.getElementById("header-clock");
+    if (!clock) return;
+
+    function tick() {
+      var now = new Date();
+      clock.textContent =
+        String(now.getHours()).padStart(2, "0") + ":" +
+        String(now.getMinutes()).padStart(2, "0") + ":" +
+        String(now.getSeconds()).padStart(2, "0");
+    }
+    tick();
+    window.setInterval(tick, 1000);
+  }
+
   /* ------------------------------------------------------------ language --- */
 
   /*
@@ -367,6 +387,7 @@
     updateClocks();
     /* One second is the natural cadence for a clock showing seconds. */
     window.setInterval(updateClocks, 1000);
+    initHeaderClock();
     initThemePicker();
     initLanguagePicker();
     initAjaxForms();

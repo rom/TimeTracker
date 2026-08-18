@@ -52,6 +52,36 @@ type pageData struct {
 	Projects  []domain.Project
 	Entry     *domain.TimeEntry
 	Filter    entryFilterForm
+	// Expenses, attachments and the proxy inbox.
+	Expenses      []domain.Expense
+	ExpenseTotals service.ExpenseTotals
+	Inbox         *service.Inbox
+	Proposed      []domain.TimeEntry
+	Attachments   []domain.Attachment
+
+	// Editing the catalogue. Non-nil when an edit form is being rendered.
+	EditCustomer   *domain.Customer
+	EditProject    *domain.Project
+	EditAssignment *domain.Assignment
+
+	// Moving time.
+	MoveIDs []string
+
+	// CSV import.
+	ImportPreview       *service.ImportPreview
+	ImportCreateMissing bool
+
+	// Backup and restore.
+	Backups        []service.BackupFile
+	RestoreResult  *service.RestoreResult
+	BackupEnabled  bool
+	BackupInterval string
+	BackupKeep     int
+
+	// Instance settings, and the rounding presets the forms offer.
+	Settings service.Settings
+	Rounding []struct{ Key, MessageKey string }
+
 	// Server-mode payloads. Nil or empty in local mode.
 	Users   []domain.User
 	Members []service.Membership
@@ -62,6 +92,9 @@ type pageData struct {
 	// ServerMode drives the parts of the chrome that only make sense with
 	// accounts: the sign-out control and the Users screen.
 	ServerMode bool
+	// InboxCount badges the navigation, because a proposal nobody looks at is
+	// unbilled work.
+	InboxCount int
 }
 
 // T translates a key in the page's language. Templates call it directly, which
@@ -109,6 +142,20 @@ func (s *Server) newPageData(r *http.Request, title, active string) (pageData, e
 	}
 	printer := printerFor(r, user)
 
+	// The instance settings drive the chrome - the clock and the date display -
+	// so every page needs them. It is one indexed read of a single row.
+	settings, err := s.svc.Settings(r.Context())
+	if err != nil {
+		return pageData{}, err
+	}
+
+	// The proxy inbox count is shown as a badge on every screen, because a
+	// proposal nobody looks at is unbilled work.
+	inboxCount := 0
+	if inbox, inboxErr := s.svc.Inbox(r.Context()); inboxErr == nil {
+		inboxCount = inbox.Count()
+	}
+
 	return pageData{
 		Title:      title,
 		Active:     active,
@@ -123,6 +170,9 @@ func (s *Server) newPageData(r *http.Request, title, active string) (pageData, e
 		Languages:  languageOptions(),
 		HasHelp:    helpAvailable(active),
 		HelpScreen: active,
+		Settings:   settings,
+		Rounding:   service.RoundingPresets(),
+		InboxCount: inboxCount,
 	}, nil
 }
 

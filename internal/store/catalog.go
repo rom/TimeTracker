@@ -491,18 +491,28 @@ type Settings struct {
 	DefaultRateMinor int64
 	WeekStart        int
 	MaxTimerSeconds  int64
+	// Display toggles an administrator sets for the whole instance. A clock in
+	// the header is useful to some people and a distraction to others, so it is
+	// a choice rather than a decision made for everyone by the designer.
+	ShowClock       bool
+	ShowTimeAndDate bool
 }
 
 // GetSettings reads the single settings row.
 func (db *DB) GetSettings(ctx context.Context) (Settings, error) {
 	var s Settings
+	var showClock, showTimeAndDate int
 	err := db.read.QueryRowContext(ctx, `
-		SELECT default_currency, default_rounding, default_rate_minor, week_start, max_timer_seconds
+		SELECT default_currency, default_rounding, default_rate_minor, week_start,
+		       max_timer_seconds, show_clock, show_time_and_date
 		FROM settings WHERE id = 1`).
-		Scan(&s.DefaultCurrency, &s.DefaultRounding, &s.DefaultRateMinor, &s.WeekStart, &s.MaxTimerSeconds)
+		Scan(&s.DefaultCurrency, &s.DefaultRounding, &s.DefaultRateMinor, &s.WeekStart,
+			&s.MaxTimerSeconds, &showClock, &showTimeAndDate)
 	if err != nil {
 		return Settings{}, fmt.Errorf("read settings: %w", err)
 	}
+	s.ShowClock = showClock != 0
+	s.ShowTimeAndDate = showTimeAndDate != 0
 	return s, nil
 }
 
@@ -510,8 +520,10 @@ func (db *DB) GetSettings(ctx context.Context) (Settings, error) {
 func (db *DB) UpdateSettings(ctx context.Context, s Settings) error {
 	_, err := db.write.ExecContext(ctx, `
 		UPDATE settings SET default_currency = ?, default_rounding = ?, default_rate_minor = ?,
-		       week_start = ?, max_timer_seconds = ? WHERE id = 1`,
-		s.DefaultCurrency, s.DefaultRounding, s.DefaultRateMinor, s.WeekStart, s.MaxTimerSeconds)
+		       week_start = ?, max_timer_seconds = ?, show_clock = ?, show_time_and_date = ?
+		WHERE id = 1`,
+		s.DefaultCurrency, s.DefaultRounding, s.DefaultRateMinor, s.WeekStart,
+		s.MaxTimerSeconds, boolToInt(s.ShowClock), boolToInt(s.ShowTimeAndDate))
 	return err
 }
 

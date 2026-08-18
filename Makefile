@@ -104,11 +104,54 @@ test-short: ## Fast inner-loop tests (skips the store-heavy cases)
 test-perf: ## Performance suite for the ASR-012 budgets (slow)
 	go test -tags perf -run TestPerf -count=1 -timeout 20m $(PKG)
 
+# Only the packages that have tests. Passing ./... to -coverprofile asks the
+# toolchain to merge coverage for packages with no test binary, which needs the
+# `covdata` tool - absent from some toolchain installations, and the failure
+# message ("no such tool") gives no hint of the cause.
+# Derived from which directories actually contain tests, rather than a hand-kept
+# exclusion list that goes stale the moment a package gains or loses its first
+# test.
+TESTED_PKGS = $(shell go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./...)
+
 .PHONY: coverage
 coverage: ## Produce a coverage profile and an HTML report
-	go test -count=1 -coverprofile=coverage.out -covermode=count $(PKG)
+	go test -count=1 -coverprofile=coverage.out -covermode=count $(TESTED_PKGS)
 	go tool cover -html=coverage.out -o coverage.html
+	@echo
 	@go tool cover -func=coverage.out | tail -1
+	@echo "HTML report: coverage.html"
+
+# Coverage floors for the packages where a gap actually matters.
+#
+# Not a global percentage: chasing one produces tests for trivial accessors
+# while an authorisation branch goes unexercised. These are floors that must not
+# fall, not targets to optimise, and they are set just below the current figures
+# so that a regression fails the build while ordinary work does not.
+#
+# Deliberately absent: internal/web, whose coverage is dominated by template
+# rendering that the HTTP tests exercise without the counter noticing, and
+# internal/config, which is mostly flag declarations.
+COVERAGE_FLOORS = domain:50 service:52 store:30 export:85 blob:70 auth:35
+
+.PHONY: coverage-check
+coverage-check: ## Fail if a critical package drops below its coverage floor
+	@failed=0; \
+	for spec in $(COVERAGE_FLOORS); do \
+		pkg=$${spec%%:*}; floor=$${spec##*:}; \
+		actual=$$(go test -cover ./internal/$$pkg/ 2>/dev/null \
+			| sed -n 's/.*coverage: \([0-9]*\)\.[0-9]*%.*/\1/p'); \
+		if [ -z "$$actual" ]; then \
+			printf '  %-10s no coverage reported\n' "$$pkg"; failed=1; continue; \
+		fi; \
+		printf '  %-10s %3s%%  (floor %s%%)  ' "$$pkg" "$$actual" "$$floor"; \
+		if [ "$$actual" -lt "$$floor" ]; then echo 'BELOW FLOOR'; failed=1; else echo 'ok'; fi; \
+	done; \
+	if [ "$$failed" -ne 0 ]; then \
+		echo; \
+		echo 'Coverage fell below a floor. Add tests, or lower the floor deliberately'; \
+		echo 'with a note saying why.'; \
+	fi; \
+	exit $$failed
 
 .PHONY: bench
 bench: ## Run benchmarks
@@ -165,7 +208,7 @@ build-check: ## Compile for every supported OS/arch without writing artefacts
 	done
 
 .PHONY: check
-check: fmt-check vet lint build-check test ## Everything CI runs
+check: fmt-check vet lint build-check test coverage-check ## Everything CI runs
 
 ## --------------------------------------------------------------- tidy up ----
 

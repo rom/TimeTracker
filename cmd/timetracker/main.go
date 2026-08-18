@@ -31,6 +31,7 @@ import (
 	_ "time/tzdata"
 
 	"github.com/rom/timetracker/internal/auth"
+	"github.com/rom/timetracker/internal/blob"
 	"github.com/rom/timetracker/internal/config"
 	"github.com/rom/timetracker/internal/domain"
 	"github.com/rom/timetracker/internal/hardening"
@@ -136,6 +137,10 @@ func run() error {
 	// context, so shutdown cancels it.
 	if opts.Accounts != nil {
 		go pruneSessions(ctx, opts.Accounts, log)
+	}
+	go sweepBlobs(ctx, svc, log)
+	if cfg.BackupEnabled {
+		go scheduleBackups(ctx, svc, cfg, log)
 	}
 
 	tlsConfig, err := buildTLS(cfg)
@@ -348,6 +353,12 @@ func buildMode(ctx context.Context, cfg config.Config, db *store.DB, log *slog.L
 		// method consults it exactly as it will in server mode, so the
 		// authorisation path is exercised in both.
 		svc := service.New(db, auth.SingleUserAuthorizer{}, log, time.Now)
+		blobs, err := openBlobStore(cfg)
+		if err != nil {
+			return nil, web.Options{}, noCleanup, err
+		}
+		svc = svc.WithBlobs(blobs)
+
 		if err := svc.EnsureLocalUser(ctx, defaultDisplayName(), cfg.TimeZone); err != nil {
 			return nil, web.Options{}, noCleanup, fmt.Errorf("prepare local user: %w", err)
 		}
@@ -365,6 +376,12 @@ func buildMode(ctx context.Context, cfg config.Config, db *store.DB, log *slog.L
 		// decision table can be tested exhaustively without fixtures.
 		authorizer := auth.RoleAuthorizer{IsProjectMember: db.IsProjectMember}
 		svc := service.New(db, authorizer, log, time.Now)
+		blobs, err := openBlobStore(cfg)
+		if err != nil {
+			return nil, web.Options{}, noCleanup, err
+		}
+		svc = svc.WithBlobs(blobs)
+
 		accounts := service.NewAccounts(db, svc, time.Now)
 
 		if err := bootstrapAdmin(ctx, cfg, accounts, log); err != nil {
@@ -406,6 +423,104 @@ func buildMode(ctx context.Context, cfg config.Config, db *store.DB, log *slog.L
 	default:
 		return nil, web.Options{}, noCleanup, fmt.Errorf("unknown mode %q", cfg.Mode)
 	}
+}
+
+// openBlobStore prepares the attachment directory.
+//
+// It lives beside the database rather than inside it: photographed receipts are
+// megabytes each, and putting them in SQLite would inflate every backup and
+// every VACUUM (docs/adr/0013-attachment-storage.md).
+func openBlobStore(cfg config.Config) (*blob.Store, error) {
+	store, err := blob.Open(filepath.Join(cfg.DataDir, "blobs"))
+	if err != nil {
+		return nil, fmt.Errorf("prepare attachment storage: %w", err)
+	}
+	return store, nil
+}
+
+// sweepBlobs removes attachment files nothing references.
+//
+// Deletion is a sweep rather than something done on the request path, so
+// removing an attachment stays a single fast database write. A missed sweep
+// wastes disk and loses nothing.
+func sweepBlobs(ctx context.Context, svc *service.Service, log *slog.Logger) {
+	ticker := time.NewTicker(6 * time.Hour)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// The sweep needs an identity for the authorisation layer, and
+			// there is no user behind a background task. It reads only blob
+			// hashes - no user data - so it runs with a system identity that
+			// exists nowhere else.
+			removed, err := svc.SweepBlobs(systemContext(ctx))
+			if err != nil {
+				log.Error("sweeping unreferenced attachments", "error", err.Error())
+				continue
+			}
+			if removed > 0 {
+				log.Info("removed unreferenced attachments", "count", removed)
+			}
+		}
+	}
+}
+
+// scheduleBackups writes an automatic backup on an interval.
+//
+// Off unless configured: writing copies of someone's data on a schedule they
+// did not ask for is their decision to make, not ours.
+func scheduleBackups(ctx context.Context, svc *service.Service, cfg config.Config, log *slog.Logger) {
+	interval, err := time.ParseDuration(cfg.BackupInterval)
+	if err != nil {
+		log.Error("invalid backup interval; automatic backups are disabled",
+			"interval", cfg.BackupInterval, "error", err.Error())
+		return
+	}
+
+	log.Info("automatic backups enabled",
+		"interval", interval, "keep", cfg.BackupKeep, "directory", cfg.BackupDir)
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			backupCtx := systemContext(ctx)
+			file, err := svc.WriteBackupFile(backupCtx, cfg.BackupDir, service.BackupOptions{})
+			if err != nil {
+				// A failed backup is worth shouting about: the whole point is
+				// that it happens without anyone watching.
+				log.Error("automatic backup failed", "error", err.Error())
+				continue
+			}
+			log.Info("automatic backup written", "file", file.Name, "bytes", file.SizeBytes)
+
+			if removed, err := svc.PruneBackups(cfg.BackupDir, cfg.BackupKeep); err != nil {
+				log.Warn("pruning old backups", "error", err.Error())
+			} else if removed > 0 {
+				log.Debug("pruned old backups", "count", removed)
+			}
+		}
+	}
+}
+
+// systemContext supplies an identity for background work.
+//
+// Background tasks have no user behind them, but the service layer requires an
+// identity by design - a method that could run without one would be a method
+// that could skip authorisation. The system identity is constructed here, exists
+// nowhere in the database, and is used only by tasks that touch no user data
+// beyond what they are backing up.
+func systemContext(ctx context.Context) context.Context {
+	return auth.WithUser(ctx, domain.User{
+		ID: 0, DisplayName: "system", Role: domain.RoleAdmin, Active: true, TimeZone: "UTC",
+	})
 }
 
 // bootstrapAdmin creates the first administrator on an empty instance.

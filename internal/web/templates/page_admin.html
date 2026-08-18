@@ -5,10 +5,16 @@
     <div class="screen-title"><h1>Admin</h1></div>
   </header>
 
-  <p class="hint">
-    Customers, projects and assignments are archived rather than deleted:
-    removing one would leave past invoices unable to say who was billed.
+  <p class="hint">{{.T "admin.intro"}}</p>
+
+  <p>
+    <a class="btn btn-quiet" href="/settings">{{.T "settings.title"}}</a>
+    <a class="btn btn-quiet" href="/import">{{.T "import.title"}}</a>
+    <a class="btn btn-quiet" href="/backup">{{.T "backup.title"}}</a>
   </p>
+
+  {{/* An edit form replaces the list row it was opened from. */}}
+  <div id="edit-panel"></div>
 
   {{/* ------------------------------------------------------------ customers */}}
   <h2 class="section-heading">Customers</h2>
@@ -46,7 +52,9 @@
           <td>{{.Code}}</td>
           <td>{{.Currency}}</td>
           <td>{{if gt .RateMinor 0}}{{money .RateMinor .Currency}}{{end}}</td>
-          <td>
+          <td class="cell-actions">
+            <a class="btn btn-small btn-quiet" href="/customers/{{.ID}}/edit"
+               hx-get="/customers/{{.ID}}/edit">{{$.T "action.edit"}}</a>
             <form method="post" action="/customers/{{.ID}}/archive" hx-post="/customers/{{.ID}}/archive">
     {{template "csrf" $.CSRFToken}}
               {{if .Archived}}<input type="hidden" name="restore" value="1">{{end}}
@@ -74,11 +82,8 @@
     <input type="text" name="code" placeholder="Code" size="8" aria-label="Code">
     <input type="text" name="rate" placeholder="Rate/h" size="8" aria-label="Hourly rate">
     <input type="text" name="currency" placeholder="EUR" size="4" maxlength="3" aria-label="Currency">
-    <select name="rounding_rule" aria-label="Rounding">
-      <option value="none">No rounding</option>
-      <option value="up/900/0">Round up to 15 min</option>
-      <option value="up/1800/0">Round up to 30 min</option>
-      <option value="nearest/900/0">Nearest 15 min</option>
+    <select name="rounding_rule" aria-label="{{.T "admin.rounding"}}">
+      {{range .Rounding}}<option value="{{.Key}}">{{$.T .MessageKey}}</option>{{end}}
     </select>
     <label class="inline-check"><input type="checkbox" name="billable" checked> Billable</label>
     <button type="submit" class="btn btn-primary">Add project</button>
@@ -92,7 +97,9 @@
           <td>{{.Name}}{{if .Archived}} <span class="badge">archived</span>{{end}}</td>
           <td>{{.CustomerName}}</td>
           <td>{{if gt .RateMinor 0}}{{money .RateMinor .Currency}}{{end}}</td>
-          <td>
+          <td class="cell-actions">
+            <a class="btn btn-small btn-quiet" href="/projects/{{.ID}}/edit"
+               hx-get="/projects/{{.ID}}/edit">{{$.T "action.edit"}}</a>
             <form method="post" action="/projects/{{.ID}}/archive" hx-post="/projects/{{.ID}}/archive">
     {{template "csrf" $.CSRFToken}}
               {{if .Archived}}<input type="hidden" name="restore" value="1">{{end}}
@@ -152,7 +159,21 @@
           </td>
           <td>{{.ProjectName}}</td>
           <td>{{.CustomerName}}</td>
-          <td>
+          <td class="cell-actions">
+            {{/* One click to change a favourite: reshaping the working set is
+                 something people do constantly, and burying it in an edit form
+                 makes it something they never do. */}}
+            <form method="post" action="/assignments/{{.ID}}/favourite"
+                  hx-post="/assignments/{{.ID}}/favourite" class="inline">
+              {{template "csrf" $.CSRFToken}}
+              <button type="submit" class="btn btn-small btn-quiet"
+                      title="{{if .Favourite}}{{$.T "action.unfavourite"}}{{else}}{{$.T "action.favourite"}}{{end}}">
+                <span aria-hidden="true">{{if .Favourite}}★{{else}}☆{{end}}</span>
+                <span class="visually-hidden">{{$.T "action.favourite"}}</span>
+              </button>
+            </form>
+            <a class="btn btn-small btn-quiet" href="/assignments/{{.ID}}/edit"
+               hx-get="/assignments/{{.ID}}/edit">{{$.T "action.edit"}}</a>
             <form method="post" action="/assignments/{{.ID}}/archive" hx-post="/assignments/{{.ID}}/archive">
     {{template "csrf" $.CSRFToken}}
               {{if .Archived}}<input type="hidden" name="restore" value="1">{{end}}
@@ -169,4 +190,103 @@
   </table>
 
 </section>
+{{end}}
+
+{{/* ------------------------------------------------------------ edit forms */}}
+{{/*
+  Each is rendered on its own into the edit panel. They post to the same URL the
+  list links to, so the no-JavaScript path works: the browser navigates to the
+  form, submits it, and is redirected back.
+*/}}
+
+{{define "customer-edit-form"}}
+{{with .EditCustomer}}
+<form class="entry-form" method="post" action="/customers/{{.ID}}" hx-post="/customers/{{.ID}}">
+  {{template "csrf" $.CSRFToken}}
+  <input type="text" name="name" value="{{.Name}}" required aria-label="{{$.T "admin.name"}}">
+  <input type="text" name="code" value="{{.Code}}" size="8" aria-label="{{$.T "admin.code"}}">
+  <input type="text" name="currency" value="{{.Currency}}" size="4" maxlength="3"
+         aria-label="{{$.T "admin.currency"}}">
+  <input type="text" name="rate" size="10" aria-label="{{$.T "admin.defaultrate"}}"
+         value="{{if gt .RateMinor 0}}{{money .RateMinor ""}}{{end}}">
+  {{$colour := .ColourKey}}
+  <select name="colour_key" aria-label="{{$.T "entry.colour"}}">
+    {{range $c := colours}}
+      <option value="{{$c}}" {{if eq $c $colour}}selected{{end}}>{{$c}}</option>
+    {{end}}
+  </select>
+  <input type="text" name="icon" value="{{.Icon}}" size="3">
+  <button type="submit" class="btn btn-primary">{{$.T "action.save"}}</button>
+  <a class="btn btn-quiet" href="/admin">{{$.T "action.cancel"}}</a>
+</form>
+{{end}}
+{{end}}
+
+{{define "project-edit-form"}}
+{{with .EditProject}}
+<form class="entry-form" method="post" action="/projects/{{.ID}}" hx-post="/projects/{{.ID}}">
+  {{template "csrf" $.CSRFToken}}
+  {{$customer := .CustomerID}}
+  <select name="customer_id" aria-label="{{$.T "admin.customer"}}">
+    {{range $.Customers}}
+      <option value="{{.ID}}" {{if eq .ID $customer}}selected{{end}}>{{.Name}}</option>
+    {{end}}
+  </select>
+  <input type="text" name="name" value="{{.Name}}" required aria-label="{{$.T "admin.name"}}">
+  <input type="text" name="code" value="{{.Code}}" size="8" aria-label="{{$.T "admin.code"}}">
+  <input type="text" name="rate" size="10" aria-label="{{$.T "admin.rate"}}"
+         value="{{if gt .RateMinor 0}}{{money .RateMinor ""}}{{end}}">
+  <input type="text" name="currency" value="{{.Currency}}" size="4" maxlength="3">
+  {{$rounding := .RoundingRule}}
+  <select name="rounding_rule" aria-label="{{$.T "admin.rounding"}}">
+    {{range $.Rounding}}
+      <option value="{{.Key}}" {{if eq .Key $rounding}}selected{{end}}>{{$.T .MessageKey}}</option>
+    {{end}}
+  </select>
+  <label class="inline-check">
+    <input type="checkbox" name="billable" {{if .BillableDefault}}checked{{end}}>
+    {{$.T "entry.billable"}}
+  </label>
+  <button type="submit" class="btn btn-primary">{{$.T "action.save"}}</button>
+  <a class="btn btn-quiet" href="/admin">{{$.T "action.cancel"}}</a>
+</form>
+{{end}}
+{{end}}
+
+{{define "assignment-edit-form"}}
+{{with .EditAssignment}}
+<form class="entry-form" method="post" action="/assignments/{{.ID}}" hx-post="/assignments/{{.ID}}">
+  {{template "csrf" $.CSRFToken}}
+  {{$project := .ProjectID}}
+  <select name="project_id" aria-label="{{$.T "admin.project"}}">
+    {{range $.Projects}}
+      <option value="{{.ID}}" {{if eq .ID $project}}selected{{end}}>
+        {{.CustomerName}} / {{.Name}}
+      </option>
+    {{end}}
+  </select>
+  <input type="text" name="name" value="{{.Name}}" required aria-label="{{$.T "admin.name"}}">
+  <input type="text" name="code" value="{{.Code}}" size="8" aria-label="{{$.T "admin.code"}}">
+  <input type="text" name="rate" size="10" aria-label="{{$.T "admin.rate"}}"
+         value="{{if gt .RateMinor 0}}{{money .RateMinor ""}}{{end}}">
+  <input type="text" name="currency" size="4" maxlength="3">
+  {{$colour := .ColourKey}}
+  <select name="colour_key" aria-label="{{$.T "entry.colour"}}">
+    {{range $c := colours}}
+      <option value="{{$c}}" {{if eq $c $colour}}selected{{end}}>{{$c}}</option>
+    {{end}}
+  </select>
+  <input type="text" name="icon" value="{{.Icon}}" size="3">
+  <label class="inline-check">
+    <input type="checkbox" name="billable" {{if .BillableDefault}}checked{{end}}>
+    {{$.T "entry.billable"}}
+  </label>
+  <label class="inline-check">
+    <input type="checkbox" name="favourite" {{if .Favourite}}checked{{end}}>
+    {{$.T "admin.favourite"}}
+  </label>
+  <button type="submit" class="btn btn-primary">{{$.T "action.save"}}</button>
+  <a class="btn btn-quiet" href="/admin">{{$.T "action.cancel"}}</a>
+</form>
+{{end}}
 {{end}}

@@ -250,7 +250,41 @@ func templateFuncs() template.FuncMap {
 			return domain.NewMoney(minor, currency).String()
 		},
 		"dict": dict,
+		// divide is integer division, for showing a stored seconds value as
+		// hours in a form field.
+		"divide": func(value int64, by int64) int64 {
+			if by == 0 {
+				return 0
+			}
+			return value / by
+		},
+		// humanBytes renders a file size the way a person reads one.
+		"humanBytes": humanBytes,
+		// colours are the palette keys an entity may carry. Stored as keys
+		// rather than values so each theme maps them to something legible on
+		// its own background (docs/adr/0011-theming-via-css-custom-properties.md).
+		"colours": func() []string {
+			return []string{"blue", "green", "amber", "red", "purple", "teal", "slate"}
+		},
 	}
+}
+
+// humanBytes formats a byte count.
+//
+// Powers of 1024 with the conventional short suffixes, which is what a file
+// listing shows everywhere else on the machine; being pedantic about KiB here
+// would only look like a typo.
+func humanBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for size := n / unit; size >= unit; size /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGT"[exp])
 }
 
 // dict builds a map inside a template, so a fragment can be given several values.

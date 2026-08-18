@@ -148,3 +148,56 @@ func TestFormatDecimalHours(t *testing.T) {
 		}
 	}
 }
+
+// TestMinimumRoundingRules covers the "minimum N hours" presets: a common
+// consultancy arrangement where a call-out is billed as a whole block however
+// short it was, but a longer visit bills its real duration.
+func TestMinimumRoundingRules(t *testing.T) {
+	tests := []struct {
+		name string
+		key  string
+		in   int64
+		want int64
+	}{
+		// Minimum with no increment.
+		{"2h minimum: a short call", "none/0/7200", 900, 7200},
+		{"2h minimum: exactly two hours", "none/0/7200", 7200, 7200},
+		{"2h minimum: a longer visit bills its real length", "none/0/7200", 9000, 9000},
+		{"4h minimum", "none/0/14400", 3600, 14400},
+		{"8h minimum: a whole day", "none/0/28800", 3600, 28800},
+		{"8h minimum: more than a day is not shrunk", "none/0/28800", 36000, 36000},
+		// A minimum must never inflate an absence of work.
+		{"2h minimum: nothing stays nothing", "none/0/7200", 0, 0},
+		// Minimum combined with an increment.
+		{"2h then quarter hours: short", "up/900/7200", 600, 7200},
+		// 2h01m rounded up to the quarter hour is 2h15m; the minimum does not
+		// then apply because the rounded value already exceeds it.
+		{"2h then quarter hours: just over", "up/900/7200", 7260, 8100},
+		// 4h10m rounds up to 4h15m.
+		{"4h then quarter hours", "up/900/14400", 15000, 15300},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rule := ParseRoundingRule(tc.key)
+			if got := rule.Apply(tc.in); got != tc.want {
+				t.Errorf("%s applied to %d = %d, want %d", tc.key, tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestNamedRoundingRulesRoundTrip: the keys are stored on entries, so a preset
+// that does not survive a round trip would silently change an invoiced figure.
+func TestNamedRoundingRulesRoundTrip(t *testing.T) {
+	for _, preset := range NamedRoundingRules {
+		parsed := ParseRoundingRule(preset.Key)
+		if got := parsed.String(); got != preset.Key {
+			t.Errorf("preset %q round-tripped to %q", preset.Key, got)
+		}
+		// And every preset must have a distinct, non-empty effect description.
+		if preset.MessageKey == "" {
+			t.Errorf("preset %q has no message key", preset.Key)
+		}
+	}
+}

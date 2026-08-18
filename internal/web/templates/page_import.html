@@ -1,0 +1,90 @@
+{{define "content"}}
+<section class="import-screen">
+
+  <header class="screen-header">
+    <div class="screen-title"><h1>{{.T "import.title"}}</h1></div>
+  </header>
+
+  <p class="hint">{{.T "import.intro"}}</p>
+
+  {{/* Two passes. The first parses and matches everything and writes nothing;
+       the second runs only on confirmation and imports every row or none. An
+       import that partly succeeds leaves the user reconciling two sources. */}}
+  <form class="entry-form" method="post" action="/import/preview" enctype="multipart/form-data">
+    {{template "csrf" $.CSRFToken}}
+    <input type="file" name="file" accept=".csv,text/csv" required
+           aria-label="{{.T "import.file"}}">
+    <label class="inline-check">
+      <input type="checkbox" name="create_missing" {{if .ImportCreateMissing}}checked{{end}}>
+      {{.T "import.createmissing"}}
+    </label>
+    <button type="submit" class="btn btn-primary">{{.T "import.preview"}}</button>
+  </form>
+
+  {{with .ImportPreview}}
+    {{if .Fatal}}
+      <div class="banner banner-error" role="alert">{{.Fatal}}</div>
+    {{else}}
+      <h2 class="section-heading">{{$.T "import.preview"}}</h2>
+
+      <dl class="totals">
+        <div class="total">
+          <dt>{{$.T "import.rows.other" .Valid}}</dt>
+          <dd class="total-value">{{$.Printer.FormatDuration .TotalSeconds}}</dd>
+        </div>
+        {{if gt .Invalid 0}}
+          <div class="total total-overlap">
+            <dt>{{$.T "import.problems"}}</dt>
+            <dd class="total-value">{{.Invalid}}</dd>
+          </div>
+        {{end}}
+      </dl>
+
+      <table class="entries">
+        <thead>
+          <tr>
+            <th scope="col">#</th>
+            <th scope="col">{{$.T "entry.date"}}</th>
+            <th scope="col">{{$.T "entry.duration"}}</th>
+            <th scope="col">{{$.T "entry.assignment"}}</th>
+            <th scope="col">{{$.T "import.problems"}}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Rows}}
+            <tr class="entry-row {{if not .OK}}flagged{{end}}">
+              <td>{{.Line}}</td>
+              <td>{{$.Printer.FormatDate .Date}}</td>
+              <td class="cell-time">{{$.Printer.FormatDuration .Seconds}}</td>
+              <td>
+                {{.Assignment}}
+                {{if .Customer}}<span class="entry-path">{{.Customer}} · {{.Project}}</span>{{end}}
+                {{range .WillCreate}}<span class="badge">+ {{.}}</span>{{end}}
+              </td>
+              <td>{{if .Problem}}<span class="badge badge-flagged">{{.Problem}}</span>{{end}}</td>
+            </tr>
+          {{end}}
+        </tbody>
+      </table>
+
+      {{if eq .Invalid 0}}
+        {{/* The file has to be uploaded again to commit: a browser cannot
+             re-post a file it no longer holds, and keeping it server-side
+             between two requests would mean storing somebody's data before they
+             agreed to import it. */}}
+        <form class="entry-form" method="post" action="/import" enctype="multipart/form-data">
+          {{template "csrf" $.CSRFToken}}
+          <input type="file" name="file" accept=".csv,text/csv" required
+                 aria-label="{{$.T "import.file"}}">
+          <label class="inline-check">
+            <input type="checkbox" name="create_missing" {{if $.ImportCreateMissing}}checked{{end}}>
+            {{$.T "import.createmissing"}}
+          </label>
+          <button type="submit" class="btn btn-primary">{{$.T "import.confirm"}}</button>
+        </form>
+      {{end}}
+    {{end}}
+  {{end}}
+
+</section>
+{{end}}

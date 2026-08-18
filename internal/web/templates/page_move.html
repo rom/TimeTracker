@@ -1,0 +1,38 @@
+{{define "content"}}
+<section class="move-screen">
+
+  <header class="screen-header">
+    <div class="screen-title"><h1>{{.T "move.title"}}</h1></div>
+  </header>
+
+  <p class="hint">{{.T "move.intro"}}</p>
+
+  {{if .MoveIDs}}
+    <p>{{.N "move.count" (len .MoveIDs)}}</p>
+
+    <form class="entry-form" method="post" action="/move">
+      {{template "csrf" $.CSRFToken}}
+      {{range .MoveIDs}}
+        <input type="hidden" name="entry" value="{{.}}">
+      {{end}}
+
+      <label>
+        {{.T "move.target"}}
+        <select name="assignment_id" required>
+          <option value="">{{.T "entry.choose"}}</option>
+          {{range .Assignments}}
+            <option value="{{.ID}}">{{.Label}}</option>
+          {{end}}
+        </select>
+      </label>
+
+      <button type="submit" class="btn btn-primary">{{.T "action.move"}}</button>
+      <a class="btn btn-quiet" href="/entries">{{.T "action.cancel"}}</a>
+    </form>
+  {{else}}
+    <p class="empty">{{.T "move.none"}}</p>
+    <a class="btn btn-quiet" href="/entries">{{.T "nav.entries"}}</a>
+  {{end}}
+
+</section>
+{{end}}

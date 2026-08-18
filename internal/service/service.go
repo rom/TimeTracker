@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/rom/timetracker/internal/auth"
+	"github.com/rom/timetracker/internal/blob"
 	"github.com/rom/timetracker/internal/domain"
 	"github.com/rom/timetracker/internal/store"
 )
@@ -55,6 +56,9 @@ type Service struct {
 	authz auth.Authorizer
 	log   *slog.Logger
 	now   Clock
+	// blobs is nil until WithBlobs is called. Attachment operations then report
+	// that the feature is unconfigured rather than failing obscurely.
+	blobs *blob.Store
 }
 
 // New builds a Service. A nil clock defaults to time.Now.

@@ -68,6 +68,54 @@ func (s *Server) routes() {
 	// script it is swapped into a panel instead of navigating.
 	mux.HandleFunc("GET /help/{screen}", s.handleHelp)
 
+	// Expenses.
+	mux.HandleFunc("GET /expenses", s.handleExpenses)
+	mux.HandleFunc("POST /expenses", s.handleCreateExpense)
+	mux.HandleFunc("POST /expenses/{id}", s.handleUpdateExpense)
+	mux.HandleFunc("POST /expenses/{id}/delete", s.handleDeleteExpense)
+
+	// Attachments. The upload route is the only one that accepts multipart,
+	// because that is how a browser sends a file; everything else uses
+	// URL-encoded bodies so both submission paths parse identically.
+	mux.HandleFunc("POST /attachments/{owner}/{id}", s.handleUpload)
+	mux.HandleFunc("GET /attachments/{id}", s.handleDownloadAttachment)
+	mux.HandleFunc("POST /attachments/{id}/delete", s.handleDeleteAttachment)
+
+	// The proxy inbox: time and costs awaiting the acting user's decision.
+	mux.HandleFunc("GET /inbox", s.handleInbox)
+	mux.HandleFunc("POST /inbox/entries/{id}/accept", s.handleAcceptEntry)
+	mux.HandleFunc("POST /inbox/entries/{id}/reject", s.handleRejectEntry)
+	mux.HandleFunc("POST /inbox/expenses/{id}/accept", s.handleAcceptExpense)
+	mux.HandleFunc("POST /inbox/expenses/{id}/reject", s.handleRejectExpense)
+
+	// Editing the catalogue.
+	mux.HandleFunc("GET /customers/{id}/edit", s.handleEditCustomer)
+	mux.HandleFunc("POST /customers/{id}", s.handleUpdateCustomer)
+	mux.HandleFunc("GET /projects/{id}/edit", s.handleEditProject)
+	mux.HandleFunc("POST /projects/{id}", s.handleUpdateProject)
+	mux.HandleFunc("GET /assignments/{id}/edit", s.handleEditAssignment)
+	mux.HandleFunc("POST /assignments/{id}", s.handleUpdateAssignment)
+	mux.HandleFunc("POST /assignments/{id}/favourite", s.handleToggleFavourite)
+
+	// Moving time that was recorded against the wrong assignment.
+	mux.HandleFunc("GET /move", s.handleMoveForm)
+	mux.HandleFunc("POST /move", s.handleMoveEntries)
+
+	// Instance settings.
+	mux.HandleFunc("GET /settings", s.handleSettings)
+	mux.HandleFunc("POST /settings", s.handleUpdateSettings)
+
+	// Bulk import of hours from CSV.
+	mux.HandleFunc("GET /import", s.handleImportForm)
+	mux.HandleFunc("POST /import/preview", s.handleImportPreview)
+	mux.HandleFunc("POST /import", s.handleImportCommit)
+
+	// Backup and restore.
+	mux.HandleFunc("GET /backup", s.handleBackup)
+	mux.HandleFunc("GET /backup/download", s.handleDownloadBackup)
+	mux.HandleFunc("POST /backup/create", s.handleCreateBackupFile)
+	mux.HandleFunc("POST /backup/restore", s.handleRestore)
+
 	// Exports.
 	mux.HandleFunc("GET /export/{format}", s.handleExport)
 }

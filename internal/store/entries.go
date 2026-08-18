@@ -19,7 +19,11 @@ const entrySelect = `
 	       e.duration_seconds, e.note, e.billable, e.status, e.time_zone,
 	       e.rounding_rule_applied, e.billable_seconds, e.rate_minor, e.amount_minor,
 	       e.currency, e.flagged, e.created_at, e.updated_at,
-	       a.name, a.colour_key, a.icon, p.name, c.name, u.display_name, eb.display_name
+	       e.decided_by, e.decided_at, e.decision_note,
+	       a.name, a.colour_key, a.icon, p.name, c.name, u.display_name, eb.display_name,
+	       a.project_id, p.customer_id,
+	       (SELECT COUNT(*) FROM attachments at
+	         WHERE at.owner_type = 'time_entry' AND at.owner_id = e.id)
 	FROM time_entries e
 	JOIN assignments a  ON a.id  = e.assignment_id
 	JOIN projects    p  ON p.id  = a.project_id
@@ -303,15 +307,17 @@ func collectEntries(rows *sql.Rows) ([]domain.TimeEntry, error) {
 func scanEntry(row rowScanner) (domain.TimeEntry, error) {
 	var e domain.TimeEntry
 	var endedAt sql.NullString
-	var startedAt, createdAt, updatedAt, status string
+	var startedAt, createdAt, updatedAt, status, decidedAt string
 	var billable, flagged int
 
 	err := row.Scan(&e.ID, &e.UserID, &e.EnteredBy, &e.AssignmentID, &startedAt, &endedAt,
 		&e.DurationSeconds, &e.Note, &billable, &status, &e.TimeZone,
 		&e.RoundingRuleApplied, &e.BillableSeconds, &e.RateMinor, &e.AmountMinor,
 		&e.Currency, &flagged, &createdAt, &updatedAt,
+		&e.DecidedBy, &decidedAt, &e.DecisionNote,
 		&e.AssignmentName, &e.ColourKey, &e.Icon, &e.ProjectName, &e.CustomerName,
-		&e.UserName, &e.EnteredByName)
+		&e.UserName, &e.EnteredByName,
+		&e.ProjectID, &e.CustomerID, &e.AttachmentCount)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.TimeEntry{}, ErrNotFound
 	}
@@ -333,6 +339,11 @@ func scanEntry(row rowScanner) (domain.TimeEntry, error) {
 	}
 	if e.UpdatedAt, err = parseTime(updatedAt); err != nil {
 		return domain.TimeEntry{}, err
+	}
+	if decidedAt != "" {
+		if e.DecidedAt, err = parseTime(decidedAt); err != nil {
+			return domain.TimeEntry{}, err
+		}
 	}
 	return e, nil
 }
@@ -405,4 +416,26 @@ func (db *DB) ListAuditEvents(ctx context.Context, resourceType string, resource
 		events = append(events, e)
 	}
 	return events, rows.Err()
+}
+
+// ListEntriesEnteredBy returns entries this user recorded for somebody else.
+//
+// It is how the author of a proposal sees what is still waiting and what was
+// declined - a proposal that vanishes silently is worse than one that is
+// refused.
+func (db *DB) ListEntriesEnteredBy(ctx context.Context, enteredBy int64, scope Scope) ([]domain.TimeEntry, error) {
+	conditions := []string{`e.entered_by = ?`, `e.user_id != e.entered_by`}
+	args := []any{enteredBy}
+
+	if scoped, scopeArgs := scope.condition("a.project_id", "p.customer_id"); scoped != "" {
+		conditions = append(conditions, scoped)
+		args = append(args, scopeArgs...)
+	}
+
+	rows, err := db.read.QueryContext(ctx,
+		entrySelect+whereClause(conditions)+` ORDER BY e.started_at DESC LIMIT 200`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list proposals: %w", err)
+	}
+	return collectEntries(rows)
 }
