@@ -309,13 +309,9 @@ func (db *DB) SearchEntries(ctx context.Context, f EntryFilter) ([]domain.TimeEn
 // Every user-supplied value becomes a placeholder argument; nothing is
 // interpolated into the SQL text. The conditions themselves are literals written
 // here, which is what keeps this free of injection risk.
-func (f EntryFilter) build() (string, []any) {
-	query, args, _, _ := f.buildSearch()
-	return query, args
-}
-
-// buildSearch is build, plus the free-text and tag conditions, reporting which
-// search mechanism it chose.
+// It reports which search mechanism the free-text condition chose, so the
+// interface can say - a search that quietly used a different one from the one
+// asked for produces results nobody can explain.
 func (f EntryFilter) buildSearch() (string, []any, SearchMode, error) {
 	var conditions []string
 	var args []any

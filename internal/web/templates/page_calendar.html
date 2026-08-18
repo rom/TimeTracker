@@ -1,0 +1,145 @@
+{{/*
+  Importing a calendar.
+
+  A calendar is not a timesheet, and the difference is the whole point of this
+  screen. It holds meetings that were cancelled, meetings the person declined,
+  all-day markers for public holidays, and blocks somebody put in to protect an
+  afternoon. Importing it wholesale produces a week that looks plausible and is
+  wrong, in ways nobody spots afterwards.
+
+  So every event in the file is listed, including the ones that will not be
+  imported and why, and each is ticked individually. Nothing is written until
+  the second step.
+*/}}
+{{define "content"}}
+<section class="calendar-import">
+
+  <header class="screen-header">
+    <div class="screen-title"><h1>{{.T "calendar.title"}}</h1></div>
+  </header>
+
+  {{if .CalendarResult}}
+    {{/* What actually happened. Each refusal is named against the meeting it
+         concerns: a count alone would leave somebody comparing their calendar
+         with their timesheet by eye. */}}
+    <div class="banner" role="status">
+      <p>{{.T "calendar.imported" .CalendarResult.Created ($.Printer.FormatDuration .CalendarResult.Seconds)}}</p>
+      {{if .CalendarResult.Skipped}}
+        <p>{{.T "calendar.result.skipped"}}</p>
+        <ul>{{range .CalendarResult.Skipped}}<li>{{.}}</li>{{end}}</ul>
+      {{end}}
+    </div>
+    <p><a class="btn btn-primary" href="/today">{{.T "day.title"}}</a></p>
+  {{end}}
+
+  {{if not .CalendarPreview}}
+    <p class="screen-intro">{{.T "calendar.intro"}}</p>
+
+    <form class="entry-form" method="post" action="/calendar/preview"
+          enctype="multipart/form-data">
+      {{template "csrf" .CSRFToken}}
+      <label class="field">
+        {{.T "calendar.file"}}
+        <input type="file" name="file" accept=".ics,text/calendar" required>
+      </label>
+      <label class="field">
+        {{.T "calendar.default"}}
+        <select name="default_assignment">
+          <option value="">{{.T "calendar.default.none"}}</option>
+          {{range .Assignments}}<option value="{{.ID}}">{{.Label}}</option>{{end}}
+        </select>
+      </label>
+      <button type="submit" class="btn btn-primary">{{.T "import.preview"}}</button>
+    </form>
+    <p class="field-help">{{.T "calendar.export.help"}}</p>
+  {{end}}
+
+  {{with .CalendarPreview}}
+    {{if .Fatal}}
+      <div class="banner banner-error" role="alert">{{.Fatal}}</div>
+      <p><a class="btn btn-quiet" href="/calendar">{{$.T "action.cancel"}}</a></p>
+    {{else}}
+      <dl class="totals">
+        <div class="total">
+          <dt>{{$.T "calendar.importable"}}</dt>
+          <dd class="total-value">{{.Importable}}</dd>
+        </div>
+        <div class="total">
+          <dt>{{$.T "calendar.skipped"}}</dt>
+          <dd class="total-value">{{.Skipped}}</dd>
+        </div>
+        <div class="total">
+          <dt>{{$.T "calendar.duplicates"}}</dt>
+          <dd class="total-value">{{.Duplicates}}</dd>
+        </div>
+        <div class="total">
+          <dt>{{$.T "totals.tracked"}}</dt>
+          <dd class="total-value">{{$.Printer.FormatDuration .TotalSeconds}}</dd>
+        </div>
+      </dl>
+
+      <form method="post" action="/calendar">
+        {{template "csrf" $.CSRFToken}}
+        {{/* The file travels back with the form. A calendar export is small,
+             and asking somebody to find it again after reviewing forty
+             meetings would be worse than the extra bytes. */}}
+        <input type="hidden" name="calendar" value="{{$.CalendarFile}}">
+
+        <table class="entries">
+          <thead>
+            <tr>
+              <th scope="col"><span class="visually-hidden">{{$.T "calendar.include"}}</span></th>
+              <th scope="col">{{$.T "entries.from"}}</th>
+              <th scope="col">{{$.T "calendar.event"}}</th>
+              <th scope="col">{{$.T "entry.duration"}}</th>
+              <th scope="col">{{$.T "entry.assignment"}}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .Rows}}
+              <tr class="entry-row {{if not .Importable}}flagged{{end}}">
+                <td>
+                  <input type="checkbox" name="event" value="{{.UID}}"
+                         {{if .Selected}}checked{{end}}
+                         aria-label="{{$.T "calendar.include"}}">
+                </td>
+                <td>
+                  {{$.Printer.FormatDate .Start}}
+                  <span class="entry-path">{{clock .Start $.Zone}}</span>
+                </td>
+                <td class="cell-what">
+                  <span class="entry-assignment">{{.Summary}}</span>
+                  {{/* Why it will not be imported, in words. The count in the
+                       summary above is not enough: somebody has to be able to
+                       see that the missing hour was a meeting they declined. */}}
+                  {{if .Duplicate}}
+                    <span class="badge badge-flagged">{{$.T "calendar.duplicate"}}</span>
+                  {{else if .Skip}}
+                    <span class="badge badge-flagged">{{.Skip}}</span>
+                  {{end}}
+                </td>
+                <td class="cell-time">{{$.Printer.FormatDuration .Seconds}}</td>
+                <td>
+                  {{$chosen := .AssignmentID}}
+                  <select name="assignment_{{.UID}}" aria-label="{{$.T "entry.assignment"}}">
+                    <option value="">{{$.T "entry.choose"}}</option>
+                    {{range $.Assignments}}
+                      <option value="{{.ID}}" {{if eq .ID $chosen}}selected{{end}}>{{.Label}}</option>
+                    {{end}}
+                  </select>
+                </td>
+              </tr>
+            {{end}}
+          </tbody>
+        </table>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">{{$.T "calendar.import"}}</button>
+          <a class="btn btn-quiet" href="/calendar">{{$.T "action.cancel"}}</a>
+        </div>
+      </form>
+    {{end}}
+  {{end}}
+
+</section>
+{{end}}

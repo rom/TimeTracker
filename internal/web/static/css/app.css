@@ -520,6 +520,360 @@ input[type="text"], input[type="date"], input[type="time"], select {
 .badge-approved  { color: var(--success); border-color: var(--success); }
 .badge-rejected  { color: var(--danger);  border-color: var(--danger); }
 
+/* --------------------------------------------------------- the timeline --- */
+
+/* The day drawn against a clock.
+   ---------------------------------------------------------------------------
+   Positions are grid slots set by utility classes, not inline styles. The
+   content security policy forbids style attributes - correctly, since allowing
+   them for geometry allows them for everything - so where a block sits is
+   expressed as a class the server chooses from a fixed set generated below.
+
+   A slot is a quarter of an hour: what people record in, what a drag snaps to,
+   and fine enough that a half-hour meeting is visibly half the height of an
+   hour one. The rules are verbose and completely static, which is the trade:
+   a few hundred bytes of stylesheet in exchange for a policy that has no
+   exceptions in it. */
+.timeline-wrap { margin-bottom: var(--gap-lg); }
+.timeline {
+  display: grid; grid-template-columns: 3.5rem 1fr;
+  min-height: 24rem; max-height: 32rem; overflow-y: auto;
+  margin-bottom: var(--gap);
+  background: var(--surface-raised);
+  border: 1px solid var(--border); border-radius: var(--radius);
+}
+
+/* Both columns share the row template, so an hour label lines up with the slot
+   it names. */
+.timeline-hours, .timeline-blocks {
+  display: grid; margin: 0; padding: 0; list-style: none;
+  grid-template-rows: repeat(var(--slots, 40), minmax(0.85rem, 1fr));
+}
+.timeline-blocks { grid-template-columns: repeat(var(--lanes, 1), 1fr); }
+
+.timeline-hour {
+  grid-column: 1; border-top: 1px solid var(--border);
+  font-size: 0.75em; color: var(--text-muted);
+  font-variant-numeric: tabular-nums; padding-left: 6px;
+}
+.timeline-block {
+  position: relative; overflow: hidden;
+  margin: 1px; padding: 1px 6px;
+  background: var(--surface-sunken);
+  border-left: 3px solid var(--entity-slate);
+  border-radius: var(--radius);
+  font-size: 0.78em; line-height: 1.25;
+}
+.timeline-empty {
+  grid-row: 1 / -1; grid-column: 1 / -1;
+  display: grid; place-items: center;
+  color: var(--text-muted); font-style: italic;
+}
+
+/* How many quarter-hour rows the visible window has. Whole hours only, so
+   these come in fours. */
+.timeline[data-slots="4"] .timeline-hours,
+.timeline[data-slots="4"] .timeline-blocks { --slots: 4; }
+.timeline[data-slots="8"] .timeline-hours,
+.timeline[data-slots="8"] .timeline-blocks { --slots: 8; }
+.timeline[data-slots="12"] .timeline-hours,
+.timeline[data-slots="12"] .timeline-blocks { --slots: 12; }
+.timeline[data-slots="16"] .timeline-hours,
+.timeline[data-slots="16"] .timeline-blocks { --slots: 16; }
+.timeline[data-slots="20"] .timeline-hours,
+.timeline[data-slots="20"] .timeline-blocks { --slots: 20; }
+.timeline[data-slots="24"] .timeline-hours,
+.timeline[data-slots="24"] .timeline-blocks { --slots: 24; }
+.timeline[data-slots="28"] .timeline-hours,
+.timeline[data-slots="28"] .timeline-blocks { --slots: 28; }
+.timeline[data-slots="32"] .timeline-hours,
+.timeline[data-slots="32"] .timeline-blocks { --slots: 32; }
+.timeline[data-slots="36"] .timeline-hours,
+.timeline[data-slots="36"] .timeline-blocks { --slots: 36; }
+.timeline[data-slots="40"] .timeline-hours,
+.timeline[data-slots="40"] .timeline-blocks { --slots: 40; }
+.timeline[data-slots="44"] .timeline-hours,
+.timeline[data-slots="44"] .timeline-blocks { --slots: 44; }
+.timeline[data-slots="48"] .timeline-hours,
+.timeline[data-slots="48"] .timeline-blocks { --slots: 48; }
+.timeline[data-slots="52"] .timeline-hours,
+.timeline[data-slots="52"] .timeline-blocks { --slots: 52; }
+.timeline[data-slots="56"] .timeline-hours,
+.timeline[data-slots="56"] .timeline-blocks { --slots: 56; }
+.timeline[data-slots="60"] .timeline-hours,
+.timeline[data-slots="60"] .timeline-blocks { --slots: 60; }
+.timeline[data-slots="64"] .timeline-hours,
+.timeline[data-slots="64"] .timeline-blocks { --slots: 64; }
+.timeline[data-slots="68"] .timeline-hours,
+.timeline[data-slots="68"] .timeline-blocks { --slots: 68; }
+.timeline[data-slots="72"] .timeline-hours,
+.timeline[data-slots="72"] .timeline-blocks { --slots: 72; }
+.timeline[data-slots="76"] .timeline-hours,
+.timeline[data-slots="76"] .timeline-blocks { --slots: 76; }
+.timeline[data-slots="80"] .timeline-hours,
+.timeline[data-slots="80"] .timeline-blocks { --slots: 80; }
+.timeline[data-slots="84"] .timeline-hours,
+.timeline[data-slots="84"] .timeline-blocks { --slots: 84; }
+.timeline[data-slots="88"] .timeline-hours,
+.timeline[data-slots="88"] .timeline-blocks { --slots: 88; }
+.timeline[data-slots="92"] .timeline-hours,
+.timeline[data-slots="92"] .timeline-blocks { --slots: 92; }
+.timeline[data-slots="96"] .timeline-hours,
+.timeline[data-slots="96"] .timeline-blocks { --slots: 96; }
+
+/* How many overlapping entries share the width. */
+.timeline-blocks[data-lanes="1"] { --lanes: 1; }
+.timeline-blocks[data-lanes="2"] { --lanes: 2; }
+.timeline-blocks[data-lanes="3"] { --lanes: 3; }
+.timeline-blocks[data-lanes="4"] { --lanes: 4; }
+.timeline-blocks[data-lanes="5"] { --lanes: 5; }
+.timeline-blocks[data-lanes="6"] { --lanes: 6; }
+
+/* Where a block starts, and how many slots it covers. */
+.slot-1 { grid-row-start: 1; }
+.slot-2 { grid-row-start: 2; }
+.slot-3 { grid-row-start: 3; }
+.slot-4 { grid-row-start: 4; }
+.slot-5 { grid-row-start: 5; }
+.slot-6 { grid-row-start: 6; }
+.slot-7 { grid-row-start: 7; }
+.slot-8 { grid-row-start: 8; }
+.slot-9 { grid-row-start: 9; }
+.slot-10 { grid-row-start: 10; }
+.slot-11 { grid-row-start: 11; }
+.slot-12 { grid-row-start: 12; }
+.slot-13 { grid-row-start: 13; }
+.slot-14 { grid-row-start: 14; }
+.slot-15 { grid-row-start: 15; }
+.slot-16 { grid-row-start: 16; }
+.slot-17 { grid-row-start: 17; }
+.slot-18 { grid-row-start: 18; }
+.slot-19 { grid-row-start: 19; }
+.slot-20 { grid-row-start: 20; }
+.slot-21 { grid-row-start: 21; }
+.slot-22 { grid-row-start: 22; }
+.slot-23 { grid-row-start: 23; }
+.slot-24 { grid-row-start: 24; }
+.slot-25 { grid-row-start: 25; }
+.slot-26 { grid-row-start: 26; }
+.slot-27 { grid-row-start: 27; }
+.slot-28 { grid-row-start: 28; }
+.slot-29 { grid-row-start: 29; }
+.slot-30 { grid-row-start: 30; }
+.slot-31 { grid-row-start: 31; }
+.slot-32 { grid-row-start: 32; }
+.slot-33 { grid-row-start: 33; }
+.slot-34 { grid-row-start: 34; }
+.slot-35 { grid-row-start: 35; }
+.slot-36 { grid-row-start: 36; }
+.slot-37 { grid-row-start: 37; }
+.slot-38 { grid-row-start: 38; }
+.slot-39 { grid-row-start: 39; }
+.slot-40 { grid-row-start: 40; }
+.slot-41 { grid-row-start: 41; }
+.slot-42 { grid-row-start: 42; }
+.slot-43 { grid-row-start: 43; }
+.slot-44 { grid-row-start: 44; }
+.slot-45 { grid-row-start: 45; }
+.slot-46 { grid-row-start: 46; }
+.slot-47 { grid-row-start: 47; }
+.slot-48 { grid-row-start: 48; }
+.slot-49 { grid-row-start: 49; }
+.slot-50 { grid-row-start: 50; }
+.slot-51 { grid-row-start: 51; }
+.slot-52 { grid-row-start: 52; }
+.slot-53 { grid-row-start: 53; }
+.slot-54 { grid-row-start: 54; }
+.slot-55 { grid-row-start: 55; }
+.slot-56 { grid-row-start: 56; }
+.slot-57 { grid-row-start: 57; }
+.slot-58 { grid-row-start: 58; }
+.slot-59 { grid-row-start: 59; }
+.slot-60 { grid-row-start: 60; }
+.slot-61 { grid-row-start: 61; }
+.slot-62 { grid-row-start: 62; }
+.slot-63 { grid-row-start: 63; }
+.slot-64 { grid-row-start: 64; }
+.slot-65 { grid-row-start: 65; }
+.slot-66 { grid-row-start: 66; }
+.slot-67 { grid-row-start: 67; }
+.slot-68 { grid-row-start: 68; }
+.slot-69 { grid-row-start: 69; }
+.slot-70 { grid-row-start: 70; }
+.slot-71 { grid-row-start: 71; }
+.slot-72 { grid-row-start: 72; }
+.slot-73 { grid-row-start: 73; }
+.slot-74 { grid-row-start: 74; }
+.slot-75 { grid-row-start: 75; }
+.slot-76 { grid-row-start: 76; }
+.slot-77 { grid-row-start: 77; }
+.slot-78 { grid-row-start: 78; }
+.slot-79 { grid-row-start: 79; }
+.slot-80 { grid-row-start: 80; }
+.slot-81 { grid-row-start: 81; }
+.slot-82 { grid-row-start: 82; }
+.slot-83 { grid-row-start: 83; }
+.slot-84 { grid-row-start: 84; }
+.slot-85 { grid-row-start: 85; }
+.slot-86 { grid-row-start: 86; }
+.slot-87 { grid-row-start: 87; }
+.slot-88 { grid-row-start: 88; }
+.slot-89 { grid-row-start: 89; }
+.slot-90 { grid-row-start: 90; }
+.slot-91 { grid-row-start: 91; }
+.slot-92 { grid-row-start: 92; }
+.slot-93 { grid-row-start: 93; }
+.slot-94 { grid-row-start: 94; }
+.slot-95 { grid-row-start: 95; }
+.slot-96 { grid-row-start: 96; }
+
+.span-1 { grid-row-end: span 1; }
+.span-2 { grid-row-end: span 2; }
+.span-3 { grid-row-end: span 3; }
+.span-4 { grid-row-end: span 4; }
+.span-5 { grid-row-end: span 5; }
+.span-6 { grid-row-end: span 6; }
+.span-7 { grid-row-end: span 7; }
+.span-8 { grid-row-end: span 8; }
+.span-9 { grid-row-end: span 9; }
+.span-10 { grid-row-end: span 10; }
+.span-11 { grid-row-end: span 11; }
+.span-12 { grid-row-end: span 12; }
+.span-13 { grid-row-end: span 13; }
+.span-14 { grid-row-end: span 14; }
+.span-15 { grid-row-end: span 15; }
+.span-16 { grid-row-end: span 16; }
+.span-17 { grid-row-end: span 17; }
+.span-18 { grid-row-end: span 18; }
+.span-19 { grid-row-end: span 19; }
+.span-20 { grid-row-end: span 20; }
+.span-21 { grid-row-end: span 21; }
+.span-22 { grid-row-end: span 22; }
+.span-23 { grid-row-end: span 23; }
+.span-24 { grid-row-end: span 24; }
+.span-25 { grid-row-end: span 25; }
+.span-26 { grid-row-end: span 26; }
+.span-27 { grid-row-end: span 27; }
+.span-28 { grid-row-end: span 28; }
+.span-29 { grid-row-end: span 29; }
+.span-30 { grid-row-end: span 30; }
+.span-31 { grid-row-end: span 31; }
+.span-32 { grid-row-end: span 32; }
+.span-33 { grid-row-end: span 33; }
+.span-34 { grid-row-end: span 34; }
+.span-35 { grid-row-end: span 35; }
+.span-36 { grid-row-end: span 36; }
+.span-37 { grid-row-end: span 37; }
+.span-38 { grid-row-end: span 38; }
+.span-39 { grid-row-end: span 39; }
+.span-40 { grid-row-end: span 40; }
+.span-41 { grid-row-end: span 41; }
+.span-42 { grid-row-end: span 42; }
+.span-43 { grid-row-end: span 43; }
+.span-44 { grid-row-end: span 44; }
+.span-45 { grid-row-end: span 45; }
+.span-46 { grid-row-end: span 46; }
+.span-47 { grid-row-end: span 47; }
+.span-48 { grid-row-end: span 48; }
+.span-49 { grid-row-end: span 49; }
+.span-50 { grid-row-end: span 50; }
+.span-51 { grid-row-end: span 51; }
+.span-52 { grid-row-end: span 52; }
+.span-53 { grid-row-end: span 53; }
+.span-54 { grid-row-end: span 54; }
+.span-55 { grid-row-end: span 55; }
+.span-56 { grid-row-end: span 56; }
+.span-57 { grid-row-end: span 57; }
+.span-58 { grid-row-end: span 58; }
+.span-59 { grid-row-end: span 59; }
+.span-60 { grid-row-end: span 60; }
+.span-61 { grid-row-end: span 61; }
+.span-62 { grid-row-end: span 62; }
+.span-63 { grid-row-end: span 63; }
+.span-64 { grid-row-end: span 64; }
+.span-65 { grid-row-end: span 65; }
+.span-66 { grid-row-end: span 66; }
+.span-67 { grid-row-end: span 67; }
+.span-68 { grid-row-end: span 68; }
+.span-69 { grid-row-end: span 69; }
+.span-70 { grid-row-end: span 70; }
+.span-71 { grid-row-end: span 71; }
+.span-72 { grid-row-end: span 72; }
+.span-73 { grid-row-end: span 73; }
+.span-74 { grid-row-end: span 74; }
+.span-75 { grid-row-end: span 75; }
+.span-76 { grid-row-end: span 76; }
+.span-77 { grid-row-end: span 77; }
+.span-78 { grid-row-end: span 78; }
+.span-79 { grid-row-end: span 79; }
+.span-80 { grid-row-end: span 80; }
+.span-81 { grid-row-end: span 81; }
+.span-82 { grid-row-end: span 82; }
+.span-83 { grid-row-end: span 83; }
+.span-84 { grid-row-end: span 84; }
+.span-85 { grid-row-end: span 85; }
+.span-86 { grid-row-end: span 86; }
+.span-87 { grid-row-end: span 87; }
+.span-88 { grid-row-end: span 88; }
+.span-89 { grid-row-end: span 89; }
+.span-90 { grid-row-end: span 90; }
+.span-91 { grid-row-end: span 91; }
+.span-92 { grid-row-end: span 92; }
+.span-93 { grid-row-end: span 93; }
+.span-94 { grid-row-end: span 94; }
+.span-95 { grid-row-end: span 95; }
+.span-96 { grid-row-end: span 96; }
+
+.lane-1 { grid-column-start: 1; }
+.lane-2 { grid-column-start: 2; }
+.lane-3 { grid-column-start: 3; }
+.lane-4 { grid-column-start: 4; }
+.lane-5 { grid-column-start: 5; }
+.lane-6 { grid-column-start: 6; }
+
+/* An hour label spans its four slots. */
+.timeline-hour { grid-row-end: span 4; }
+
+/* The same palette as the rows, so a block and its line are recognisably the
+   same customer. A stronger tint than a table row because a block is small and
+   has to be identifiable at a glance; both levels are checked by
+   TestEntityTintsKeepTextReadable. */
+.timeline-block[data-colour="blue"] { border-left-color: var(--entity-blue);
+  background: color-mix(in srgb, var(--entity-blue) 18%, var(--surface-raised)); }
+.timeline-block[data-colour="green"] { border-left-color: var(--entity-green);
+  background: color-mix(in srgb, var(--entity-green) 18%, var(--surface-raised)); }
+.timeline-block[data-colour="amber"] { border-left-color: var(--entity-amber);
+  background: color-mix(in srgb, var(--entity-amber) 18%, var(--surface-raised)); }
+.timeline-block[data-colour="red"] { border-left-color: var(--entity-red);
+  background: color-mix(in srgb, var(--entity-red) 18%, var(--surface-raised)); }
+.timeline-block[data-colour="purple"] { border-left-color: var(--entity-purple);
+  background: color-mix(in srgb, var(--entity-purple) 18%, var(--surface-raised)); }
+.timeline-block[data-colour="teal"] { border-left-color: var(--entity-teal);
+  background: color-mix(in srgb, var(--entity-teal) 18%, var(--surface-raised)); }
+.timeline-block[data-colour="slate"] { border-left-color: var(--entity-slate);
+  background: color-mix(in srgb, var(--entity-slate) 18%, var(--surface-raised)); }
+
+.timeline-block.is-running { border-style: dashed; }
+.timeline-link { display: block; color: inherit; text-decoration: none; height: 100%; }
+.timeline-link:hover .timeline-name { text-decoration: underline; }
+.timeline-name { display: block; font-weight: 600; }
+.timeline-time, .timeline-note { display: block; color: var(--text-muted); font-size: 0.92em; }
+
+/* The form is the accessible, no-script way to move a block. Script hides it
+   and drives the same endpoint from pointer events, so there is exactly one
+   way in on the server. */
+.timeline-form { display: flex; gap: 4px; align-items: center; margin-top: 2px; flex-wrap: wrap; }
+.timeline-form input { font-size: 0.92em; padding: 1px 3px; max-width: 6rem; }
+.js-enabled .timeline-form { display: none; }
+
+.timeline-grip { display: none; }
+.js-enabled .timeline-grip {
+  display: block; position: absolute; left: 0; right: 0; bottom: 0; height: 8px;
+  cursor: ns-resize;
+}
+.js-enabled .timeline-block { cursor: grab; }
+.js-enabled .timeline-block.is-dragging { cursor: grabbing; opacity: 0.85; z-index: 2; }
+
 /* ---------------------------------------------------------- the guide ----- */
 
 /* Documentation, so it is set for reading: a measure that does not run the

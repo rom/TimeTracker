@@ -107,12 +107,29 @@ much as in paragraphs, and that ordering is what the tests pin. It matters
 because catalogue content is written by translators rather than by the
 application, and its output is marked as trusted HTML for the template.
 
+### Search and user-supplied patterns
+
+Regular-expression search compiles the user's pattern with Go's `regexp`, which
+is RE2: linear time, no backtracking. A pathological pattern therefore cannot
+hang the process the way it could with a PCRE engine, which is most of why
+exposing patterns to users is defensible at all. Patterns are compiled and
+rejected before the query is built, so a malformed one is a message rather than
+a database error. Everything else typed into the search box is matched
+literally: the full-text query is quoted so a user's `AND`, `*` or quotation
+mark is searched for rather than executed as query syntax.
+
 ### Web
 
 * **CSRF**: a token bound to the session required for every unsafe method, plus
   `SameSite=Lax` as defence in depth.
-* **CSP** with no `unsafe-inline` for scripts; all JavaScript is served as embedded
-  files, never inlined.
+* **CSP** with no `unsafe-inline` at all - not for scripts, and not for styles.
+  All JavaScript and CSS is served as embedded files. The style half is the one
+  that costs something: the day timeline needs per-block geometry, which is
+  naturally an inline `style` attribute and is refused. Rather than relax the
+  policy for it, positions are expressed as CSS grid classes the stylesheet
+  generates and the server chooses from. Allowing inline styles for geometry
+  would allow them for everything, and a policy with an exception in it is a
+  policy somebody will widen next year.
 * `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`,
   `frame-ancestors 'none'`, and HSTS in server mode.
 * **Contextual output escaping** via `html/template`; HTMX fragments go through the
@@ -240,6 +257,13 @@ Stated plainly, because a security document that only lists strengths is not use
   have not tested. A tighter list would confine better.
 * **There is no ACME/Let's Encrypt integration**, so self-terminated TLS means
   manual renewal.
+* **The full-text index is maintained in code**, not by the database. A future
+  write path that forgets to update it would leave entries findable by every
+  route except search. The rebuild is the repair; there is no automatic
+  detection of drift.
+* **An imported calendar event carries no link back to its calendar.** That is
+  deliberate — an external system should not own recorded hours — but it means
+  the duplicate check on re-import is heuristic rather than exact.
 * **An approved week is a status, not an immutable snapshot.** The entries are
   the same rows; what stops them changing is the lock, and the lock is code. A
   restore or direct database access can move a week's total after it was

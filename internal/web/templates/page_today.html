@@ -132,6 +132,11 @@
     </div>
   {{end}}
 
+  {{/* The day as blocks against a clock. Before the list, because it answers
+       "what does my day look like" - which is what somebody is asking when
+       they open this screen at five o'clock. */}}
+  {{template "day-timeline" .}}
+
   <h2 class="section-heading" id="entries-heading">{{.T "day.entries"}}</h2>
   {{if $day.Entries}}
     <table class="entries" aria-labelledby="entries-heading">

@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/rom/timetracker/internal/domain"
@@ -193,12 +192,4 @@ func tagFilterCondition(tags []string) (string, []any) {
 		WHERE t.name IN (` + repeatPlaceholders(len(tags)) + `)
 		GROUP BY et.entry_id
 		HAVING COUNT(DISTINCT t.id) = ?)`, args
-}
-
-// tagNamesOf is a small helper for building filters from free text.
-func tagNamesOf(raw string) []string {
-	if strings.TrimSpace(raw) == "" {
-		return nil
-	}
-	return domain.ParseTagList(raw)
 }

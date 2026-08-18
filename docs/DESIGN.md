@@ -249,9 +249,26 @@ to the company. Receipts attach directly.
 | **Approval status** | a grid of people against weeks. Answers the question the queue cannot — who has *not* submitted — because an absent submission is an absent row. Weeks nobody worked stay blank so the outstanding cells are not buried. |
 | **Contract terms** | one customer's overtime, travel and reimbursement rules. A screen of its own: they are read off a signed agreement and typed once, and they need labels and units to be entered correctly. |
 | **Guide** | how to perform the normal actions, in numbered steps. Distinct from the `?` help, which explains the screen in front of you ([ADR-0025](adr/0025-task-oriented-guide.md)). |
+| **Routines** | templates for recurring time. Offered on the day view; nothing fires them ([ADR-0027](adr/0027-routines-are-offered-not-fired.md)). |
+| **Tags** | rename, recolour and tidy. Tags are created by using them, so this is not where they are defined. |
+| **Calendar import** | preview and import from an .ics export, with everything that is not work shown as such by name ([ADR-0028](adr/0028-calendar-import-is-a-conversation.md)). |
 | **Expenses** | list and entry, with receipts, billable/reimbursable flags. |
 | **Reports** | grouped totals by customer/project/assignment/person/tag over a range, billable vs non-billable, budget consumption, export in four formats. |
 | **Admin** | customers, projects, assignments, rates, tags; in server mode also users, roles, memberships, sessions and the audit log. |
+
+The day view opens with a **timeline**: the day as blocks against a clock, with
+overlapping work side by side in lanes rather than one block hiding another. A
+block can be dragged to move it and its lower edge dragged to resize it; both
+post to the same endpoint as the plain time-and-length form each block carries,
+so the whole view works with no JavaScript. Positions are CSS grid classes
+rather than inline styles, because the content security policy forbids those and
+weakening it for geometry would weaken it for everything.
+
+**Colour is the whole line, not a dot.** A row is scanned rather than read - the
+eye is looking for "the Acme rows" among forty - and a dot at the start of each
+is too small a target to sort by. Each row carries a solid bar down its leading
+edge and a faint tint of the same colour, verified in Go for every colour in
+every theme so the text on top of it always clears WCAG AA.
 
 Two totals are always shown together where overlap is possible: **summed** (the sum
 of durations — what gets billed) and **elapsed** (the union of intervals — how much

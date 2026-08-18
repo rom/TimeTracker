@@ -390,3 +390,93 @@
     {{end}}
   </ul>
 {{end}}
+
+{{/* ------------------------------------------------------------- timeline --- */}}
+{{/*
+  The day as blocks against a clock.
+
+  A list of entries answers "what did I record"; a timeline answers "what does
+  my day look like", which is the question somebody asks when they are trying to
+  find the hour they have not accounted for. Overlaps are visible as overlaps
+  rather than as a discrepancy between two totals.
+
+  It is an enhancement, not a replacement. Every block is a link to the same
+  correction screen the list uses, and every block carries start/length controls
+  that post an ordinary form. With script, those controls are hidden and the
+  block can be dragged to move it or its edge dragged to resize it; both post to
+  the same endpoint the form does. With no script, nothing is lost but the
+  dragging.
+
+  Positions are inline styles because they are data, not design: the top of a
+  block is where that entry starts, and there is no stylesheet rule that could
+  know it.
+*/}}
+{{define "day-timeline"}}
+  {{- $day := .Day -}}
+  {{- $page := . -}}
+  <section class="timeline-wrap" aria-labelledby="timeline-heading">
+    <h2 class="section-heading" id="timeline-heading">{{.T "timeline.title"}}</h2>
+
+    <div class="timeline" data-timeline data-slots="{{$day.Slots}}"
+         data-date="{{date $day.Date}}"
+         data-start-hour="{{$day.StartHour}}" data-end-hour="{{$day.EndHour}}">
+      {{/* The hour rules, sharing the grid's row template so a label lines up
+           with the slot it names. */}}
+      <div class="timeline-hours" aria-hidden="true">
+        {{range $day.Hours}}
+          <div class="timeline-hour slot-{{.Slot}}">{{.Label}}</div>
+        {{end}}
+      </div>
+
+      <ol class="timeline-blocks" data-lanes="{{if $day.Blocks}}{{(index $day.Blocks 0).Lanes}}{{else}}1{{end}}">
+        {{range $day.Blocks}}
+          {{$entry := .Entry}}
+          {{/* Position is a class, not an inline style: the content security
+               policy forbids style attributes, and the geometry is a fixed set
+               of quarter-hour slots rather than arbitrary values. */}}
+          <li class="timeline-block slot-{{.Slot}} span-{{.Span}} lane-{{.Lane}} {{if $entry.Running}}is-running{{end}}"
+              data-colour="{{$entry.ColourKey}}"
+              data-entry="{{$entry.ID}}"
+              data-start="{{clock $entry.StartedAt $day.Location}}"
+              data-duration="{{$entry.DurationSeconds}}">
+            <a class="timeline-link" href="/entries/{{$entry.ID}}/edit">
+              <span class="timeline-name">{{$entry.AssignmentName}}</span>
+              <span class="timeline-time">
+                {{clock $entry.StartedAt $day.Location}}
+                · {{$page.Printer.FormatDuration $entry.DurationSeconds}}
+              </span>
+              {{if $entry.Note}}<span class="timeline-note">{{$entry.Note}}</span>{{end}}
+            </a>
+
+            {{/* The no-script path, and the accessible one: a real form with a
+                 time and a length. Script hides it and drives the same endpoint
+                 from pointer events, so there is one way in on the server. */}}
+            <form class="timeline-form" method="post" action="/entries/{{$entry.ID}}/move"
+                  hx-post="/entries/{{$entry.ID}}/move">
+              {{template "csrf" $page.CSRFToken}}
+              <label>
+                <span class="visually-hidden">{{$page.T "entry.start"}}</span>
+                <input type="time" name="start" value="{{clock $entry.StartedAt $day.Location}}">
+              </label>
+              <label>
+                <span class="visually-hidden">{{$page.T "entry.duration"}}</span>
+                <input type="text" name="duration" size="5"
+                       value="{{duration $entry.DurationSeconds}}">
+              </label>
+              <button type="submit" class="btn btn-small">{{$page.T "action.apply"}}</button>
+            </form>
+
+            {{/* The resize grip. aria-hidden because the form above does the
+                 same thing accessibly, and announcing a drag handle a screen
+                 reader cannot use is noise. */}}
+            <span class="timeline-grip" data-grip aria-hidden="true"></span>
+          </li>
+        {{else}}
+          <li class="timeline-empty">{{$page.T "timeline.empty"}}</li>
+        {{end}}
+      </ol>
+    </div>
+
+    <p class="field-help">{{.T "timeline.help"}}</p>
+  </section>
+{{end}}

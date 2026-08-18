@@ -566,3 +566,85 @@ explains. Documentation that only exists on a website fails the deployment this
 application explicitly supports: a laptop with no network.
 
 *Addressed by:* [ADR-0025](adr/0025-task-oriented-guide.md)
+
+---
+
+### ASR-023
+**Time that recurs can be recorded in one action, and the application never
+records time nobody worked.**
+
+*Quality attribute:* Suitability / Integrity
+
+*Requirement:* Lunch, stand-ups, weekly meetings and administration must be
+recordable without retyping them, and no mechanism may create billable time
+without a person asking for it on the day.
+
+*Fit criterion:* A routine describes an assignment, a length, a set of weekdays
+and optionally a time and tags. The day view offers the routines due that day;
+each is one click and there is a control to apply all outstanding ones. Nothing
+is created by the passage of time, by a scheduler, or at login. A routine that
+already appears recorded is shown as done rather than offered again. A routine
+belongs to the person who created it and cannot be applied by anybody else.
+
+*Rationale:* Retyping the same four entries daily is what makes people abandon
+recording as they go and reconstruct the week on Friday. But an entry created
+because the calendar said Tuesday is an hour nobody worked, and it reaches an
+invoice looking exactly like the forty around it - a missing hour is noticed
+because a total looks wrong, an invented one is not.
+
+*Addressed by:* [ADR-0027](adr/0027-routines-are-offered-not-fired.md)
+
+---
+
+### ASR-024
+**Hours can be brought in from a calendar without importing things that are not
+work.**
+
+*Quality attribute:* Interoperability / Integrity
+
+*Requirement:* Meetings must be importable from Outlook, Google Calendar or any
+calendar exporting iCalendar, and the import must distinguish what was work from
+what was not.
+
+*Fit criterion:* The file is parsed with line folding, escaping, the three
+timestamp forms and both the DTEND and DURATION spellings handled. Every event
+appears in a preview that writes nothing, with cancelled, declined, all-day,
+zero-length and recurring events shown as such by name. Assignment matching
+produces exactly one candidate or none - never a guess. Re-importing an
+overlapping export detects what is already there. Import is per event, and a
+failure on one is reported against that event rather than failing the rest.
+
+*Rationale:* The format is the easy half. A calendar contains cancelled
+meetings, declined meetings, public holidays and blocks somebody made to protect
+an afternoon; importing it wholesale produces a week that is plausible and
+wrong, which is the hardest kind of error to find afterwards.
+
+*Addressed by:* [ADR-0028](adr/0028-calendar-import-is-a-conversation.md)
+
+---
+
+### ASR-025
+**Entries can be found by any fragment of what was recorded, and the search
+never silently returns nothing.**
+
+*Quality attribute:* Suitability / Performance
+
+*Requirement:* Search must match anywhere in the note, the assignment, the
+project, the customer or the tags; it must stay fast on a long history; and it
+must never answer a valid query with an empty page for a reason the user cannot
+see.
+
+*Fit criterion:* Substring queries of three characters or more are served by a
+trigram full-text index. Shorter queries fall back to a scan rather than
+returning nothing, and the screen says which mechanism answered. The query is
+matched literally, so a user typing an operator of the underlying query language
+searches for those characters. Regular expressions are available on request,
+are RE2 so a pathological pattern cannot hang the process, and a malformed one
+reports as the user's mistake. The index follows edits, tag renames and
+deletions, and can be rebuilt after a restore.
+
+*Rationale:* "redir" to find "login redirect" is the search people type, and a
+word-boundary index cannot answer it. A two-character query returning nothing
+from a trigram index is worse than slow: it looks like an answer.
+
+*Addressed by:* [ADR-0029](adr/0029-searching-with-trigram-and-regexp.md)

@@ -49,6 +49,8 @@ func (s *Server) routes() {
 	mux.HandleFunc("POST /entries/quick", s.handleQuickAdd)
 	mux.HandleFunc("GET /entries/{id}/edit", s.handleEditEntryForm)
 	mux.HandleFunc("POST /entries/{id}", s.handleUpdateEntry)
+	// The timeline's drag, resize and keyboard nudges all land here.
+	mux.HandleFunc("POST /entries/{id}/move", s.handleMoveEntryBlock)
 	mux.HandleFunc("POST /entries/{id}/delete", s.handleDeleteEntry)
 
 	// Catalogue administration.
@@ -139,6 +141,9 @@ func (s *Server) routes() {
 	mux.HandleFunc("POST /settings", s.handleUpdateSettings)
 
 	// Bulk import of hours from CSV.
+	mux.HandleFunc("GET /calendar", s.handleCalendarForm)
+	mux.HandleFunc("POST /calendar/preview", s.handleCalendarPreview)
+	mux.HandleFunc("POST /calendar", s.handleCalendarImport)
 	mux.HandleFunc("GET /import", s.handleImportForm)
 	mux.HandleFunc("POST /import/preview", s.handleImportPreview)
 	mux.HandleFunc("POST /import", s.handleImportCommit)

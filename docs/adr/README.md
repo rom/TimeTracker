@@ -51,6 +51,10 @@ Statuses: `proposed` → `accepted` → `superseded by ADR-NNNN` | `deprecated`.
 | [0023](0023-week-as-the-unit-of-approval.md) | The week is the unit of submission, approval and locking | accepted | 2026-08-18 | ASR-020 |
 | [0024](0024-customer-rate-rules.md) | Overtime and travel are a kind on the entry, priced by customer rules | accepted | 2026-08-18 | ASR-021 |
 | [0025](0025-task-oriented-guide.md) | A task-oriented guide alongside per-screen help | accepted | 2026-08-18 | ASR-022 |
+| [0026](0026-dated-contract-terms.md) | Contract terms are dated records, resolved per project | accepted | 2026-08-18 | ASR-021 |
+| [0027](0027-routines-are-offered-not-fired.md) | Recurring entries are offered, never created on a schedule | accepted | 2026-08-18 | ASR-023 |
+| [0028](0028-calendar-import-is-a-conversation.md) | A calendar is not a timesheet, so importing one is a conversation | accepted | 2026-08-18 | ASR-024 |
+| [0029](0029-searching-with-trigram-and-regexp.md) | Trigram full text, with a scan fallback and optional regexp | accepted | 2026-08-18 | ASR-025 |
 
 ## Writing a new one
 

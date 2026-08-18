@@ -341,11 +341,13 @@ func TestEntityTintsKeepTextReadable(t *testing.T) {
 	}
 	stylesheet := string(css)
 
-	// The mix percentage is read out of the stylesheet rather than repeated
-	// here, so raising it in the CSS is what makes this test fail.
-	percent := entityTintPercent(t, stylesheet)
-	if percent <= 0 || percent > 100 {
-		t.Fatalf("could not read the tint percentage from the stylesheet: %d", percent)
+	// Every mix percentage the stylesheet uses, not one: a timeline block is a
+	// small target and legitimately wants a stronger tint than a table row, so
+	// the rule is "each level stays readable" rather than "one level
+	// everywhere".
+	percents := entityTintPercents(t, stylesheet)
+	if len(percents) == 0 {
+		t.Fatal("no entity tint found in the stylesheet")
 	}
 
 	entities := []string{
@@ -370,46 +372,42 @@ func TestEntityTintsKeepTextReadable(t *testing.T) {
 			continue
 		}
 
-		for _, entity := range entities {
-			colour, ok := tokens[entity]
-			if !ok {
-				continue
-			}
-			tinted := mixColours(colour, surface, percent)
-			if ratio := contrastRatio(text, tinted); ratio < 4.5 {
-				t.Errorf("theme %s: body text on a row tinted with %s is %.2f:1, need 4.5:1 "+
-					"(tint %d%% of %s over %s gives %s)",
-					theme, entity, ratio, percent, colour, surface, tinted)
+		for _, percent := range percents {
+			for _, entity := range entities {
+				colour, ok := tokens[entity]
+				if !ok {
+					continue
+				}
+				tinted := mixColours(colour, surface, percent)
+				if ratio := contrastRatio(text, tinted); ratio < 4.5 {
+					t.Errorf("theme %s: body text on a surface tinted %d%% with %s is %.2f:1, "+
+						"need 4.5:1 (%s over %s gives %s)",
+						theme, percent, entity, ratio, colour, surface, tinted)
+				}
 			}
 		}
 	}
 }
 
-// entityTintPercent reads the percentage the stylesheet mixes entity colours at.
-func entityTintPercent(t *testing.T, css string) int {
+// entityTintPercents lists every percentage the stylesheet mixes entity colours
+// at, de-duplicated.
+func entityTintPercents(t *testing.T, css string) []int {
 	t.Helper()
 	pattern := regexp.MustCompile(`color-mix\(in srgb, var\(--entity-[a-z]+\) (\d+)%`)
-	matches := pattern.FindAllStringSubmatch(css, -1)
-	if len(matches) == 0 {
-		t.Fatal("no entity tint found in the stylesheet")
-	}
 
-	// Every entity tint must use the same percentage; one colour quietly mixed
-	// stronger than the rest is how a single unreadable row appears.
-	highest := 0
-	for _, match := range matches {
+	seen := map[int]bool{}
+	var percents []int
+	for _, match := range pattern.FindAllStringSubmatch(css, -1) {
 		value, err := strconv.Atoi(match[1])
 		if err != nil {
 			t.Fatalf("unreadable tint percentage %q", match[1])
 		}
-		if highest != 0 && value != highest {
-			t.Errorf("entity tints use different percentages: %d and %d", highest, value)
-		}
-		if value > highest {
-			highest = value
+		if !seen[value] {
+			seen[value] = true
+			percents = append(percents, value)
 		}
 	}
-	return highest
+	return percents
 }
 
 // mixColours blends percent of a into b, the way CSS color-mix does in sRGB.

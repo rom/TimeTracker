@@ -21,6 +21,15 @@ type DayView struct {
 	// Gaps are stretches of the working day with no entry covering them. They
 	// are shown as prompts ("2h 15m unaccounted"), never filled in automatically.
 	Gaps []Gap
+
+	// The day drawn as blocks against a clock. Computed on the server so the
+	// timeline is right with no JavaScript at all; see timeline.go.
+	Blocks    []TimelineBlock
+	Hours     []TimelineHour
+	StartHour int
+	EndHour   int
+	// Slots is how many quarter-hour rows the grid has.
+	Slots int
 }
 
 // Gap is an uncovered stretch between the first and last entry of a day.
@@ -88,6 +97,7 @@ func (s *Service) Day(ctx context.Context, date time.Time) (DayView, error) {
 	}
 	view.Totals = s.totals(entries)
 	view.Gaps = findGaps(entries, s.now())
+	buildTimeline(&view, s.now())
 	return view, nil
 }
 

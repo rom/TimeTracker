@@ -12,6 +12,12 @@ the decision.
 
 ### Fixed
 
+* **A migration wrote timestamps the application could not read.** The carry-over
+  in 0007 used SQLite's `datetime()`, which separates the date and time with a
+  space where every timestamp here is RFC 3339. No test on a fresh database
+  could see it, because a fresh database has nothing to carry over. Migrations
+  can now be applied up to a version so an upgrade with real rows in it is
+  testable, and a content check rejects `datetime()` in any migration.
 * **The header clock showed `--:--:--` and never updated.** Three defects, one
   symptom. The value was a placeholder for JavaScript to replace, so a script
   that never ran, one that failed before reaching it, and a broken clock were
@@ -51,6 +57,60 @@ the decision.
 
 ### Added
 
+* **Contract terms are dated, and attach to a project as well as a customer.**
+  ADR-0024 named two costs it was accepting — no history, one set of terms per
+  customer — and both have now been asked for. A revision records when it takes
+  effect and why; the terms that price an entry are the latest in force on the
+  day that entry belongs to, with a project's laid over its customer's field by
+  field. A project that differs only in overtime says only that. Backdating an
+  entry into an earlier contract period now prices it at that period's
+  agreement. See [ADR-0026](adr/0026-dated-contract-terms.md).
+* **Tags.** The tables have existed since the first migration and never held a
+  row: quick-add parsed `#travel` out of the line and threw it away, which made
+  the sigil a way of deleting a word from your own note. Tags now persist,
+  normalise (`#Travel` and `travel` are one tag), filter, appear on rows linking
+  to themselves, and reach the exports. They are created by use — a labelling
+  system that has to be set up first does not get used.
+* **Search**, over the note, assignment, project, customer and tags. Three
+  mechanisms, chosen per query and named on screen: a trigram full-text index
+  for ordinary substring search (`redir` finds `login redirect`, which a
+  word-boundary index cannot); a scan for queries too short to trigram, which
+  the index would answer with silence rather than everything; and regular
+  expressions on request, RE2 so a pathological pattern cannot hang the process.
+  The query is always literal — a user typing `C++` means those characters.
+  See [ADR-0029](adr/0029-searching-with-trigram-and-regexp.md).
+* **Copy a day or a week.** Times of day, tags and kinds come across, so a
+  copied day looks like the day it came from; a week copy aligns day for day.
+  Amounts are priced afresh, because the target may fall in a different contract
+  period. Running timers are skipped — one has no length yet.
+* **Routines**: lunch, the stand-up, Friday admin. A template, not a scheduler.
+  The day view offers what is due and a person clicks it; nothing is created by
+  the passage of time, because an entry created because the calendar said
+  Tuesday is an hour nobody worked and it reaches an invoice looking exactly
+  like the forty around it. See
+  [ADR-0027](adr/0027-routines-are-offered-not-fired.md).
+* **Calendar import** from Outlook, Google Calendar or any iCalendar export.
+  The format is the easy half; a calendar also contains cancelled meetings,
+  declined meetings, public holidays and blocks somebody made to protect an
+  afternoon. Every event is listed in a preview that writes nothing, with the
+  ones that are not work shown as such **by name** — a count is not enough,
+  because somebody has to be able to see that the missing hour was a meeting
+  they declined. Matching produces one candidate or none, never a guess.
+  See [ADR-0028](adr/0028-calendar-import-is-a-conversation.md).
+* **A day timeline** with drag to move and drag-the-edge to resize. Overlapping
+  work sits side by side in lanes rather than one block hiding another, which is
+  the whole reason it is worth drawing in an application that allows concurrent
+  timers. Positions are CSS grid slots chosen by the server, not inline styles:
+  the content security policy forbids those, and weakening it for geometry would
+  weaken it for everything. Every block also carries a plain time-and-length
+  form, so the whole view works with no JavaScript at all.
+* **One-click starts** ordered by favourites first, then what has been used most
+  in the last six weeks — frequency before recency, because a list that
+  reshuffles after every entry is one nobody builds muscle memory for.
+* **"Switch to X"**, which stops what is running and starts one thing in a
+  single action. Concurrent timers remain the model for genuinely parallel work;
+  this is the one-click version of "and now instead", which as stop-then-start
+  leaves a gap if somebody is interrupted between the two clicks.
 * **Customer contract terms: overtime, travel time and reimbursement.** Overtime
   and travel are a *kind* on the entry, chosen by the person; the customer's
   rules say what each is worth. Nothing is reclassified automatically — whether

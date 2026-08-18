@@ -104,6 +104,12 @@ type pageData struct {
 	ImportPreview       *service.ImportPreview
 	ImportCreateMissing bool
 
+	// Calendar import. CalendarFile carries the uploaded text back to the
+	// commit step so the file does not have to be found twice.
+	CalendarPreview *service.CalendarPreview
+	CalendarFile    string
+	CalendarResult  *service.CalendarImportResult
+
 	// Backup and restore.
 	Backups        []service.BackupFile
 	RestoreResult  *service.RestoreResult
@@ -755,4 +761,61 @@ func int64Param(raw string) int64 {
 // timeParseIn reads a YYYY-MM-DD date in a location.
 func timeParseIn(raw string, loc *time.Location) (time.Time, error) {
 	return time.ParseInLocation("2006-01-02", raw, loc)
+}
+
+// handleMoveEntryBlock adjusts one entry's start and length.
+//
+// The endpoint the timeline's drag and resize post to, and also what its
+// keyboard controls use. It takes a start time and a length rather than a
+// pixel offset: the browser converts, so the server never has to know how tall
+// an hour is on somebody's screen, and the same request can be made by a form.
+func (s *Server) handleMoveEntryBlock(w http.ResponseWriter, r *http.Request) {
+	if err := parseForm(r); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	entry, err := s.svc.Entry(r.Context(), int64Param(r.PathValue("id")))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	loc := userLocation(r)
+
+	// The day comes from the entry unless the drag moved it to another one.
+	day := entry.StartedAt.In(loc).Format("2006-01-02")
+	if raw := r.FormValue("date"); raw != "" {
+		day = raw
+	}
+	started, err := time.ParseInLocation("2006-01-02 15:04", day+" "+r.FormValue("start"), loc)
+	if err != nil {
+		s.fail(w, r, domainValidation("could not read the new start time: "+err.Error()))
+		return
+	}
+
+	seconds := entry.DurationSeconds
+	if raw := r.FormValue("duration"); raw != "" {
+		if seconds, err = domain.ParseDuration(raw); err != nil {
+			s.fail(w, r, domainValidation("could not read the new length: "+err.Error()))
+			return
+		}
+	}
+
+	// Everything else about the entry is left alone. A drag moves time; it does
+	// not silently change what the time was for, and reusing the full edit
+	// input here would let a stale form field do exactly that.
+	_, err = s.svc.UpdateEntry(r.Context(), entry.ID, service.EntryInput{
+		AssignmentID:    entry.AssignmentID,
+		StartedAt:       started,
+		DurationSeconds: seconds,
+		Note:            entry.Note,
+		Billable:        entry.Billable,
+		Kind:            entry.KindOrDefault(),
+		Tags:            entry.Tags,
+	})
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.refreshOrRedirect(w, r)
 }
