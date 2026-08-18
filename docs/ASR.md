@@ -36,6 +36,7 @@ Status legend: **A** = accepted, **P** = proposed, **R** = retired.
 | [ASR-012](#asr-012) | Performance | Interactive operations feel instantaneous | A |
 | [ASR-013](#asr-013) | Suitability | Rich capture: paste, attachments, expenses | A |
 | [ASR-014](#asr-014) | Correctness | Money and duration arithmetic is exact | A |
+| [ASR-015](#asr-015) | Security / Least privilege | The process runs with the least privilege each platform allows | A |
 
 ---
 
@@ -327,3 +328,31 @@ including boundary values.
 invoice is disputed. Making it a structural rule is cheaper than finding it later.
 
 *Addressed by:* [ADR-0014](adr/0014-exact-money-and-duration.md)
+
+---
+
+### ASR-015
+**The process runs with the least privilege each platform allows.**
+
+*Quality attribute:* Security / Least privilege
+
+*Requirement:* A defect in the application must not give an attacker the machine.
+The running process must be able to reach its own data and the few system paths
+it needs, and nothing else, on all three supported platforms.
+
+*Fit criterion:* The process holds no capabilities, cannot execute another
+program, cannot write outside its data directory and temporary directory, and
+cannot read another user's files. `scripts/harden-check.sh` reports the active
+mechanisms for a running instance, and `systemd-analyze security timetracker`
+scores the shipped unit. Where a platform offers no in-process mechanism, the
+deployment configuration in `deploy/` supplies an equivalent and the application
+reports honestly that nothing was applied in-process.
+
+*Rationale:* Every other control in this system is application code, and
+application code has defects. This is the layer that decides whether a defect
+becomes an incident. It also constrains the design directly: the application
+never spawns a subprocess, which is why PDF and DOCX generation had to be
+in-process ([ADR-0007](adr/0007-pure-go-document-generation.md)), and it is why
+document generation, SQLite and TLS all had to be dependency-free.
+
+*Addressed by:* [ADR-0017](adr/0017-defence-in-depth-hardening.md), [ADR-0018](adr/0018-tls-termination.md)

@@ -449,6 +449,16 @@ func (a *Accounts) BootstrapFirstAdmin(ctx context.Context, in NewUserInput) (do
 	if in.Password == "" {
 		return domain.User{}, fmt.Errorf("%w: the first administrator needs a password", ErrValidation)
 	}
+	// Derive a name rather than refusing: an operator setting TT_ADMIN_EMAIL and
+	// TT_ADMIN_PASSWORD in a unit file has said everything that matters, and
+	// failing to start over a display name would be obstructive.
+	if strings.TrimSpace(in.DisplayName) == "" {
+		if local, _, ok := strings.Cut(in.Email, "@"); ok && local != "" {
+			in.DisplayName = local
+		} else {
+			in.DisplayName = "Administrator"
+		}
+	}
 	return a.createUser(ctx, in, false)
 }
 

@@ -1,0 +1,9 @@
+# File contexts for the TimeTracker SELinux module.
+#
+# These label the objects the policy in timetracker.te refers to. Apply with
+# restorecon after installing the module.
+
+/usr/local/bin/timetracker       --  gen_context(system_u:object_r:timetracker_exec_t,s0)
+/var/lib/timetracker(/.*)?           gen_context(system_u:object_r:timetracker_var_lib_t,s0)
+/run/timetracker(/.*)?               gen_context(system_u:object_r:timetracker_var_run_t,s0)
+/etc/timetracker(/.*)?               gen_context(system_u:object_r:cert_t,s0)

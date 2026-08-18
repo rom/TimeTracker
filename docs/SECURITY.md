@@ -123,13 +123,59 @@ attack surface. `govulncheck` runs in CI, dependencies are pinned by `go.sum`, a
 `CGO_ENABLED=0` removes an entire class of memory-safety concerns. Release binaries
 are published with checksums.
 
+### Transport
+
+The application can terminate TLS itself (`--tls-cert`, `--tls-key`) or sit
+behind a proxy that does. TLS 1.2 is the floor, and the 1.2 suites are restricted
+to AEAD constructions with forward secrecy - no CBC (padding-oracle attacks) and
+no RSA key exchange (a stolen key would decrypt captured traffic retroactively).
+The private key is refused if it is group- or world-readable on a POSIX system.
+
+**Server mode refuses to bind a non-loopback address** without either its own
+certificate, `--secure-cookies` declaring that TLS terminates upstream, or an
+explicit `--allow-insecure`. HSTS is available but off by default: it is one of
+the few headers that is genuinely hard to undo, and a misconfigured deployment
+can be unreachable in a browser for months. See
+[ADR-0018](adr/0018-tls-termination.md) and `scripts/gen-cert.sh`.
+
+### Process hardening
+
+Every control above is application code, and application code has defects. What
+limits the damage is the operating system, and each platform's mechanism is
+shipped in [`deploy/`](../deploy/README.md):
+
+| Platform | Mechanism |
+|---|---|
+| Linux | **Landlock** applied by the process itself (`--hardening`), plus a systemd unit with a seccomp filter, an empty capability bounding set, `ProtectSystem=strict`, `MemoryDenyWriteExecute` and restricted address families |
+| Debian/Ubuntu | an **AppArmor** profile, enforced whoever starts the process |
+| Fedora/RHEL | an **SELinux** policy module, which survives files being moved |
+| macOS | **launchd** under an unprivileged account with a `sandbox-exec` profile |
+| Windows | a **virtual service account** with no privileges and a restricted token, a locked-down data directory ACL, a scoped firewall rule, and WDAC/AppLocker for code integrity |
+
+The intended result: a defect that yields arbitrary file access still cannot read
+`/etc/shadow`, write outside the data directory, execute another program or load
+a kernel module.
+
+Landlock **defaults to off** and the shipped systemd unit turns it on. The
+reasoning is in [ADR-0017](adr/0017-defence-in-depth-hardening.md): a sandbox
+that silently denies a file access produces a failure with no obvious cause, and
+that is a bad default for someone running the binary on a laptop.
+
+`scripts/harden-check.sh` reports what is *actually* active for a running
+instance, which is not the same claim as what was configured.
+
 ## 4. Operator responsibilities
 
 The application cannot do these for you:
 
-* **Terminate TLS** in front of server mode. The app refuses to bind a non-loopback
-  address without either TLS or an explicit acknowledgement, but it does not
-  validate your proxy's configuration.
+* **Terminate TLS**, either by giving the process a certificate or by putting a
+  proxy in front. The app refuses to bind a non-loopback address without one of
+  the two, but it cannot validate your proxy's configuration.
+* **Apply the hardening in `deploy/`.** The application sandboxes itself only
+  when asked, and on macOS and Windows it cannot sandbox itself at all - that
+  confinement comes entirely from the deployment.
+* **Renew certificates.** There is no ACME client in the binary; a
+  self-managed certificate expires and nothing renews it for you.
 * **Encrypt the disk.** The database and blobs are not encrypted at rest.
 * **Restrict file permissions** on the data directory (`0700`) and run as a
   dedicated unprivileged user.
@@ -154,8 +200,18 @@ Stated plainly, because a security document that only lists strengths is not use
   across instances (there is only one instance by design).
 * Attachment scanning is type and size validation only — there is **no malware
   scanning**. Files are served as downloads, never rendered inline.
-* Local mode has no authentication by design; anyone with the user's account has the
-  data.
+* Local mode has no authentication by design; anyone with the user's account has
+  the data.
+* **In-process hardening is Linux-only.** macOS and Windows have no unprivileged
+  self-sandboxing API this application can use, so on those platforms the
+  confinement is entirely external and absent if the deployment configuration is
+  not applied. The application reports this honestly at start-up and on
+  `/healthz` rather than implying protection it does not have.
+* **The Landlock read-only path list is deliberately generous** (`/usr`, `/etc`,
+  `/proc`, `/sys`, `/dev`, `/run`) so that it does not break on distributions we
+  have not tested. A tighter list would confine better.
+* **There is no ACME/Let's Encrypt integration**, so self-terminated TLS means
+  manual renewal.
 
 ## 6. Reporting a vulnerability
 

@@ -1,0 +1,103 @@
+## SELinux policy module for TimeTracker.
+##
+## SELinux is label-based mandatory access control, standard on Fedora, RHEL and
+## derivatives. Unlike AppArmor's path matching, it labels the objects
+## themselves, so a file keeps its confinement when it is moved or hard-linked.
+##
+## Build and install:
+##   cd deploy/selinux
+##   make -f /usr/share/selinux/devel/Makefile timetracker.pp
+##   sudo semodule -i timetracker.pp
+##   sudo semanage fcontext -a -t timetracker_exec_t '/usr/local/bin/timetracker'
+##   sudo semanage fcontext -a -t timetracker_var_lib_t '/var/lib/timetracker(/.*)?'
+##   sudo restorecon -Rv /usr/local/bin/timetracker /var/lib/timetracker
+##   sudo semanage port -a -t timetracker_port_t -p tcp 8420
+##
+## Develop it in permissive mode first, which logs denials without enforcing:
+##   sudo semanage permissive -a timetracker_t
+##   # exercise the application, then collect what it actually needed:
+##   sudo ausearch -m AVC -c timetracker | audit2allow -R
+##   sudo semanage permissive -d timetracker_t
+
+policy_module(timetracker, 1.0.0)
+
+require {
+    type sysctl_net_t;
+    type cert_t;
+    type syslogd_var_run_t;
+    type devlog_t;
+    type node_t;
+    class capability { setuid setgid };
+}
+
+########################################
+#
+# Declarations
+#
+
+type timetracker_t;
+type timetracker_exec_t;
+init_daemon_domain(timetracker_t, timetracker_exec_t)
+
+# The data directory: the database and the attachment blobs.
+type timetracker_var_lib_t;
+files_type(timetracker_var_lib_t)
+
+# The unit file's runtime directory.
+type timetracker_var_run_t;
+files_pid_file(timetracker_var_run_t)
+
+# The listening port.
+type timetracker_port_t;
+corenet_port(timetracker_port_t)
+
+########################################
+#
+# Local policy
+#
+# The service needs remarkably little. Everything not granted here is denied,
+# which is the point of writing the policy rather than leaving the domain
+# unconfined.
+
+# Its own data.
+manage_dirs_pattern(timetracker_t, timetracker_var_lib_t, timetracker_var_lib_t)
+manage_files_pattern(timetracker_t, timetracker_var_lib_t, timetracker_var_lib_t)
+files_var_lib_filetrans(timetracker_t, timetracker_var_lib_t, { dir file })
+
+# Listen for clients.
+allow timetracker_t timetracker_port_t:tcp_socket { name_bind listen accept };
+corenet_tcp_bind_generic_node(timetracker_t)
+corenet_tcp_sendrecv_generic_if(timetracker_t)
+corenet_tcp_sendrecv_generic_node(timetracker_t)
+
+# Reach out to the identity provider and a remote syslog collector.
+corenet_tcp_connect_http_port(timetracker_t)
+corenet_tcp_connect_https_port(timetracker_t)
+corenet_tcp_connect_syslogd_port(timetracker_t)
+sysnet_dns_name_resolve(timetracker_t)
+
+# Read the system trust store, to verify the identity provider's certificate.
+miscfiles_read_generic_certs(timetracker_t)
+
+# Local syslog.
+logging_send_syslog_msg(timetracker_t)
+
+# What the Go runtime reads at start-up.
+kernel_read_system_state(timetracker_t)
+kernel_read_net_sysctls(timetracker_t)
+dev_read_urand(timetracker_t)
+dev_read_rand(timetracker_t)
+fs_getattr_all_fs(timetracker_t)
+
+# Temporary files, for multipart uploads that exceed the memory limit.
+files_read_etc_files(timetracker_t)
+files_tmp_filetrans(timetracker_t, timetracker_var_lib_t, { file dir })
+
+# Deliberately NOT granted, and each one is a decision:
+#
+#   no execution of any other program - the application never spawns a
+#     subprocess, which is why PDF and DOCX generation are in-process
+#     (docs/adr/0007-pure-go-document-generation.md)
+#   no capabilities at all - it binds a port above 1024
+#   no read access to user home directories or /etc/shadow
+#   no raw sockets, no kernel module loading, no ptrace

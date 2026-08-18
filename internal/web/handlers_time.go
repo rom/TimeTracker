@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -72,11 +73,16 @@ func (s *Server) newPageData(r *http.Request, title, active string) (pageData, e
 	}, nil
 }
 
-// handleHealth reports that the process is up. Deliberately free of detail: an
-// unauthenticated endpoint should not describe the system to a stranger.
+// handleHealth reports that the process is up.
+//
+// Deliberately thin: an unauthenticated endpoint should not describe the system
+// to a stranger. The hardening summary is the one exception, and it is there
+// because an operator needs a way to confirm from outside that the sandbox
+// engaged - "I configured it" and "it took effect" are different claims. It
+// names mechanisms, never paths or versions.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(`{"status":"ok"}`))
+	_, _ = fmt.Fprintf(w, `{"status":"ok","hardening":%q}`+"\n", s.hardening)
 }
 
 // handleToday renders the day view, defaulting to today.

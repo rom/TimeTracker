@@ -49,6 +49,7 @@
 | 011 readability | `gofmt -l` empty, `go vet` clean, linter clean; a doc-comment check on exported symbols and package comments. |
 | 012 performance | Against 100k entries: day view, week view and timer start/stop under 100 ms p95; a one-year report under 2 s. Tagged `perf`, run in CI on a fixed runner, reported as a trend rather than a hard gate. |
 | 013 attachments | Upload/paste round trip; deduplication of identical content; a user without access to the owning record gets 404, not 403; type sniffing rejects a renamed executable; SVG handling; oversize rejection; orphan sweep. |
+| 015 least privilege | Config tests assert that server mode refuses a public bind without TLS, that a half-configured TLS pair is rejected, that a group-readable private key is refused with a message saying how to fix it, and that no CBC or non-forward-secret cipher suite is offered. The platform profiles in `deploy/` are **not** covered by automated tests - they are verified by `scripts/harden-check.sh` and `systemd-analyze security` against a real deployment, which is stated plainly rather than implied. |
 | 014 exactness | Rounding boundary tables (exactly on the increment, one second either side, zero, negative guard); rate × duration half-away-from-zero; mixed-currency addition panics/errors; a source-level check that no persisted field or total is `float64`. |
 
 ## 4. Practices
