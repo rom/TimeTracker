@@ -158,11 +158,11 @@ Key entities:
 
 | Table | Notable columns | Notes |
 |---|---|---|
-| `customer` | name, code, currency, colour_key, icon, archived_at | archive, never delete — history must stay readable |
+| `customer` | name, code, currency, colour_key, icon, archived_at, plus the contract rules (overtime rate/multiplier and thresholds, travel billing/rate/multiplier, expense markup, mileage, per diem, receipt threshold) | archive, never delete — history must stay readable. The rules are contract terms, which is why they sit here and not in settings ([ADR-0024](adr/0024-customer-rate-rules.md)) |
 | `project` | customer_id, name, code, colour_key, icon, budget_minutes, budget_amount, billable_default, rounding_rule | |
 | `assignment` | project_id, name, code, colour_key, icon, billable_default, rate_override, sort_order, archived_at | the thing a timer runs against |
-| `time_entry` | user_id, entered_by, assignment_id, started_at, ended_at (nullable ⇒ running), duration_seconds (derived, stored), note, billable, status, tz, rounding_rule_applied, billable_seconds, rate_minor, amount_minor, currency, approved_by, approved_at, locked | no unique constraint on "running per user" ([ADR-0004](adr/0004-concurrent-timers.md)) |
-| `expense` | user_id, project_id, date, category, description, amount_minor, currency, kind (`billable`\|`reimbursable`\|`both`), markup_pct, status, receipt attachment | |
+| `time_entry` | user_id, entered_by, assignment_id, started_at, ended_at (nullable ⇒ running), duration_seconds (derived, stored), note, billable, kind (`work`\|`overtime`\|`travel`), status, tz, rounding_rule_applied, billable_seconds, rate_minor, amount_minor, currency, approved_by, approved_at, locked | no unique constraint on "running per user" ([ADR-0004](adr/0004-concurrent-timers.md)) |
+| `expense` | user_id, project_id, date, category, description, amount_minor, currency, kind (`billable`\|`reimbursable`\|`both`), markup_pct, quantity_milli, unit, unit_rate_minor, status, receipt attachment | a quantity-priced claim stores the quantity, the unit and the rate used, so the amount can be checked rather than trusted |
 | `attachment` | owner_type, owner_id, sha256, filename, mime, size, uploaded_by | bytes on disk ([ADR-0013](adr/0013-attachment-storage.md)) |
 | `user` | display_name, email, role, password_hash (nullable), oidc_subject (nullable), totp_secret (nullable), tz, theme, active | |
 | `project_member` | project_id, user_id, role_override | the scoping dimension of RBAC |
@@ -181,6 +181,13 @@ resource_id, at)` for record history.
 deleted, because deleting them would orphan invoiced history. Time entries can be
 deleted by their owner while unapproved; the deletion is an audit event carrying the
 prior state.
+
+**One statement per write.** The insert and the update for a time entry exist
+once each, in `internal/store`, exported in a transactional form the service
+calls so that a change and its audit row commit together. The service used to
+keep its own copy of both, and the copies drifted: a column added to one was
+silently absent from the other, which is a field the application believes it is
+storing and is not. Column knowledge lives in one package.
 
 **Period locking.** Every mutation of a time entry passes through one function,
 `service.checkPeriodOpen`, before it writes: create, update, delete, start,
@@ -284,6 +291,9 @@ What is described above is the target architecture. As of the current release:
 | Editing a recorded entry | implemented, audited with the previous value |
 | Bulk CSV import, backup and restore, YAML configuration | implemented |
 | i18n (English, Swedish), a11y, context-sensitive help | implemented |
+| Customer contract rules (overtime, travel, reimbursement) | implemented ([ADR-0024](adr/0024-customer-rate-rules.md)) |
+| Approval status report, per person per week | implemented |
+| Task-oriented user guide | implemented ([ADR-0025](adr/0025-task-oriented-guide.md)) |
 | Tags | designed, not implemented |
 | Client-side enhancement | `static/js/app.js` implements the HTMX subset in use (`hx-post`, `hx-confirm`, `HX-Request`/`HX-Refresh`); the upstream library is a drop-in replacement requiring no template changes |
 

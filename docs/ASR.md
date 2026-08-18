@@ -495,3 +495,67 @@ first without causing the second, which is why "correctable through an audited
 route" is part of the criterion rather than a convenience.
 
 *Addressed by:* [ADR-0023](adr/0023-week-as-the-unit-of-approval.md)
+
+---
+
+### ASR-021
+**A customer's contract terms decide what an hour and a claim are worth, and no
+figure appears on an invoice that a person did not choose.**
+
+*Quality attribute:* Suitability / Integrity
+
+*Requirement:* Overtime, travel time and reimbursement must be expressible per
+customer, because they are contract terms and every contract differs. Applying
+them must not require a person to compute anything, and must not put a rate on
+an entry that nobody decided to apply.
+
+*Fit criterion:* Overtime and travel are recorded as a kind on the entry, chosen
+by the person; no threshold reclassifies time automatically, and a threshold
+that is exceeded produces a notice that stops once the time is marked. An
+absolute rate takes precedence over a multiplier, and an unset rule bills at the
+ordinary rate rather than at zero. Travel a customer does not pay for is
+recorded in full and carries no amount. A distance or a number of days is priced
+from the customer's rate, and the quantity, the unit and the rate used are all
+stored on the claim. The kind appears in every export, so a line billed at other
+than the base rate says why on the document carrying the figure. A claim above
+the customer's evidence threshold is marked, and refuses the week's submission
+until a receipt is attached.
+
+*Rationale:* Both failure modes here are expensive and both are common. A tool
+that will not express "time and a half over eight hours" makes people keep the
+real numbers in a spreadsheet, so the timesheet stops being the record. A tool
+that applies the multiplier automatically bills the ninth hour at a premium
+because somebody forgot to stop a timer, and the resulting invoice cannot be
+defended by the person who has to defend it. The requirement is to express the
+terms without making the judgement.
+
+*Addressed by:* [ADR-0024](adr/0024-customer-rate-rules.md)
+
+---
+
+### ASR-022
+**Somebody who knows what they want to do, but not where to do it, can find out
+from inside the application.**
+
+*Quality attribute:* Learnability
+
+*Requirement:* The normal actions must be documented as procedures, reachable
+without knowing which screen performs them, translated, and available with no
+network and no JavaScript.
+
+*Fit criterion:* A task-oriented guide covers recording, correcting and moving
+time, recording time for a colleague, submitting a week, approving one, claiming
+expenses, exporting, backing up, and setting up customers and contract terms.
+Each is numbered steps rather than prose. Every topic exists in every catalogued
+language, enforced by a test. A topic that cannot apply in the running mode is
+not offered. It is reachable from every screen, and an unknown topic renders the
+guide rather than an error.
+
+*Rationale:* Per-screen help answers "what am I looking at", which is a question
+you can only ask once you are in the right place. "Put Erik's hours in before
+the week closes" is the question people actually arrive with, and its answer
+spans a screen, a syntax, a permission and a consent step that no single screen
+explains. Documentation that only exists on a website fails the deployment this
+application explicitly supports: a laptop with no network.
+
+*Addressed by:* [ADR-0025](adr/0025-task-oriented-guide.md)

@@ -159,6 +159,8 @@ func TestEveryScreenRendersInEveryLanguage(t *testing.T) {
 	post(t, srv, "/timers/start", url.Values{"assignment_id": {"1"}})
 
 	paths := []string{"/today", "/week", "/entries", "/admin", "/approvals",
+		"/approvals/report", "/guide", "/guide/record", "/guide/correct",
+		"/customers/1/rules",
 		// The correction screen is reached by id, and the running timer started
 		// above is entry 1.
 		"/entries/1/edit",
@@ -176,7 +178,8 @@ func TestEveryScreenRendersInEveryLanguage(t *testing.T) {
 				// but easy to spot - so spot it here rather than in production.
 				body := rec.Body.String()
 				for _, marker := range []string{"help.", "nav.", "action.", "totals.",
-					"period.", "approvals.", "entry."} {
+					"period.", "approvals.", "entry.", "guide.", "rules.",
+					"report.", "kind.", "expense."} {
 					if strings.Contains(body, ">"+marker) {
 						t.Errorf("an untranslated key leaked into %s (%s): %s",
 							path, language.Code, marker)

@@ -103,7 +103,11 @@ func (s *Server) routes() {
 	// Weekly submit and approve.
 	mux.HandleFunc("POST /week/submit", s.handleSubmitWeek)
 	mux.HandleFunc("POST /week/withdraw", s.handleWithdrawWeek)
+	// The user guide: how to do things, as opposed to what a screen is.
+	mux.HandleFunc("GET /guide", s.handleGuide)
+	mux.HandleFunc("GET /guide/{topic}", s.handleGuide)
 	mux.HandleFunc("GET /approvals", s.handleApprovals)
+	mux.HandleFunc("GET /approvals/report", s.handleApprovalReport)
 	mux.HandleFunc("POST /approvals/approve", s.handleApproveWeek)
 	mux.HandleFunc("POST /approvals/reject", s.handleRejectWeek)
 	mux.HandleFunc("POST /approvals/reopen", s.handleReopenWeek)

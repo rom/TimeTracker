@@ -142,6 +142,55 @@ func (db *DB) ListPeriodsByStatus(ctx context.Context, status domain.PeriodStatu
 	return collectPeriods(rows)
 }
 
+// ListPeriodsInRange returns every stored period whose week starts in a range,
+// for every user in scope and in every state.
+//
+// The approval report's source. Unlike the queue it does not filter by status,
+// because "nobody has submitted this week" is exactly what the report exists to
+// show and that is the absence of a row rather than a row in a particular state.
+func (db *DB) ListPeriodsInRange(ctx context.Context, from, to string, scope Scope) ([]domain.TimesheetPeriod, error) {
+	conditions := []string{`p.week_start >= ?`, `p.week_start < ?`}
+	args := []any{from, to}
+
+	if !scope.Unrestricted {
+		if len(scope.ProjectIDs) == 0 && scope.CustomerID == 0 {
+			return nil, nil
+		}
+		// Scoped the same way the queue is: through the entries the week
+		// contains, so a manager sees the weeks that include work on their
+		// projects and nothing else.
+		if len(scope.ProjectIDs) > 0 {
+			conditions = append(conditions, `EXISTS (
+				SELECT 1 FROM time_entries e
+				JOIN assignments a ON a.id = e.assignment_id
+				WHERE e.user_id = p.user_id
+				  AND a.project_id IN (`+repeatPlaceholders(len(scope.ProjectIDs))+`)
+				  AND date(e.started_at) >= date(p.week_start)
+				  AND date(e.started_at) < date(p.week_start, '+7 days'))`)
+			for _, id := range scope.ProjectIDs {
+				args = append(args, id)
+			}
+		} else {
+			conditions = append(conditions, `EXISTS (
+				SELECT 1 FROM time_entries e
+				JOIN assignments a ON a.id = e.assignment_id
+				JOIN projects   pr ON pr.id = a.project_id
+				WHERE e.user_id = p.user_id
+				  AND pr.customer_id = ?
+				  AND date(e.started_at) >= date(p.week_start)
+				  AND date(e.started_at) < date(p.week_start, '+7 days'))`)
+			args = append(args, scope.CustomerID)
+		}
+	}
+
+	rows, err := db.read.QueryContext(ctx,
+		periodSelect+whereClause(conditions)+` ORDER BY p.week_start, u.display_name`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list timesheet periods: %w", err)
+	}
+	return collectPeriods(rows)
+}
+
 // WeekSeconds totals the counting entries in one person's week.
 //
 // Used both when submitting - to record what was submitted - and when showing

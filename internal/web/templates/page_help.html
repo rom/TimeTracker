@@ -25,6 +25,11 @@
   {{end}}
 
   <footer class="help-footer">
+    {{/* The help says what this screen is; the guide says how to do things.
+         Somebody who opened the help and did not find their answer is usually
+         asking the second question. */}}
+    <p><a href="/guide">{{.T "help.seeguide"}}</a></p>
+
     <h2>{{.T "shortcuts.title"}}</h2>
     <dl class="shortcuts">
       <div><dt><kbd>n</kbd></dt><dd>{{.T "shortcuts.new"}}</dd></div>

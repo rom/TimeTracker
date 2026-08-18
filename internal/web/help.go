@@ -108,6 +108,14 @@ func renderHelpBody(body string) template.HTML {
 			continue
 		}
 
+		// A paragraph whose every line is a list marker becomes a list. Steps
+		// are the natural shape of a how-to, and running them together as prose
+		// makes an instruction that has to be followed in order look optional.
+		if list, ok := renderList(paragraph); ok {
+			out.WriteString(list)
+			continue
+		}
+
 		// Escape first. Everything after this point only ever inserts tags of
 		// our own choosing around already-safe text.
 		escaped := html.EscapeString(paragraph)
@@ -119,6 +127,70 @@ func renderHelpBody(body string) template.HTML {
 		out.WriteString("</p>\n")
 	}
 	return template.HTML(out.String())
+}
+
+// renderList turns a block of "1. " or "- " lines into an ordered or unordered
+// list. It reports false unless *every* line in the block is a marker of the
+// same sort, so a paragraph that merely happens to mention "1. " stays prose.
+//
+// The numbers on an ordered list are discarded: the browser numbers the items,
+// so a catalogue whose translator renumbered them, or missed one, still renders
+// a correctly ordered list.
+func renderList(paragraph string) (string, bool) {
+	lines := strings.Split(paragraph, "\n")
+	if len(lines) < 2 {
+		return "", false
+	}
+
+	ordered := false
+	items := make([]string, 0, len(lines))
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		text, isOrdered, ok := listItem(line)
+		if !ok {
+			return "", false
+		}
+		if i == 0 {
+			ordered = isOrdered
+		} else if isOrdered != ordered {
+			// A block mixing "1." and "-" is a mistake in the catalogue, not a
+			// nested list; rendering it as prose makes that visible.
+			return "", false
+		}
+		items = append(items, text)
+	}
+
+	tag := "ul"
+	if ordered {
+		tag = "ol"
+	}
+	var out strings.Builder
+	out.WriteString("<" + tag + ">\n")
+	for _, item := range items {
+		escaped := html.EscapeString(item)
+		escaped = applyPairedMarkup(escaped, "**", "<strong>", "</strong>")
+		escaped = applyPairedMarkup(escaped, "`", "<code>", "</code>")
+		out.WriteString("<li>" + escaped + "</li>\n")
+	}
+	out.WriteString("</" + tag + ">\n")
+	return out.String(), true
+}
+
+// listItem splits a line into its marker and its text.
+func listItem(line string) (text string, ordered, ok bool) {
+	if rest, found := strings.CutPrefix(line, "- "); found {
+		return rest, false, true
+	}
+	// "1. ", "2. ", up to two digits - enough for any procedure worth writing
+	// as a single list.
+	digits := 0
+	for digits < len(line) && digits < 2 && line[digits] >= '0' && line[digits] <= '9' {
+		digits++
+	}
+	if digits > 0 && strings.HasPrefix(line[digits:], ". ") {
+		return line[digits+2:], true, true
+	}
+	return "", false, false
 }
 
 // applyPairedMarkup replaces matched pairs of a delimiter with open and close

@@ -1,0 +1,138 @@
+{{/*
+  Approval status, per person, per week.
+
+  A grid: people down the side, weeks across the top. The queue answers "what
+  is waiting for me"; this answers the question asked at the end of a month,
+  which is a different one - who has *not* submitted. The interesting cells are
+  therefore the ones that would otherwise be empty, and they are marked rather
+  than left blank.
+
+  A week nobody worked stays blank on purpose. Marking those would bury the
+  cells that are actually outstanding.
+*/}}
+{{define "content"}}
+{{$report := .ApprovalReport}}
+<section class="approval-report">
+
+  <header class="screen-header">
+    <div class="screen-title">
+      <h1>{{.T "report.approval.title"}}</h1>
+      {{if gt $report.Outstanding 0}}
+        <span class="badge badge-flagged">{{.N "report.approval.outstanding" $report.Outstanding}}</span>
+      {{end}}
+    </div>
+    <nav class="date-nav" aria-label="{{.T "week.changeweek"}}">
+      <a class="btn btn-quiet" href="/approvals/report?date={{date (addDays $report.From -7)}}&weeks={{.ReportWeeks}}">
+        <span aria-hidden="true">‹</span> {{.T "action.previous"}}
+      </a>
+      <a class="btn btn-quiet" href="/approvals/report?weeks={{.ReportWeeks}}">{{.T "week.thisweek"}}</a>
+      <a class="btn btn-quiet" href="/approvals/report?date={{date (addDays $report.From 7)}}&weeks={{.ReportWeeks}}">
+        {{.T "action.next"}} <span aria-hidden="true">›</span>
+      </a>
+    </nav>
+  </header>
+
+  <p class="screen-intro">{{.T "report.approval.intro"}}</p>
+
+  {{/* How many weeks to show. A plain form so it works without script. */}}
+  <form class="filter" method="get" action="/approvals/report">
+    <label>
+      {{.T "report.approval.weeks"}}
+      <select name="weeks" onchange="this.form.submit()">
+        {{$weeks := .ReportWeeks}}
+        <option value="4"  {{if eq $weeks 4}}selected{{end}}>4</option>
+        <option value="8"  {{if eq $weeks 8}}selected{{end}}>8</option>
+        <option value="12" {{if eq $weeks 12}}selected{{end}}>12</option>
+        <option value="26" {{if eq $weeks 26}}selected{{end}}>26</option>
+        <option value="53" {{if eq $weeks 53}}selected{{end}}>53</option>
+      </select>
+    </label>
+    <button type="submit" class="btn btn-quiet btn-small">{{.T "action.apply"}}</button>
+    <a class="btn btn-quiet btn-small" href="/approvals">{{.T "approvals.title"}}</a>
+  </form>
+
+  {{if $report.Rows}}
+    <div class="grid-scroll">
+      <table class="week-grid approval-grid" aria-label="{{.T "report.approval.title"}}">
+        <thead>
+          <tr>
+            <th scope="col" class="col-assignment">{{.T "approvals.who"}}</th>
+            {{range $report.Weeks}}
+              <th scope="col" class="col-day">{{.WeekStart}}</th>
+            {{end}}
+            <th scope="col" class="col-total">{{.T "week.total"}}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range $report.Rows}}
+            <tr>
+              <th scope="row" class="cell-assignment">
+                <span class="assignment-name">{{.UserName}}</span>
+                {{if gt .Outstanding 0}}
+                  <span class="assignment-path">{{$.N "report.approval.rowoutstanding" .Outstanding}}</span>
+                {{end}}
+              </th>
+              {{range .Cells}}
+                {{/* Colour reinforces; the text and the title carry the meaning,
+                     so the grid survives a monochrome screen and a screen
+                     reader alike. */}}
+                <td class="cell-day cell-status status-{{if .Status}}{{.Status}}{{else}}none{{end}}">
+                  {{if .Status}}
+                    <span class="status-mark" title="{{$.T (printf "report.approval.%s.title" .Status)}}">
+                      {{$.T (printf "report.approval.%s" .Status)}}
+                    </span>
+                    {{if .Recorded}}
+                      <span class="status-hours">{{$.Printer.FormatDecimal (hours .Seconds)}}</span>
+                    {{end}}
+                    {{if .Changed}}
+                      <span class="badge badge-flagged" title="{{$.T "approvals.changed.title"}}">!</span>
+                    {{end}}
+                  {{end}}
+                </td>
+              {{end}}
+              <td class="cell-total">{{$.Printer.FormatDecimal (hours .TotalSeconds)}}</td>
+            </tr>
+          {{end}}
+        </tbody>
+        <tfoot>
+          <tr>
+            <th scope="row">{{.T "report.approval.summary"}}</th>
+            {{range $report.Weeks}}
+              <td class="cell-day-total">
+                {{/* The counts that matter, in the order they matter: what is
+                     still missing, then what is waiting on somebody. */}}
+                {{if gt .NotSubmitted 0}}
+                  <span class="count-missing" title="{{$.T "report.approval.not_submitted.title"}}">{{.NotSubmitted}}</span>
+                {{end}}
+                {{if gt .Submitted 0}}
+                  <span class="count-submitted" title="{{$.T "period.status.submitted"}}">{{.Submitted}}</span>
+                {{end}}
+                {{if gt .Approved 0}}
+                  <span class="count-approved" title="{{$.T "period.status.approved"}}">{{.Approved}}</span>
+                {{end}}
+                {{if gt .Rejected 0}}
+                  <span class="count-rejected" title="{{$.T "period.status.rejected"}}">{{.Rejected}}</span>
+                {{end}}
+              </td>
+            {{end}}
+            <td class="cell-total">{{$.Printer.FormatDecimal (hours $report.TotalSeconds)}}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    {{/* What the marks mean. A grid of abbreviations with no key is a puzzle. */}}
+    <dl class="status-key">
+      {{range $status := reportStatuses}}
+        <div class="key-item">
+          <dt><span class="status-mark status-{{$status}}">{{$.T (printf "report.approval.%s" $status)}}</span></dt>
+          <dd>{{$.T (printf "report.approval.%s.title" $status)}}</dd>
+        </div>
+      {{end}}
+    </dl>
+  {{else}}
+    <p class="empty">{{.T "report.approval.empty"}}</p>
+  {{end}}
+
+</section>
+{{end}}

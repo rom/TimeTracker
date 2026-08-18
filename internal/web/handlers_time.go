@@ -35,6 +35,10 @@ type pageData struct {
 	Help       []helpSection
 	HelpScreen string
 	HasHelp    bool
+	// Guide is the task-oriented user guide: how to perform an action, as
+	// opposed to what the screen in front of you is. Empty except on /guide.
+	Guide      []guideSection
+	GuideTopic string
 	// Running is drawn in the header on every screen, so a timer left going is
 	// impossible to miss.
 	Running     []domain.TimeEntry
@@ -79,6 +83,9 @@ type pageData struct {
 	Approvals []domain.TimesheetPeriod
 	Approved  []domain.TimesheetPeriod
 	MyPeriods []domain.TimesheetPeriod
+	// Approval status per person per week, and the span it covers.
+	ApprovalReport *service.ApprovalReport
+	ReportWeeks    int
 
 	// Moving time.
 	MoveIDs []string

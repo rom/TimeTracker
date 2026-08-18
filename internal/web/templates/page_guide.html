@@ -1,0 +1,59 @@
+{{/*
+  The user guide: how to perform the normal actions.
+
+  The whole guide on one page, with a table of contents. One URL to send
+  somebody, searchable with the browser's own find, and it prints as a manual.
+  A single topic renders the same way with one section, so a deep link lands on
+  the answer rather than near it.
+*/}}
+{{define "content"}}
+<section class="guide">
+
+  <header class="screen-header">
+    <div class="screen-title">
+      <h1>{{if .GuideTopic}}{{(index .Guide 0).Title}}{{else}}{{.T "guide.title"}}{{end}}</h1>
+    </div>
+    {{if .GuideTopic}}
+      <nav class="date-nav">
+        <a class="btn btn-quiet" href="/guide"><span aria-hidden="true">‹</span> {{.T "guide.all"}}</a>
+      </nav>
+    {{end}}
+  </header>
+
+  {{if not .GuideTopic}}
+    <p class="screen-intro">{{.T "guide.intro"}}</p>
+
+    {{/* The contents. Each entry carries its summary, so somebody scanning for
+         the right answer does not have to open three of them to find it. */}}
+    <nav class="guide-contents" aria-label="{{.T "guide.contents"}}">
+      <ol>
+        {{range .Guide}}
+          <li>
+            <a href="#{{.Key}}">{{.Title}}</a>
+            <span class="guide-summary">{{.Summary}}</span>
+          </li>
+        {{end}}
+      </ol>
+    </nav>
+  {{end}}
+
+  {{range .Guide}}
+    {{/* tabindex="-1" so the heading can receive focus when the anchor is
+         followed: a screen reader then starts reading at the section the user
+         chose rather than back at the top of the document. */}}
+    <article class="guide-topic" id="{{.Key}}">
+      <h2 tabindex="-1">{{.Title}}</h2>
+      <p class="guide-summary">{{.Summary}}</p>
+      {{/* Body is built from a restricted markup subset over already-escaped
+           text; see renderHelpBody in help.go. */}}
+      {{.Body}}
+      {{if not $.GuideTopic}}
+        <p class="guide-permalink">
+          <a href="/guide/{{.Key}}">{{$.T "guide.permalink"}}</a>
+        </p>
+      {{end}}
+    </article>
+  {{end}}
+
+</section>
+{{end}}

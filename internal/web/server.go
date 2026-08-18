@@ -279,6 +279,8 @@ func templateFuncs() template.FuncMap {
 		"hoursOf": formatHours,
 		// quantity renders a thousandths quantity as a plain decimal.
 		"quantity": domain.FormatQuantity,
+		// reportStatuses are the marks used in the approval grid, for its key.
+		"reportStatuses": service.ApprovalStatuses,
 		// entryKinds are work, overtime and travel.
 		"entryKinds": domain.EntryKinds,
 		// humanBytes renders a file size the way a person reads one.

@@ -180,6 +180,42 @@ the week view, with the controls that are actually available. A locked week that
 looked exactly like an open one until a save failed would be the worst version
 of this feature: the banner is what makes the refusal predictable.
 
+## 4b. Overtime, travel and reimbursement
+
+Three things a contract settles that an hourly rate does not: what an hour is
+worth when it is the tenth one that day, what it is worth when it is spent on a
+train, and what gets paid back against what evidence
+([ADR-0024](adr/0024-customer-rate-rules.md)).
+
+**The kind of time is chosen, not derived.** An entry is work, overtime or
+travel, and the person says which. A threshold on the customer produces a
+**notice** on the week view — "Tuesday has 10h and none of it is marked
+overtime" — in the same spirit as the unaccounted-time gaps: the tool reports
+what it observed and leaves the judgement alone. Reclassifying automatically
+would bill the ninth hour at a premium because somebody forgot to stop a timer,
+and the person who has to defend that invoice is not the one who decided it.
+
+**The customer's rules price each kind.** An absolute rate beats a multiplier,
+because a contract naming a figure is naming it instead of a multiple. An unset
+rule bills at the ordinary rate: inventing a multiplier nobody agreed to would
+put an unsupported number on an invoice.
+
+**Travel a customer does not pay for is its own state.** The time is recorded in
+full and carries no amount. "We do not bill travel" and "travel is worth nothing
+an hour" read differently on a timesheet, and only one of them is what was
+agreed.
+
+**Reimbursement** covers a default markup on the billable side, a mileage rate
+per kilometre and a per diem per day — a distance or a number of days is priced
+from the customer's rate, and the claim shows its working, because 42.5 × 2.50
+is exactly the sort of arithmetic that reaches a customer wrong — and a receipt
+threshold. The threshold cannot be enforced when a claim is created, since an
+attachment needs something to attach to; it marks the claim there, and refuses
+the week's submission until the receipt exists.
+
+Every export carries the kind. A line billed at one and a half times the base
+rate has to say why on the document carrying the figure.
+
 ## 5. Rates, billing and rounding
 
 Rate resolution, most specific first:
@@ -210,6 +246,9 @@ to the company. Receipts attach directly.
 | **Entries** | filterable list across any range: customer, project, assignment, tag, person, billable, status. The basis of every export. |
 | **Inbox** | proxy proposals awaiting your decision. |
 | **Approvals** | weeks awaiting your decision, weeks you have approved (with the way to reopen one), and your own submitted weeks. Server mode only. |
+| **Approval status** | a grid of people against weeks. Answers the question the queue cannot — who has *not* submitted — because an absent submission is an absent row. Weeks nobody worked stay blank so the outstanding cells are not buried. |
+| **Contract terms** | one customer's overtime, travel and reimbursement rules. A screen of its own: they are read off a signed agreement and typed once, and they need labels and units to be entered correctly. |
+| **Guide** | how to perform the normal actions, in numbered steps. Distinct from the `?` help, which explains the screen in front of you ([ADR-0025](adr/0025-task-oriented-guide.md)). |
 | **Expenses** | list and entry, with receipts, billable/reimbursable flags. |
 | **Reports** | grouped totals by customer/project/assignment/person/tag over a range, billable vs non-billable, budget consumption, export in four formats. |
 | **Admin** | customers, projects, assignments, rates, tags; in server mode also users, roles, memberships, sessions and the audit log. |
@@ -265,6 +304,8 @@ you are using. What it *can* do:
   ("2h 15m unaccounted, 13:00–15:15") and offers to fill them from a recent
   assignment.
 * **Idle detection** — on running timers, as described above.
+* **Overtime notices** — a day or week past the customer's agreed threshold with
+  none of the time marked as overtime. Reported, never applied: see §4b.
 * **Reminders** — end-of-day and end-of-week nudges for missing time and pending
   proposals.
 * **Suggestions from your own history** — the assignments you usually work on this

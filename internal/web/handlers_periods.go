@@ -113,3 +113,39 @@ func (s *Server) weekParam(r *http.Request) time.Time {
 	}
 	return s.dateParam(r, "date")
 }
+
+// handleApprovalReport renders approval status per person per week.
+//
+// Separate from the queue because it answers a different question. The queue is
+// "what is waiting for me"; this is "who has not submitted", which is the
+// absence of a submission rather than one in a particular state - so the cells
+// worth looking at are the ones that would otherwise be blank.
+func (s *Server) handleApprovalReport(w http.ResponseWriter, r *http.Request) {
+	data, err := s.newPageData(r, "", "approvals")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	data.Title = data.Printer.T("report.approval.title")
+
+	weeks := int(int64Param(r.URL.Query().Get("weeks")))
+	if weeks <= 0 {
+		weeks = defaultReportWeeks
+	}
+	data.ReportWeeks = weeks
+
+	report, err := s.svc.ApprovalReportFor(r.Context(), s.dateParam(r, "date"), weeks)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	data.ApprovalReport = &report
+	// The service clamps the range; the form has to show what was actually
+	// used rather than what was asked for, or the selector lies.
+	data.ReportWeeks = len(report.Weeks)
+
+	s.render(w, r, "page_approval_report.html", data)
+}
+
+// defaultReportWeeks is a quarter, which is the span most people review over.
+const defaultReportWeeks = 12
