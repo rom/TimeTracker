@@ -476,6 +476,47 @@ kbd {
   background: var(--surface-sunken);
 }
 
+/* ------------------------------------------------------- optional chrome -- */
+
+.header-clock {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+.header-date { color: var(--text-muted); font-size: 0.9em; }
+
+/* A count on a navigation item. Not colour alone: it carries a number, which is
+   the information, and the colour only draws the eye. */
+.badge-count {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+  margin-left: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A row that accepts a pasted image shows it is doing something. */
+.is-uploading { opacity: 0.5; }
+[data-paste-target]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* A file input inside a table row, kept narrow so it does not dominate. */
+.file-input { max-width: 11rem; font-size: 0.8em; }
+
+.settings-form fieldset {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--gap);
+  margin-bottom: var(--gap);
+  background: var(--surface-raised);
+}
+.settings-form legend { padding: 0 6px; font-weight: 600; font-size: 0.9em; }
+.settings-form label {
+  display: flex; flex-direction: column; gap: 2px;
+  margin-bottom: var(--gap-sm); font-size: 0.9em; max-width: 22rem;
+}
+.settings-form label.inline-check { flex-direction: row; align-items: center; }
+
 /* -------------------------------------------------- skip link and help ---- */
 
 /* The skip link is the first thing in the tab order and invisible until it has

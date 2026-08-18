@@ -19,11 +19,18 @@ address it prints, add a customer, a project and an assignment under **Admin**,
 and start tracking.
 
 ```sh
-./bin/timetracker --help          # all flags
-./bin/timetracker --open          # launch a browser too
-make build-all                    # cross-compile all six OS/arch targets
-make check                        # format, vet, lint and the full test suite
+./bin/timetracker --help                 # all flags
+./bin/timetracker --open                 # launch a browser too
+./bin/timetracker --config my.yaml       # settings from a file
+./bin/timetracker --verbose              # or --debug for a bug report
+make build-all                           # cross-compile all six OS/arch targets
+make check                               # fmt, vet, lint, cross-compile, tests, coverage
 ```
+
+Settings can live in a YAML file instead of on the command line — see
+[timetracker.example.yaml](timetracker.example.yaml). It is picked up
+automatically from the data directory, `~/.config/timetracker/`, or
+`/etc/timetracker/`.
 
 ## What it does today
 
@@ -46,7 +53,16 @@ make check                        # format, vet, lint and the full test suite
   and `1 tim 30 min` where English says `1,234.50` and `1h 30m`.
 * **Context-sensitive help** on every screen, translated, and working without
   JavaScript.
-* **CSV and JSON export** of any filtered range.
+* **Export to PDF, DOCX, CSV and JSON** — all four rendered from one value, so
+  they cannot disagree about the numbers.
+* **Expenses** with receipts, keeping *billable to the client* and *reimbursable
+  to you* as separate questions, because they are.
+* **Attachments** on entries and expenses, including pasting a screenshot or a
+  photographed receipt straight from the clipboard.
+* **Colleague time tracking** — record time for someone who worked with you, and
+  it waits in their inbox counting for nothing until they accept it.
+* **Import hours from CSV**, previewing every row before anything is written.
+* **Backup and restore**, whole or partial, merging rather than replacing.
 * **Audit trail.** Every mutation records who did what, when, in the same
   transaction as the change itself.
 

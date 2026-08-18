@@ -54,6 +54,49 @@
 | 015 least privilege | Config tests assert that server mode refuses a public bind without TLS, that a half-configured TLS pair is rejected, that a group-readable private key is refused with a message saying how to fix it, and that no CBC or non-forward-secret cipher suite is offered. The platform profiles in `deploy/` are **not** covered by automated tests - they are verified by `scripts/harden-check.sh` and `systemd-analyze security` against a real deployment, which is stated plainly rather than implied. |
 | 014 exactness | Rounding boundary tables (exactly on the increment, one second either side, zero, negative guard); rate × duration half-away-from-zero; mixed-currency addition panics/errors; a source-level check that no persisted field or total is `float64`. |
 
+## 3a. Regression tests
+
+`internal/web/regression_test.go` collects a test for every defect that reached a
+running build, named for its symptom rather than for the code it touches. The
+list is short and each entry is specific:
+
+| Symptom | Cause |
+|---|---|
+| a completed customer form rejected as empty | `ParseForm` does not parse a multipart body but does set `r.Form`, so `FormValue` never fell back |
+| every screen with entries returned 500 | a fragment rendered inside a `range` lost `$`, and the test logger hid the error |
+| the day view went blank | a query was not passed the actor's scope, which correctly renders as "match nothing" |
+| PDF and DOCX returned 501 after being implemented | the handler's switch still listed them as unimplemented |
+| a shell script named `.png` was stored | SECURITY.md claimed an extension check that did not exist |
+| the macOS and Windows builds broke | a symbol used by shared code was defined only in a `_linux.go` file |
+
+Two of those are worth dwelling on. The 500 was invisible because the test logger
+discarded output and the smoke test rendered only empty pages - so the regression
+test creates data first. And the extension check was a documentation claim that
+was simply untrue, which is the kind of defect only reading the docs against the
+code will find.
+
+The cross-compile failure is the one no test can catch: `make build-check`
+compiles all six OS/arch targets and runs inside `make check`, and a regression
+test asserts that it is still wired in, since a Makefile edit could silently
+remove it.
+
+## 3b. Coverage
+
+`make coverage` produces a profile and an HTML report; `make coverage-check`
+enforces per-package floors and runs as part of `make check`.
+
+The floors are on the packages where a gap is expensive - the domain rules, the
+service layer that enforces authorisation and audit, the store, the exporters and
+the blob store. There is deliberately **no global percentage target**: chasing one
+produces tests for trivial accessors while an authorisation branch goes
+unexercised. The floors are set just below the current figures, so a regression
+fails the build while ordinary work does not, and lowering one is expected to
+come with a note saying why.
+
+`internal/web` is deliberately excluded: its coverage is dominated by template
+rendering that the HTTP tests exercise thoroughly without the statement counter
+noticing.
+
 ## 4. Practices
 
 * **Table-driven tests** for anything with a rule set — rounding, duration parsing,

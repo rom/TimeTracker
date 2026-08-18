@@ -48,13 +48,52 @@ type RoundingRule struct {
 // never configures anything is never surprised by a number they did not record.
 var NoRounding = RoundingRule{Mode: RoundNone}
 
+// NamedRoundingRules are the presets offered in the interface.
+//
+// A minimum with no increment is a common consultancy arrangement - a call-out
+// or an on-site visit is billed as a whole block however long it actually took -
+// and it is expressed here as a minimum with rounding otherwise disabled, so a
+// six-hour visit under a four-hour minimum still bills six hours rather than
+// being rounded up to a block boundary.
+//
+// The keys are the serialised form, so they are what ends up stored on an entry
+// and must not change once they have been used.
+var NamedRoundingRules = []struct {
+	// Key is the stored value, e.g. "up/900/0".
+	Key string
+	// MessageKey names the translated label in the message catalogue.
+	MessageKey string
+}{
+	{Key: "none", MessageKey: "rounding.none"},
+	{Key: "up/900/0", MessageKey: "rounding.up15"},
+	{Key: "up/1800/0", MessageKey: "rounding.up30"},
+	{Key: "up/3600/0", MessageKey: "rounding.up60"},
+	{Key: "nearest/900/0", MessageKey: "rounding.nearest15"},
+	{Key: "nearest/1800/0", MessageKey: "rounding.nearest30"},
+	// Minimums: bill at least this much for any work at all.
+	{Key: "none/0/7200", MessageKey: "rounding.min2h"},
+	{Key: "none/0/14400", MessageKey: "rounding.min4h"},
+	{Key: "none/0/28800", MessageKey: "rounding.min8h"},
+	// A minimum combined with an increment, which is the most common real
+	// arrangement: at least two hours, and quarter hours after that.
+	{Key: "up/900/7200", MessageKey: "rounding.min2h15"},
+	{Key: "up/900/14400", MessageKey: "rounding.min4h15"},
+}
+
 // String renders the rule compactly for storage on an entry and for display, e.g.
 // "up/900/3600". This is what gets persisted, so it must round-trip.
 func (r RoundingRule) String() string {
-	if r.Mode == "" || r.Mode == RoundNone {
+	if r.Mode == "" && r.MinimumSeconds == 0 {
 		return string(RoundNone)
 	}
-	return fmt.Sprintf("%s/%d/%d", r.Mode, r.IncrementSeconds, r.MinimumSeconds)
+	if r.Mode == RoundNone && r.MinimumSeconds == 0 {
+		return string(RoundNone)
+	}
+	mode := r.Mode
+	if mode == "" {
+		mode = RoundNone
+	}
+	return fmt.Sprintf("%s/%d/%d", mode, r.IncrementSeconds, r.MinimumSeconds)
 }
 
 // ParseRoundingRule reads back what String wrote. An unrecognised value degrades
@@ -69,6 +108,10 @@ func ParseRoundingRule(s string) RoundingRule {
 	mode := RoundingMode(parts[0])
 	switch mode {
 	case RoundUp, RoundNearest, RoundDown:
+	case RoundNone:
+		// "none/0/7200" is a minimum with no increment - bill at least two
+		// hours, and the exact recorded time beyond that. A legitimate and
+		// common arrangement, so it must round-trip rather than degrading.
 	default:
 		return NoRounding
 	}

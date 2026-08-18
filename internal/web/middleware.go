@@ -111,6 +111,9 @@ func isStaticPath(path string) bool {
 func isPublicPath(path string) bool {
 	switch path {
 	case "/login", "/logout", "/auth/oidc/start", "/auth/oidc/callback", "/healthz":
+		// Everything else - including every route added since - requires an
+		// identity. The list is explicit rather than pattern-based precisely so
+		// a new route cannot join it by accident.
 		return true
 	default:
 		return false

@@ -91,7 +91,11 @@
 {{define "entry-row"}}
 {{- $e := .Entry -}}
 {{- $page := .Page -}}
-  <tr class="entry-row {{if $e.Flagged}}flagged{{end}} {{if eq (printf "%s" $e.Status) "pending"}}pending{{end}}">
+  {{/* The row accepts a pasted image, which attaches it to this entry. It posts
+       to the same endpoint a file input does, so there is no second, laxer path
+       into the blob store. */}}
+  <tr class="entry-row {{if $e.Flagged}}flagged{{end}} {{if eq (printf "%s" $e.Status) "pending"}}pending{{end}}"
+      data-paste-target="/attachments/time_entry/{{$e.ID}}" tabindex="0">
     <td class="cell-chip">
       <span class="chip" data-colour="{{$e.ColourKey}}" title="{{$e.CustomerName}}">
         {{if $e.Icon}}{{$e.Icon}}{{else}}●{{end}}
@@ -128,6 +132,11 @@
       {{if $e.Billable}}<span aria-hidden="true">€</span><span class="visually-hidden">{{$page.T "entry.billable"}}</span>{{end}}
     </td>
     <td class="cell-actions">
+      {{if gt $e.AttachmentCount 0}}
+        <span class="badge" title="{{$page.T "attachments.title"}}">
+          <span aria-hidden="true">📎</span> {{$e.AttachmentCount}}
+        </span>
+      {{end}}
       {{if $e.Running}}
         <form method="post" action="/timers/{{$e.ID}}/stop" hx-post="/timers/{{$e.ID}}/stop">
           {{template "csrf" $page.CSRFToken}}

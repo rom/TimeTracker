@@ -1,0 +1,139 @@
+{{define "content"}}
+<section class="inbox-screen">
+
+  <header class="screen-header">
+    <div class="screen-title"><h1>{{.T "inbox.title"}}</h1></div>
+  </header>
+
+  <p class="hint">{{.T "inbox.intro"}}</p>
+
+  {{$csrf := .CSRFToken}}
+  {{$page := .}}
+
+  {{if .Inbox.Entries}}
+    <h2 class="section-heading">{{.T "inbox.proposed"}}</h2>
+    <table class="entries">
+      <thead>
+        <tr>
+          <th scope="col">{{.T "entry.date"}}</th>
+          <th scope="col">{{.T "entry.assignment"}}</th>
+          <th scope="col">{{.T "entry.duration"}}</th>
+          <th scope="col"><span class="visually-hidden">{{.T "action.confirm"}}</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Inbox.Entries}}
+          <tr class="entry-row pending">
+            <td>{{$page.Printer.FormatDate .StartedAt}}</td>
+            <td>
+              <span class="entry-assignment">{{.AssignmentName}}</span>
+              <span class="entry-path">{{.CustomerName}} · {{.ProjectName}}</span>
+              {{if .Note}}<span class="entry-note">{{.Note}}</span>{{end}}
+              <span class="badge badge-proxy">{{$page.T "inbox.by" .EnteredByName}}</span>
+              {{/* Two people proposing the same afternoon would otherwise double
+                   somebody's hours, so overlaps are flagged rather than left to
+                   be noticed. */}}
+              {{if index $page.Inbox.Overlapping .ID}}
+                <span class="badge badge-flagged">{{$page.T "inbox.overlapping"}}</span>
+              {{end}}
+            </td>
+            <td class="cell-time">{{$page.Printer.FormatDuration .DurationSeconds}}</td>
+            <td class="cell-actions">
+              <form method="post" action="/inbox/entries/{{.ID}}/accept"
+                    hx-post="/inbox/entries/{{.ID}}/accept" class="inline-form">
+                {{template "csrf" $csrf}}
+                <button type="submit" class="btn btn-small btn-primary">
+                  {{$page.T "action.confirm"}}
+                </button>
+              </form>
+              <form method="post" action="/inbox/entries/{{.ID}}/reject"
+                    hx-post="/inbox/entries/{{.ID}}/reject" class="inline-form">
+                {{template "csrf" $csrf}}
+                <input type="text" name="reason" placeholder="{{$page.T "inbox.reason"}}"
+                       size="18" aria-label="{{$page.T "inbox.reason"}}">
+                <button type="submit" class="btn btn-small">{{$page.T "action.reject"}}</button>
+              </form>
+            </td>
+          </tr>
+        {{end}}
+      </tbody>
+    </table>
+  {{end}}
+
+  {{if .Inbox.Expenses}}
+    <h2 class="section-heading">{{.T "expenses.title"}}</h2>
+    <table class="entries">
+      <tbody>
+        {{range .Inbox.Expenses}}
+          <tr class="entry-row pending">
+            <td>{{.SpentOn}}</td>
+            <td>
+              <span class="entry-assignment">{{.Description}}</span>
+              <span class="badge badge-proxy">{{$page.T "inbox.by" .EnteredByName}}</span>
+            </td>
+            <td class="cell-time">{{$page.Printer.FormatMoney .AmountMinor .Currency}}</td>
+            <td class="cell-actions">
+              <form method="post" action="/inbox/expenses/{{.ID}}/accept"
+                    hx-post="/inbox/expenses/{{.ID}}/accept" class="inline-form">
+                {{template "csrf" $csrf}}
+                <button type="submit" class="btn btn-small btn-primary">
+                  {{$page.T "action.confirm"}}
+                </button>
+              </form>
+              <form method="post" action="/inbox/expenses/{{.ID}}/reject"
+                    hx-post="/inbox/expenses/{{.ID}}/reject" class="inline-form">
+                {{template "csrf" $csrf}}
+                <input type="text" name="reason" placeholder="{{$page.T "inbox.reason"}}" size="18">
+                <button type="submit" class="btn btn-small">{{$page.T "action.reject"}}</button>
+              </form>
+            </td>
+          </tr>
+        {{end}}
+      </tbody>
+    </table>
+  {{end}}
+
+  {{if eq .Inbox.Count 0}}
+    <p class="empty">{{.T "inbox.empty"}}</p>
+  {{end}}
+
+  {{/* What this user has proposed for other people: a proposal that vanishes
+       silently is worse than one that is refused. */}}
+  {{if .Proposed}}
+    <h2 class="section-heading">{{.T "proxy.for"}}</h2>
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>{{.T "entry.date"}}</th>
+          <th>{{.T "users.name"}}</th>
+          <th>{{.T "entry.assignment"}}</th>
+          <th>{{.T "entry.duration"}}</th>
+          <th>{{.T "users.role"}}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Proposed}}
+          <tr>
+            <td>{{$page.Printer.FormatDate .StartedAt}}</td>
+            <td>{{.UserName}}</td>
+            <td>{{.AssignmentName}}</td>
+            <td>{{$page.Printer.FormatDuration .DurationSeconds}}</td>
+            <td>
+              {{if eq (printf "%s" .Status) "pending"}}
+                <span class="badge badge-pending">{{$page.T "entry.pending"}}</span>
+              {{else if eq (printf "%s" .Status) "rejected"}}
+                <span class="badge badge-flagged" title="{{.DecisionNote}}">
+                  {{$page.T "action.reject"}}
+                </span>
+              {{else}}
+                <span class="badge">{{$page.T "action.confirm"}}</span>
+              {{end}}
+            </td>
+          </tr>
+        {{end}}
+      </tbody>
+    </table>
+  {{end}}
+
+</section>
+{{end}}

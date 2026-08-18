@@ -46,6 +46,8 @@ Statuses: `proposed` → `accepted` → `superseded by ADR-NNNN` | `deprecated`.
 | [0018](0018-tls-termination.md) | The application can terminate TLS itself | accepted | 2026-08-18 | ASR-003, ASR-005 |
 | [0019](0019-message-catalogues-and-server-side-localisation.md) | Message catalogues, resolved on the server | accepted | 2026-08-18 | ASR-016 |
 | [0020](0020-context-sensitive-help.md) | Context-sensitive help, translated, no-JS | accepted | 2026-08-18 | ASR-017, ASR-016 |
+| [0021](0021-json-backups-that-merge.md) | Backups are JSON, and restoring merges | accepted | 2026-08-18 | ASR-010, ASR-018 |
+| [0022](0022-two-pass-csv-import.md) | CSV import previews, then imports all or nothing | accepted | 2026-08-18 | ASR-019 |
 
 ## Writing a new one
 

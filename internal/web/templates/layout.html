@@ -60,6 +60,13 @@
     <a href="/today"   {{if eq .Active "today"}}class="active" aria-current="page"{{end}}>{{.T "nav.today"}}</a>
     <a href="/week"    {{if eq .Active "week"}}class="active" aria-current="page"{{end}}>{{.T "nav.week"}}</a>
     <a href="/entries" {{if eq .Active "entries"}}class="active" aria-current="page"{{end}}>{{.T "nav.entries"}}</a>
+    <a href="/expenses" {{if eq .Active "expenses"}}class="active" aria-current="page"{{end}}>{{.T "nav.expenses"}}</a>
+    <a href="/inbox" {{if eq .Active "inbox"}}class="active" aria-current="page"{{end}}>
+      {{.T "nav.inbox"}}
+      {{/* A proposal nobody looks at is unbilled work, so the count is on every
+           screen rather than only on the inbox itself. */}}
+      {{if gt .InboxCount 0}}<span class="badge badge-count">{{.InboxCount}}</span>{{end}}
+    </a>
     <a href="/admin"   {{if eq .Active "admin"}}class="active" aria-current="page"{{end}}>{{.T "nav.admin"}}</a>
     {{if .ServerMode}}
       <a href="/users" {{if eq .Active "users"}}class="active" aria-current="page"{{end}}>{{.T "nav.users"}}</a>
@@ -98,6 +105,15 @@
         {{end}}
       </select>
     </label>
+
+    {{/* Optional chrome, because whether a clock belongs in a timesheet header
+         is a matter of taste rather than a decision to make for everybody. */}}
+    {{if .Settings.ShowClock}}
+      <span class="header-clock" id="header-clock" aria-hidden="true">--:--:--</span>
+    {{end}}
+    {{if .Settings.ShowTimeAndDate}}
+      <span class="header-date">{{.Printer.FormatDate .Now}}</span>
+    {{end}}
 
     <span class="whoami" title="{{.T "nav.signedin"}}">{{.User.DisplayName}}</span>
 

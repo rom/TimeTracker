@@ -185,6 +185,26 @@
     banner.scrollIntoView({ block: "nearest" });
   }
 
+  /*
+   * The optional header clock. Ticking it client-side rather than re-rendering
+   * the page is the only sane way to show seconds, and it is decorative - the
+   * server's clock is what decides what gets recorded.
+   */
+  function initHeaderClock() {
+    var clock = document.getElementById("header-clock");
+    if (!clock) return;
+
+    function tick() {
+      var now = new Date();
+      clock.textContent =
+        String(now.getHours()).padStart(2, "0") + ":" +
+        String(now.getMinutes()).padStart(2, "0") + ":" +
+        String(now.getSeconds()).padStart(2, "0");
+    }
+    tick();
+    window.setInterval(tick, 1000);
+  }
+
   /* ------------------------------------------------------------ language --- */
 
   /*
@@ -224,6 +244,83 @@
   function currentCSRFToken() {
     var field = document.querySelector('input[name="csrf_token"]');
     return field ? field.value : "";
+  }
+
+  /* ---------------------------------------------------------------- paste --- */
+
+  /*
+   * Pasting an image attaches it.
+   *
+   * A photographed receipt or a screenshot is usually already on the clipboard,
+   * and making someone save it to disk first so they can pick it in a file
+   * dialogue is the kind of friction that stops people recording expenses at
+   * all.
+   *
+   * It posts to exactly the same upload endpoint a file input does, so there is
+   * no second, laxer path into the blob store: the same size limit, the same
+   * type sniffing, the same authorisation.
+   */
+  function initPaste() {
+    document.addEventListener("paste", function (event) {
+      if (!event.clipboardData) return;
+
+      /* Only act when the paste target is a region that declares somewhere to
+         put it. Pasting text into a note field must stay ordinary pasting. */
+      var target = event.target.closest("[data-paste-target]");
+      if (!target) return;
+
+      var url = target.getAttribute("data-paste-target");
+      var items = event.clipboardData.items;
+
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].kind !== "file") continue;
+
+        var file = items[i].getAsFile();
+        if (!file) continue;
+
+        event.preventDefault();
+        uploadPastedFile(url, file, target);
+        return;
+      }
+    });
+  }
+
+  function uploadPastedFile(url, file, target) {
+    var body = new FormData();
+    /* The clipboard rarely supplies a name. The extension matters, because the
+       server checks that it agrees with the content, so it is derived from the
+       type the browser reported rather than invented. */
+    var name = file.name;
+    if (!name || name === "image.png") {
+      var extension = (file.type.split("/")[1] || "png").replace("jpeg", "jpg");
+      name = "pasted-" + Date.now() + "." + extension;
+    }
+    body.append("file", file, name);
+    body.append("csrf_token", currentCSRFToken());
+
+    target.classList.add("is-uploading");
+
+    fetch(url, {
+      method: "POST",
+      headers: { "HX-Request": "true", "X-CSRF-Token": currentCSRFToken() },
+      body: body,
+      credentials: "same-origin",
+    })
+      .then(function (response) {
+        if (!response.ok) {
+          return response.text().then(function (text) {
+            showError(text || "That image could not be attached.");
+          });
+        }
+        window.location.reload();
+        return null;
+      })
+      .catch(function () {
+        showError("Could not reach the server.");
+      })
+      .finally(function () {
+        target.classList.remove("is-uploading");
+      });
   }
 
   /* ---------------------------------------------------------------- help --- */
@@ -367,9 +464,11 @@
     updateClocks();
     /* One second is the natural cadence for a clock showing seconds. */
     window.setInterval(updateClocks, 1000);
+    initHeaderClock();
     initThemePicker();
     initLanguagePicker();
     initAjaxForms();
+    initPaste();
     initHelp();
     initShortcuts();
   }

@@ -1,0 +1,126 @@
+{{define "content"}}
+<section class="expenses-screen">
+
+  <header class="screen-header">
+    <div class="screen-title"><h1>{{.T "expenses.title"}}</h1></div>
+  </header>
+
+  <p class="hint">{{.T "expenses.help"}}</p>
+
+  {{/* Two totals, kept apart because they are different kinds of money: one
+       joins an invoice, the other is owed back to a person. */}}
+  <dl class="totals" role="group" aria-label="{{.T "totals.region"}}">
+    {{range $currency, $amount := .ExpenseTotals.BillableByCurrency}}
+      <div class="total">
+        <dt>{{$.T "expenses.total.billable"}}</dt>
+        <dd class="total-value">{{$.Printer.FormatMoney $amount $currency}}</dd>
+      </div>
+    {{end}}
+    {{range $currency, $amount := .ExpenseTotals.ReimbursableByCurrency}}
+      <div class="total">
+        <dt>{{$.T "expenses.total.reimbursable"}}</dt>
+        <dd class="total-value">{{$.Printer.FormatMoney $amount $currency}}</dd>
+      </div>
+    {{end}}
+  </dl>
+
+  <form class="entry-form" method="post" action="/expenses" hx-post="/expenses">
+    {{template "csrf" $.CSRFToken}}
+    <select name="project_id" required aria-label="{{.T "admin.project"}}">
+      <option value="">{{.T "admin.project"}}…</option>
+      {{range .Projects}}
+        <option value="{{.ID}}">{{.CustomerName}} / {{.Name}}</option>
+      {{end}}
+    </select>
+    <input type="date" name="spent_on" required aria-label="{{.T "expenses.date"}}"
+           value="{{date .Now}}">
+    <input type="text" name="category" placeholder="{{.T "expenses.category"}}" size="12"
+           aria-label="{{.T "expenses.category"}}">
+    <input type="text" name="description" placeholder="{{.T "expenses.description"}}"
+           aria-label="{{.T "expenses.description"}}">
+    <input type="text" name="amount" placeholder="{{.T "expenses.amount"}}" size="10" required
+           aria-label="{{.T "expenses.amount"}}">
+    <label class="inline-check">
+      <input type="checkbox" name="billable"> {{.T "expenses.billable"}}
+    </label>
+    <label class="inline-check">
+      <input type="checkbox" name="reimbursable"> {{.T "expenses.reimbursable"}}
+    </label>
+    <input type="number" name="markup" min="0" max="1000" placeholder="0" size="4"
+           aria-label="{{.T "expenses.markup"}}">
+    <button type="submit" class="btn btn-primary">{{.T "expenses.add"}}</button>
+  </form>
+
+  {{if .Expenses}}
+    <table class="entries">
+      <thead>
+        <tr>
+          <th scope="col">{{.T "expenses.date"}}</th>
+          <th scope="col">{{.T "expenses.description"}}</th>
+          <th scope="col">{{.T "admin.project"}}</th>
+          <th scope="col">{{.T "expenses.amount"}}</th>
+          <th scope="col">{{.T "expenses.billable"}}</th>
+          <th scope="col"><span class="visually-hidden">{{.T "action.delete"}}</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{$csrf := .CSRFToken}}
+        {{$page := .}}
+        {{range .Expenses}}
+          {{/* data-paste-target makes the whole row accept a pasted image:
+               a photographed receipt is usually already on the clipboard. */}}
+          <tr class="entry-row {{if eq (printf "%s" .Status) "pending"}}pending{{end}}"
+              data-paste-target="/attachments/expense/{{.ID}}" tabindex="0"
+              aria-label="{{$page.T "attachments.paste"}}">
+            <td>{{.SpentOn}}</td>
+            <td>
+              <span class="entry-assignment">{{.Description}}</span>
+              {{if .Category}}<span class="entry-path">{{.Category}}</span>{{end}}
+              {{if .IsProxy}}
+                <span class="badge badge-proxy">{{$page.T "entry.enteredby" .EnteredByName}}</span>
+              {{end}}
+              {{if eq (printf "%s" .Status) "pending"}}
+                <span class="badge badge-pending">{{$page.T "entry.pending"}}</span>
+              {{end}}
+              {{if gt .AttachmentCount 0}}
+                <span class="badge" title="{{$page.T "attachments.title"}}">
+                  📎 {{.AttachmentCount}}
+                </span>
+              {{end}}
+            </td>
+            <td>{{.CustomerName}} / {{.ProjectName}}</td>
+            <td class="cell-time">{{$page.Printer.FormatMoney .AmountMinor .Currency}}</td>
+            <td>
+              {{/* Two independent flags, shown as two independent marks. */}}
+              {{if .Billable}}<span class="badge">{{$page.T "expenses.total.billable"}}</span>{{end}}
+              {{if .Reimbursable}}<span class="badge">{{$page.T "expenses.total.reimbursable"}}</span>{{end}}
+            </td>
+            <td class="cell-actions">
+              {{/* Receipts. A file input posts multipart, which is the one place
+                   the application accepts it. */}}
+              <form method="post" action="/attachments/expense/{{.ID}}"
+                    enctype="multipart/form-data" class="inline-form">
+                {{template "csrf" $csrf}}
+                <input type="file" name="file" aria-label="{{$page.T "expenses.receipt"}}"
+                       class="file-input">
+                <button type="submit" class="btn btn-small">{{$page.T "action.upload"}}</button>
+              </form>
+              <form method="post" action="/expenses/{{.ID}}/delete" hx-post="/expenses/{{.ID}}/delete"
+                    hx-confirm="{{$page.T "entry.delete.confirm"}}">
+                {{template "csrf" $csrf}}
+                <button type="submit" class="btn btn-small btn-quiet">
+                  <span aria-hidden="true">×</span>
+                  <span class="visually-hidden">{{$page.T "action.delete"}}</span>
+                </button>
+              </form>
+            </td>
+          </tr>
+        {{end}}
+      </tbody>
+    </table>
+  {{else}}
+    <p class="empty">{{.T "expenses.empty"}}</p>
+  {{end}}
+
+</section>
+{{end}}

@@ -241,20 +241,30 @@ type TimeEntry struct {
 	RateMinor           int64
 	AmountMinor         int64
 	Currency            string
+	// DecidedBy and DecidedAt record the subject's decision on a proxy proposal,
+	// and DecisionNote holds their reason for declining one. A rejection is
+	// kept rather than deleted: the record of what was claimed has to survive
+	// the disagreement.
+	DecidedBy    int64
+	DecidedAt    time.Time
+	DecisionNote string
 	// Flagged marks an entry needing human review, e.g. a timer that ran past the
 	// maximum. Flagged entries are excluded from totals until resolved.
 	Flagged   bool
 	CreatedAt time.Time
 	UpdatedAt time.Time
 
-	// Denormalised for display.
-	AssignmentName string
-	ProjectName    string
-	CustomerName   string
-	ColourKey      string
-	Icon           string
-	UserName       string
-	EnteredByName  string
+	// Denormalised for display and for authorisation scoping.
+	AssignmentName  string
+	ProjectID       int64
+	ProjectName     string
+	CustomerID      int64
+	CustomerName    string
+	ColourKey       string
+	Icon            string
+	UserName        string
+	EnteredByName   string
+	AttachmentCount int
 }
 
 // Running reports whether the timer is still going.

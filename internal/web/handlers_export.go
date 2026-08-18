@@ -53,12 +53,20 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 				"error", err.Error())
 		}
 
-	case export.FormatPDF, export.FormatDOCX:
-		// Planned for layer 5; see docs/MVP_PLAN.md. Answering honestly is better
-		// than a broken download.
-		http.Error(w,
-			"PDF and DOCX export are not implemented yet. CSV and JSON are available.",
-			http.StatusNotImplemented)
+	case export.FormatPDF:
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", contentDisposition(filename))
+		if err := export.WritePDF(w, report); err != nil {
+			s.log.ErrorContext(r.Context(), "PDF export failed midway", "error", err.Error())
+		}
+
+	case export.FormatDOCX:
+		w.Header().Set("Content-Type",
+			"application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+		w.Header().Set("Content-Disposition", contentDisposition(filename))
+		if err := export.WriteDOCX(w, report); err != nil {
+			s.log.ErrorContext(r.Context(), "DOCX export failed midway", "error", err.Error())
+		}
 
 	default:
 		http.Error(w, "Unknown export format.", http.StatusBadRequest)

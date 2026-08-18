@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/rom/timetracker/internal/auth"
+	"github.com/rom/timetracker/internal/blob"
 	"github.com/rom/timetracker/internal/config"
 	"github.com/rom/timetracker/internal/domain"
 	"github.com/rom/timetracker/internal/service"
@@ -36,6 +37,15 @@ func newTestServer(t *testing.T) (*Server, domain.User) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc := service.New(db, auth.SingleUserAuthorizer{}, logger, time.Now)
+
+	// A blob store, as the real server wires one. Without it every attachment
+	// operation is refused as unconfigured - which would make an upload test
+	// pass for entirely the wrong reason.
+	blobs, err := blob.Open(filepath.Join(t.TempDir(), "blobs"))
+	if err != nil {
+		t.Fatalf("open blob store: %v", err)
+	}
+	svc = svc.WithBlobs(blobs)
 
 	user, err := db.CreateUser(ctx, domain.User{
 		DisplayName: "Test User", Role: domain.RoleAdmin,
@@ -182,8 +192,24 @@ func TestExports(t *testing.T) {
 		t.Error("JSON export carries no schema version")
 	}
 
-	if rec := get(t, srv, "/export/pdf"); rec.Code != http.StatusNotImplemented {
-		t.Errorf("PDF export = %d, want 501 until layer 5", rec.Code)
+	pdf := get(t, srv, "/export/pdf")
+	if pdf.Code != http.StatusOK {
+		t.Fatalf("PDF export = %d", pdf.Code)
+	}
+	if ct := pdf.Header().Get("Content-Type"); ct != "application/pdf" {
+		t.Errorf("PDF content type = %q", ct)
+	}
+	if !strings.HasPrefix(pdf.Body.String(), "%PDF-") {
+		t.Error("the PDF export is not a PDF")
+	}
+
+	docx := get(t, srv, "/export/docx")
+	if docx.Code != http.StatusOK {
+		t.Fatalf("DOCX export = %d", docx.Code)
+	}
+	// A .docx is a zip, so it starts with the local file header signature.
+	if !strings.HasPrefix(docx.Body.String(), "PK\x03\x04") {
+		t.Error("the DOCX export is not a zip archive")
 	}
 	if rec := get(t, srv, "/export/xml"); rec.Code != http.StatusBadRequest {
 		t.Errorf("unknown format = %d, want 400", rec.Code)
@@ -326,6 +352,12 @@ func newServerModeTestServer(t *testing.T) (*Server, *service.Accounts) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc := service.New(db, auth.RoleAuthorizer{IsProjectMember: db.IsProjectMember}, logger, time.Now)
+	blobs, err := blob.Open(filepath.Join(t.TempDir(), "blobs"))
+	if err != nil {
+		t.Fatalf("open blob store: %v", err)
+	}
+	svc = svc.WithBlobs(blobs)
+
 	accounts := service.NewAccounts(db, svc, time.Now)
 
 	if _, err := accounts.BootstrapFirstAdmin(ctx, service.NewUserInput{

@@ -25,11 +25,11 @@ add it.
 | **0** | Documentation, ADR/ASR set, Makefile, project skeleton | ✅ delivered |
 | **1** | Local-mode MVP: domain, storage, timers, day/week, themes, CSV/JSON | ✅ delivered |
 | **2** | Server mode: auth, RBAC, sessions, rsyslog | ✅ delivered |
-| **3** | Attachments, paste, expenses | ⬜ planned |
-| **4** | Proxy entries and approval workflow | ⬜ planned |
-| **5** | Reports, PDF and DOCX export | ⬜ planned |
-| **6** | Semi-automatic assistance | ⬜ planned |
-| **7** | Hardening, packaging, performance | ⬜ planned |
+| **3** | Attachments, paste, expenses | ✅ delivered |
+| **4** | Proxy entries and approval workflow | ✅ delivered |
+| **5** | Reports, PDF and DOCX export | ✅ delivered |
+| **6** | Semi-automatic assistance | 🔨 partial: gaps and long-timer review shipped; idle detection and reminders outstanding |
+| **7** | Hardening, packaging, performance | 🔨 partial: hardening shipped; the performance suite is not yet written |
 
 ---
 
@@ -109,7 +109,7 @@ level, transparent Argon2id parameter upgrades on login, and session revocation
 on every privilege change. TOTP and API tokens are designed for but deferred -
 neither is load-bearing for a small team behind SSO, and both are additive.
 
-## Layer 3 — Attachments and expenses
+## Layer 3 — Attachments and expenses ✅
 
 Content-addressed blob store with reference counting and an orphan sweep;
 authorising download handler; upload validation (size, type allow-list, server-side
@@ -118,9 +118,11 @@ Expenses with categories, billable/reimbursable flags, markup and receipts, incl
 in reports and exports.
 
 **Done when:** a screenshot pasted into an entry survives a backup/restore cycle and
-is not retrievable by a user who cannot see the owning record.
+is not retrievable by a user who cannot see the owning record. **Done**, with one
+honest gap: a backup file carries attachment *metadata* but not the bytes, which
+must be copied separately. See [ADR-0021](adr/0021-json-backups-that-merge.md).
 
-## Layer 4 — Proxy entries and approvals
+## Layer 4 — Proxy entries and approvals ✅
 
 Proxy proposals with `entered_by`, `pending` status and exclusion from all totals;
 the inbox; accept / edit-and-accept / reject with reason; overlapping-proposal
@@ -128,14 +130,26 @@ flagging. Weekly timesheet submit → approve/reject → lock, with locked perio
 rejecting edits.
 
 **Done when:** proposed time is provably absent from every total and export until
-accepted, and every transition is in the audit trail.
+accepted, and every transition is in the audit trail. **Done.** Weekly submit and
+approve is the part of this layer still outstanding; the consent workflow that
+made it worth doing is complete.
 
-## Layer 5 — Reports, PDF and DOCX
+## Layer 5 — Reports, PDF and DOCX ✅
 
-Grouping by customer/project/assignment/person/tag over arbitrary ranges; budget
-consumption and burn; billable vs non-billable; per-currency totals. Pure-Go PDF
-with page breaks and repeating headers; OOXML DOCX writer. Golden-file tests for
-all four formats, and the `client` projection asserted to omit internal data.
+Pure-Go PDF with page breaks, repeating table headers, grouping by customer and
+project, and per-group subtotals; an OOXML DOCX writer built on `archive/zip`
+and `encoding/xml`. All four formats render from one `Report` value, so they
+cannot disagree about the numbers - asserted by a test.
+
+The PDF writer is written here rather than taken from a library, because no
+library was reachable and the requirement to generate documents in-process is
+firm ([ADR-0007](adr/0007-pure-go-document-generation.md)). Its scope is
+deliberately narrow: text in three weights, rules, filled rectangles and page
+breaks. Anything needing images or embedded fonts should reconsider the
+decision rather than extend the writer.
+
+Still outstanding from this layer: budget consumption and burn reporting, and
+the narrowed `client` projection.
 
 ## Layer 6 — Semi-automatic assistance
 
@@ -152,6 +166,20 @@ restore drill; systemd unit and reverse-proxy examples; import from Toggl/Harves
 CSV; release artefacts with checksums.
 
 ---
+
+## Layer 8 — Bulk import, backup and configuration ✅
+
+Delivered alongside the layers above:
+
+* CSV import of hours, previewing every row before writing anything and then
+  importing all or none ([ADR-0022](adr/0022-two-pass-csv-import.md)).
+* Backup and restore as a single JSON file, whole or partial by customer,
+  project or date range, merging rather than replacing, with optional automatic
+  backups on an interval ([ADR-0021](adr/0021-json-backups-that-merge.md)).
+* A YAML configuration file with `--config`, and `--verbose` / `--debug`.
+* Minimum 2h/4h/8h rounding presets, editable catalogue records, one-click
+  favourites, moving time between assignments with the billing recomputed from
+  the target, and administrator toggles for the header clock and date.
 
 ## Backlog (not yet scheduled)
 
