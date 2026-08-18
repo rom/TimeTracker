@@ -1,0 +1,101 @@
+{{define "content"}}
+{{$day := .Day}}
+<section class="day">
+
+  <header class="screen-header">
+    <div class="screen-title">
+      <h1>{{dateLong $day.Date}}</h1>
+      {{if isToday $day.Date .Now}}<span class="badge badge-today">today</span>{{end}}
+    </div>
+    <nav class="date-nav" aria-label="Change day">
+      <a class="btn btn-quiet" href="/today?date={{date (addDays $day.Date -1)}}">‹ Previous</a>
+      <a class="btn btn-quiet" href="/today">Today</a>
+      <a class="btn btn-quiet" href="/today?date={{date (addDays $day.Date 1)}}">Next ›</a>
+    </nav>
+  </header>
+
+  {{template "totals" .Totals}}
+
+  {{/* Quick add: the two-second path. A leading duration or time range, an
+       assignment reference, #tags, and the rest is the note. Anything ambiguous
+       comes back as an error rather than a guess - a wrong guess that silently
+       becomes billable time is worse than a second attempt. */}}
+  <form class="quick-add" method="post" action="/entries/quick" hx-post="/entries/quick">
+    <input type="text" name="text" id="quick-add-input"
+           placeholder="2h acme/migration fixed the login redirect #travel"
+           aria-label="Quick add" autocomplete="off">
+    <button type="submit" class="btn btn-primary">Add</button>
+  </form>
+
+  {{/* One-click start on what this person actually works on, ordered by recent
+       use rather than alphabetically. */}}
+  {{if .Recent}}
+    <div class="quick-start">
+      <span class="quick-start-label">Start:</span>
+      {{range .Recent}}
+        <form method="post" action="/timers/start" hx-post="/timers/start" class="inline">
+          <input type="hidden" name="assignment_id" value="{{.ID}}">
+          <button type="submit" class="chip-button" data-colour="{{.ColourKey}}"
+                  title="{{.Label}}">
+            <span class="chip" data-colour="{{.ColourKey}}" aria-hidden="true">
+              {{if .Icon}}{{.Icon}}{{else}}●{{end}}
+            </span>
+            {{.Name}}
+          </button>
+        </form>
+      {{end}}
+    </div>
+  {{end}}
+
+  {{/* Gaps are prompts, never auto-filled. The tool reports what it observed and
+       leaves the judgement to the person who did the work. */}}
+  {{if $day.Gaps}}
+    <div class="gaps" role="note">
+      <strong>Unaccounted time:</strong>
+      {{range $day.Gaps}}
+        <span class="gap">{{clock .From $day.Location}}–{{clock .To $day.Location}}
+          ({{duration .Seconds}})</span>
+      {{end}}
+    </div>
+  {{end}}
+
+  <h2 class="section-heading">Entries</h2>
+  {{if $day.Entries}}
+    <table class="entries">
+      <thead>
+        <tr>
+          <th scope="col"><span class="visually-hidden">Colour</span></th>
+          <th scope="col">Assignment</th>
+          <th scope="col">Duration</th>
+          <th scope="col"><span class="visually-hidden">Billable</span></th>
+          <th scope="col"><span class="visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range $day.Entries}}{{template "entry-row" .}}{{end}}
+      </tbody>
+    </table>
+  {{else}}
+    <p class="empty">Nothing recorded for this day yet.</p>
+  {{end}}
+
+  <details class="manual-entry">
+    <summary>Add time manually</summary>
+    <form class="entry-form" method="post" action="/entries" hx-post="/entries">
+      <select name="assignment_id" required aria-label="Assignment">
+        <option value="">Choose an assignment…</option>
+        {{template "assignment-options" .Assignments}}
+      </select>
+      <input type="date" name="date" value="{{date $day.Date}}" required aria-label="Date">
+      <input type="time" name="start" value="09:00" aria-label="Start time">
+      <input type="text" name="duration" placeholder="1h30 or 1.5" aria-label="Duration">
+      <input type="text" name="note" placeholder="What did you do?" aria-label="Note">
+      <label class="inline-check">
+        <input type="checkbox" name="billable" checked> Billable
+      </label>
+      <button type="submit" class="btn btn-primary">Add entry</button>
+    </form>
+  </details>
+
+</section>
+{{end}}

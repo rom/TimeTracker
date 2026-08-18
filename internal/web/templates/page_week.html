@@ -1,0 +1,71 @@
+{{define "content"}}
+{{$week := .Week}}
+<section class="week">
+
+  <header class="screen-header">
+    <div class="screen-title">
+      <h1>Week of {{date $week.Start}}</h1>
+    </div>
+    <nav class="date-nav" aria-label="Change week">
+      <a class="btn btn-quiet" href="/week?date={{date (addDays $week.Start -7)}}">‹ Previous</a>
+      <a class="btn btn-quiet" href="/week">This week</a>
+      <a class="btn btn-quiet" href="/week?date={{date (addDays $week.Start 7)}}">Next ›</a>
+    </nav>
+  </header>
+
+  {{template "totals" .Totals}}
+
+  {{/* The grid: one row per assignment, one column per day. It is read across
+       weeks, so the row order is stable rather than reflecting the order entries
+       happened to be created in. */}}
+  <div class="grid-scroll">
+    <table class="week-grid">
+      <thead>
+        <tr>
+          <th scope="col" class="col-assignment">Assignment</th>
+          {{range $week.Days}}
+            <th scope="col" class="col-day {{if isToday . $.Now}}is-today{{end}}">
+              <span class="day-name">{{weekday .}}</span>
+              <span class="day-num">{{dayNum .}}</span>
+            </th>
+          {{end}}
+          <th scope="col" class="col-total">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range $week.Rows}}
+          <tr>
+            <th scope="row" class="cell-assignment">
+              <span class="chip" data-colour="{{.Assignment.ColourKey}}" aria-hidden="true">
+                {{if .Assignment.Icon}}{{.Assignment.Icon}}{{else}}●{{end}}
+              </span>
+              <span class="assignment-name">{{.Assignment.Name}}</span>
+              <span class="assignment-path">{{.Assignment.CustomerName}}</span>
+            </th>
+            {{$row := .}}
+            {{range $i, $d := $week.Days}}
+              {{$seconds := index $row.Seconds $i}}
+              <td class="cell-day {{if eq $seconds 0}}empty{{end}}">
+                {{if gt $seconds 0}}{{hours $seconds}}{{end}}
+              </td>
+            {{end}}
+            <td class="cell-total">{{hours .Total}}</td>
+          </tr>
+        {{else}}
+          <tr><td colspan="9" class="empty">No time recorded this week.</td></tr>
+        {{end}}
+      </tbody>
+      <tfoot>
+        <tr>
+          <th scope="row">Day total</th>
+          {{range $week.DayTotals}}
+            <td class="cell-day-total">{{if gt .SummedSeconds 0}}{{hours .SummedSeconds}}{{end}}</td>
+          {{end}}
+          <td class="cell-total">{{hours $week.Totals.SummedSeconds}}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+</section>
+{{end}}

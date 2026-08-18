@@ -1,0 +1,74 @@
+{{/*
+  The page shell. Every screen renders inside it.
+
+  Two details here are load-bearing rather than cosmetic:
+
+  * data-theme on <html> is the entire theme mechanism. Themes redefine CSS
+    custom properties and nothing else, so switching one changes no markup.
+    See docs/adr/0011-theming-via-css-custom-properties.md.
+  * the theme is written by the server into the attribute, so the correct
+    colours are present in the first byte of the response. Applying it from
+    JavaScript would show a flash of the wrong theme on every page load.
+*/}}
+<!DOCTYPE html>
+<html lang="en" data-theme="{{if .User.Theme}}{{.User.Theme}}{{else}}light{{end}}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} · TimeTracker</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml">
+  <script src="/static/js/app.js" defer></script>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="/today">
+    <span class="brand-mark" aria-hidden="true">◷</span>
+    TimeTracker
+  </a>
+
+  <nav class="mainnav" aria-label="Main">
+    <a href="/today"   class="{{if eq .Active "today"}}active{{end}}">Today</a>
+    <a href="/week"    class="{{if eq .Active "week"}}active{{end}}">Week</a>
+    <a href="/entries" class="{{if eq .Active "entries"}}active{{end}}">Entries</a>
+    <a href="/admin"   class="{{if eq .Active "admin"}}active{{end}}">Admin</a>
+  </nav>
+
+  <div class="topbar-right">
+    {{/* The theme picker is a plain <select> so it works without JavaScript;
+         app.js upgrades it to apply instantly and persist the choice. */}}
+    <label class="theme-picker">
+      <span class="visually-hidden">Theme</span>
+      <select id="theme-select" aria-label="Colour theme">
+        {{$current := .User.Theme}}
+        {{range .Themes}}
+          <option value="{{.}}" {{if eq . $current}}selected{{end}}>{{.}}</option>
+        {{end}}
+      </select>
+    </label>
+    <span class="whoami" title="Signed in as">{{.User.DisplayName}}</span>
+  </div>
+</header>
+
+{{/* Running timers appear on every screen. Losing track of a running timer is
+     the dominant failure mode of any tracker, and several may run at once
+     (docs/adr/0004-concurrent-timers.md), so they are never out of sight. */}}
+<div id="running-bar">
+  {{template "running-timers" .}}
+</div>
+
+<main class="content">
+  {{if .Error}}<div class="banner banner-error" role="alert">{{.Error}}</div>{{end}}
+  {{template "content" .}}
+</main>
+
+<footer class="footer">
+  <span>TimeTracker</span>
+  <span class="footer-hint">
+    Press <kbd>?</kbd> for keyboard shortcuts
+  </span>
+</footer>
+
+</body>
+</html>

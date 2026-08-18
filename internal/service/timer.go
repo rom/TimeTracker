@@ -1,0 +1,513 @@
+package service
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"time"
+
+	"github.com/rom/timetracker/internal/auth"
+	"github.com/rom/timetracker/internal/domain"
+	"github.com/rom/timetracker/internal/store"
+)
+
+// StartTimer begins a new running entry on an assignment.
+//
+// It deliberately does not stop anything else. Several timers may run at once,
+// because work genuinely happens in parallel - a build running for one client
+// while a meeting for another is under way. See docs/adr/0004-concurrent-timers.md.
+func (s *Service) StartTimer(ctx context.Context, assignmentID int64, note string) (domain.TimeEntry, error) {
+	actor, err := auth.MustUser(ctx)
+	if err != nil {
+		return domain.TimeEntry{}, err
+	}
+
+	assignment, err := s.db.GetAssignment(ctx, assignmentID)
+	if err != nil {
+		return domain.TimeEntry{}, err
+	}
+	if assignment.Archived() {
+		return domain.TimeEntry{}, fmt.Errorf("%w: %q has been archived", ErrValidation, assignment.Name)
+	}
+
+	if err := s.authz.Can(ctx, auth.ActionCreate, auth.Resource{
+		Type: "time_entry", OwnerID: actor.ID,
+		ProjectID: assignment.ProjectID, CustomerID: assignment.CustomerID,
+	}); err != nil {
+		return domain.TimeEntry{}, err
+	}
+
+	entry := domain.TimeEntry{
+		UserID:       actor.ID,
+		EnteredBy:    actor.ID,
+		AssignmentID: assignmentID,
+		StartedAt:    s.now(),
+		Note:         note,
+		Billable:     assignment.BillableDefault,
+		Status:       domain.StatusConfirmed,
+		TimeZone:     userZone(actor),
+	}
+	if err := entry.Validate(); err != nil {
+		return domain.TimeEntry{}, err
+	}
+
+	var created domain.TimeEntry
+	err = s.db.InTx(ctx, func(tx *sql.Tx) error {
+		var txErr error
+		if created, txErr = createEntryTx(ctx, tx, entry); txErr != nil {
+			return txErr
+		}
+		return s.audit(ctx, tx, "time_entry.start", "time_entry", created.ID, 0, map[string]any{
+			"assignment": assignment.Label(),
+			"started_at": created.StartedAt,
+		})
+	})
+	if err != nil {
+		return domain.TimeEntry{}, err
+	}
+
+	s.auditLog(ctx, "time_entry.start", "time_entry", created.ID)
+	return s.db.GetEntry(ctx, created.ID)
+}
+
+// StopTimer stops a running entry and computes its duration.
+//
+// Stopping is idempotent: a double-click, or two browser tabs racing, results in
+// one stop and one duration. The conditional update in the store is what makes
+// that true; here we simply report the already-stopped entry rather than treating
+// it as an error the user has to understand.
+func (s *Service) StopTimer(ctx context.Context, entryID int64) (domain.TimeEntry, error) {
+	entry, err := s.db.GetEntry(ctx, entryID)
+	if err != nil {
+		return domain.TimeEntry{}, err
+	}
+	if err := s.canModify(ctx, entry); err != nil {
+		return domain.TimeEntry{}, notFoundFor(err)
+	}
+	if !entry.Running() {
+		return entry, nil
+	}
+
+	endedAt := s.now()
+	seconds := domain.SecondsBetween(entry.StartedAt, endedAt)
+	if seconds < 0 {
+		// The clock moved backwards, or the entry was edited to start in the
+		// future. Recording a negative duration would poison every total, so
+		// clamp and flag it for a human instead.
+		seconds = 0
+	}
+
+	settings, err := s.db.GetSettings(ctx)
+	if err != nil {
+		return domain.TimeEntry{}, err
+	}
+
+	// Resolve the rate and rounding rule now, while stopping, and store the
+	// result on the entry. Doing it here rather than at report time is what
+	// makes an invoiced figure stable against a later rate change.
+	billed := entry
+	billed.DurationSeconds = seconds
+	if err := s.applyBillingTo(ctx, &billed); err != nil {
+		return domain.TimeEntry{}, err
+	}
+	snapshot := store.BillingSnapshot{
+		RoundingRule:    billed.RoundingRuleApplied,
+		BillableSeconds: billed.BillableSeconds,
+		RateMinor:       billed.RateMinor,
+		AmountMinor:     billed.AmountMinor,
+		Currency:        billed.Currency,
+	}
+	// A timer left running overnight is the dominant failure mode of any tracker.
+	// Rather than silently billing it, mark it for review; flagged entries are
+	// excluded from totals until a human resolves them.
+	flagged := settings.MaxTimerSeconds > 0 && seconds > settings.MaxTimerSeconds
+
+	err = s.db.InTx(ctx, func(tx *sql.Tx) error {
+		stopped, txErr := store.StopEntryTx(ctx, tx, entryID, endedAt, seconds, snapshot)
+		if txErr != nil {
+			return txErr
+		}
+		if !stopped {
+			// Another request stopped it between our read and our write. That is
+			// a success, not a conflict - but we must not write an audit row for
+			// a change we did not make.
+			return nil
+		}
+		if flagged {
+			if _, txErr = tx.ExecContext(ctx,
+				`UPDATE time_entries SET flagged = 1 WHERE id = ?`, entryID); txErr != nil {
+				return txErr
+			}
+		}
+		return s.audit(ctx, tx, "time_entry.stop", "time_entry", entryID, 0, map[string]any{
+			"duration_seconds": seconds,
+			"billable_seconds": snapshot.BillableSeconds,
+			"amount_minor":     snapshot.AmountMinor,
+			"currency":         snapshot.Currency,
+			"flagged":          flagged,
+		})
+	})
+	if err != nil {
+		return domain.TimeEntry{}, err
+	}
+
+	s.auditLog(ctx, "time_entry.stop", "time_entry", entryID)
+	return s.db.GetEntry(ctx, entryID)
+}
+
+// StopAllTimers stops every running timer for the acting user, for the
+// end-of-day case where several were left going.
+func (s *Service) StopAllTimers(ctx context.Context) (int, error) {
+	actor, err := auth.MustUser(ctx)
+	if err != nil {
+		return 0, err
+	}
+	running, err := s.db.ListRunningEntries(ctx, actor.ID)
+	if err != nil {
+		return 0, err
+	}
+	stopped := 0
+	for _, entry := range running {
+		if _, err := s.StopTimer(ctx, entry.ID); err != nil {
+			return stopped, err
+		}
+		stopped++
+	}
+	return stopped, nil
+}
+
+// EntryInput is the data a user supplies when creating or editing an entry by
+// hand, as opposed to running a timer.
+type EntryInput struct {
+	AssignmentID int64
+	StartedAt    time.Time
+	// DurationSeconds is used when EndedAt is not given, which is the common case
+	// for manual entry ("2h on the migration").
+	DurationSeconds int64
+	EndedAt         *time.Time
+	Note            string
+	Billable        bool
+	// OnBehalfOf, when set to another user, makes this a proxy proposal that
+	// requires that user's confirmation before it counts.
+	OnBehalfOf int64
+}
+
+// CreateEntry records time that has already happened.
+func (s *Service) CreateEntry(ctx context.Context, in EntryInput) (domain.TimeEntry, error) {
+	actor, err := auth.MustUser(ctx)
+	if err != nil {
+		return domain.TimeEntry{}, err
+	}
+
+	assignment, err := s.db.GetAssignment(ctx, in.AssignmentID)
+	if err != nil {
+		return domain.TimeEntry{}, err
+	}
+
+	// Whose time is this? Proxy entries name a different subject, and are subject
+	// to a different permission and a different starting status.
+	subjectID := actor.ID
+	status := domain.StatusConfirmed
+	action := auth.ActionCreate
+	if in.OnBehalfOf != 0 && in.OnBehalfOf != actor.ID {
+		subjectID = in.OnBehalfOf
+		// Time recorded in someone else's name does not count until they accept
+		// it. See docs/adr/0005-proxy-time-entry.md.
+		status = domain.StatusPending
+		action = auth.ActionProxy
+	}
+
+	if err := s.authz.Can(ctx, action, auth.Resource{
+		Type: "time_entry", OwnerID: subjectID,
+		ProjectID: assignment.ProjectID, CustomerID: assignment.CustomerID,
+	}); err != nil {
+		return domain.TimeEntry{}, err
+	}
+
+	subject := actor
+	if subjectID != actor.ID {
+		if subject, err = s.db.GetUser(ctx, subjectID); err != nil {
+			return domain.TimeEntry{}, err
+		}
+	}
+
+	entry := domain.TimeEntry{
+		UserID:       subjectID,
+		EnteredBy:    actor.ID,
+		AssignmentID: in.AssignmentID,
+		StartedAt:    in.StartedAt,
+		Note:         in.Note,
+		Billable:     in.Billable,
+		Status:       status,
+		// The entry's own zone decides which day it belongs to, so it is the
+		// subject's zone rather than the reader's.
+		TimeZone: userZone(subject),
+	}
+	applyEnd(&entry, in)
+
+	if err := entry.Validate(); err != nil {
+		return domain.TimeEntry{}, err
+	}
+	if err := s.applyBillingTo(ctx, &entry); err != nil {
+		return domain.TimeEntry{}, err
+	}
+
+	var created domain.TimeEntry
+	err = s.db.InTx(ctx, func(tx *sql.Tx) error {
+		var txErr error
+		if created, txErr = createEntryTx(ctx, tx, entry); txErr != nil {
+			return txErr
+		}
+		onBehalfOf := int64(0)
+		if entry.IsProxy() {
+			onBehalfOf = entry.UserID
+		}
+		return s.audit(ctx, tx, "time_entry.create", "time_entry", created.ID, onBehalfOf, map[string]any{
+			"assignment":       assignment.Label(),
+			"duration_seconds": created.DurationSeconds,
+			"status":           string(created.Status),
+		})
+	})
+	if err != nil {
+		return domain.TimeEntry{}, err
+	}
+
+	s.auditLog(ctx, "time_entry.create", "time_entry", created.ID)
+	return s.db.GetEntry(ctx, created.ID)
+}
+
+// UpdateEntry saves an edit to an existing entry.
+func (s *Service) UpdateEntry(ctx context.Context, entryID int64, in EntryInput) (domain.TimeEntry, error) {
+	existing, err := s.db.GetEntry(ctx, entryID)
+	if err != nil {
+		return domain.TimeEntry{}, err
+	}
+	if err := s.canModify(ctx, existing); err != nil {
+		return domain.TimeEntry{}, notFoundFor(err)
+	}
+
+	assignment, err := s.db.GetAssignment(ctx, in.AssignmentID)
+	if err != nil {
+		return domain.TimeEntry{}, err
+	}
+
+	updated := existing
+	updated.AssignmentID = in.AssignmentID
+	updated.StartedAt = in.StartedAt
+	updated.Note = in.Note
+	updated.Billable = in.Billable
+	// Editing an entry clears a review flag: a human has now looked at it, which
+	// is exactly what the flag was asking for.
+	updated.Flagged = false
+	applyEnd(&updated, in)
+
+	if err := updated.Validate(); err != nil {
+		return domain.TimeEntry{}, err
+	}
+	// An edited duration or a changed assignment changes what the entry is
+	// worth, so the snapshot is recomputed rather than left stale.
+	if err := s.applyBillingTo(ctx, &updated); err != nil {
+		return domain.TimeEntry{}, err
+	}
+
+	err = s.db.InTx(ctx, func(tx *sql.Tx) error {
+		if txErr := updateEntryTx(ctx, tx, updated); txErr != nil {
+			return txErr
+		}
+		// The audit detail records what actually changed rather than the whole
+		// row, so the trail stays readable when someone is looking for the edit
+		// that altered an invoiced figure.
+		return s.audit(ctx, tx, "time_entry.update", "time_entry", entryID, 0,
+			entryDiff(existing, updated, assignment.Label()))
+	})
+	if err != nil {
+		return domain.TimeEntry{}, err
+	}
+
+	s.auditLog(ctx, "time_entry.update", "time_entry", entryID)
+	return s.db.GetEntry(ctx, entryID)
+}
+
+// DeleteEntry removes an entry. The prior state is recorded in the audit trail,
+// so a deletion is recoverable as information even though the row is gone.
+func (s *Service) DeleteEntry(ctx context.Context, entryID int64) error {
+	existing, err := s.db.GetEntry(ctx, entryID)
+	if err != nil {
+		return err
+	}
+	if err := s.canDelete(ctx, existing); err != nil {
+		return notFoundFor(err)
+	}
+
+	err = s.db.InTx(ctx, func(tx *sql.Tx) error {
+		if _, txErr := tx.ExecContext(ctx, `DELETE FROM time_entries WHERE id = ?`, entryID); txErr != nil {
+			return txErr
+		}
+		return s.audit(ctx, tx, "time_entry.delete", "time_entry", entryID, 0, map[string]any{
+			"assignment":       existing.AssignmentName,
+			"started_at":       existing.StartedAt,
+			"duration_seconds": existing.DurationSeconds,
+			"note":             existing.Note,
+		})
+	})
+	if err != nil {
+		return err
+	}
+
+	s.auditLog(ctx, "time_entry.delete", "time_entry", entryID)
+	return nil
+}
+
+// Entry loads one entry, authorised.
+func (s *Service) Entry(ctx context.Context, entryID int64) (domain.TimeEntry, error) {
+	entry, err := s.db.GetEntry(ctx, entryID)
+	if err != nil {
+		return domain.TimeEntry{}, err
+	}
+	if err := s.authz.Can(ctx, auth.ActionView, entryResource(entry)); err != nil {
+		return domain.TimeEntry{}, notFoundFor(err)
+	}
+	return entry, nil
+}
+
+// RunningTimers returns every timer currently running for the acting user. The
+// header renders this on every page, so losing track of a timer is hard.
+func (s *Service) RunningTimers(ctx context.Context) ([]domain.TimeEntry, error) {
+	actor, err := auth.MustUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.authz.Can(ctx, auth.ActionView, auth.Resource{Type: "time_entry", OwnerID: actor.ID}); err != nil {
+		return nil, err
+	}
+	return s.db.ListRunningEntries(ctx, actor.ID)
+}
+
+// ------------------------------------------------------------------ helpers --
+
+// canModify checks whether the actor may change an entry.
+func (s *Service) canModify(ctx context.Context, entry domain.TimeEntry) error {
+	return s.authz.Can(ctx, auth.ActionUpdate, entryResource(entry))
+}
+
+// canDelete checks whether the actor may remove an entry.
+func (s *Service) canDelete(ctx context.Context, entry domain.TimeEntry) error {
+	return s.authz.Can(ctx, auth.ActionDelete, entryResource(entry))
+}
+
+// entryResource describes an entry for an authorisation decision. OwnerID is the
+// subject of the entry, not whoever typed it in, which is what stops a proxy
+// author from retaining editing rights over someone else's confirmed time.
+func entryResource(e domain.TimeEntry) auth.Resource {
+	return auth.Resource{Type: "time_entry", ID: e.ID, OwnerID: e.UserID}
+}
+
+// applyEnd fills in the end time and duration from whichever the caller supplied.
+func applyEnd(entry *domain.TimeEntry, in EntryInput) {
+	switch {
+	case in.EndedAt != nil:
+		end := *in.EndedAt
+		entry.EndedAt = &end
+		entry.DurationSeconds = domain.SecondsBetween(entry.StartedAt, end)
+	case in.DurationSeconds > 0:
+		end := entry.StartedAt.Add(time.Duration(in.DurationSeconds) * time.Second)
+		entry.EndedAt = &end
+		entry.DurationSeconds = in.DurationSeconds
+	default:
+		// Neither given: the entry is left running.
+		entry.EndedAt = nil
+		entry.DurationSeconds = 0
+	}
+}
+
+// userZone returns a user's IANA zone, defaulting to UTC. An empty zone would
+// otherwise silently attribute entries to the wrong calendar day.
+func userZone(u domain.User) string {
+	if u.TimeZone == "" {
+		return "UTC"
+	}
+	return u.TimeZone
+}
+
+// entryDiff builds the compact description of an edit for the audit trail,
+// listing only the fields that actually changed.
+func entryDiff(before, after domain.TimeEntry, assignmentLabel string) map[string]any {
+	diff := map[string]any{}
+	if before.AssignmentID != after.AssignmentID {
+		diff["assignment"] = map[string]any{"from": before.AssignmentName, "to": assignmentLabel}
+	}
+	if !before.StartedAt.Equal(after.StartedAt) {
+		diff["started_at"] = map[string]any{"from": before.StartedAt, "to": after.StartedAt}
+	}
+	if before.DurationSeconds != after.DurationSeconds {
+		diff["duration_seconds"] = map[string]any{"from": before.DurationSeconds, "to": after.DurationSeconds}
+	}
+	if before.Note != after.Note {
+		diff["note"] = map[string]any{"from": before.Note, "to": after.Note}
+	}
+	if before.Billable != after.Billable {
+		diff["billable"] = map[string]any{"from": before.Billable, "to": after.Billable}
+	}
+	if before.Flagged != after.Flagged {
+		diff["flagged"] = map[string]any{"from": before.Flagged, "to": after.Flagged}
+	}
+	return diff
+}
+
+// createEntryTx inserts an entry inside the caller's transaction, so the insert
+// and its audit row commit together.
+func createEntryTx(ctx context.Context, tx *sql.Tx, e domain.TimeEntry) (domain.TimeEntry, error) {
+	var endedAt any
+	if e.EndedAt != nil {
+		endedAt = e.EndedAt.UTC().Format(time.RFC3339)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	res, err := tx.ExecContext(ctx, `
+		INSERT INTO time_entries (user_id, entered_by, assignment_id, started_at, ended_at,
+		    duration_seconds, note, billable, status, time_zone, rounding_rule_applied,
+		    billable_seconds, rate_minor, amount_minor, currency, flagged, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.UserID, e.EnteredBy, e.AssignmentID, e.StartedAt.UTC().Format(time.RFC3339), endedAt,
+		e.DurationSeconds, e.Note, boolInt(e.Billable), string(e.Status), e.TimeZone,
+		e.RoundingRuleApplied, e.BillableSeconds, e.RateMinor, e.AmountMinor, e.Currency,
+		boolInt(e.Flagged), now, now)
+	if err != nil {
+		return domain.TimeEntry{}, fmt.Errorf("insert time entry: %w", err)
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return domain.TimeEntry{}, err
+	}
+	e.ID = id
+	return e, nil
+}
+
+// updateEntryTx saves an edited entry inside the caller's transaction.
+func updateEntryTx(ctx context.Context, tx *sql.Tx, e domain.TimeEntry) error {
+	var endedAt any
+	if e.EndedAt != nil {
+		endedAt = e.EndedAt.UTC().Format(time.RFC3339)
+	}
+	_, err := tx.ExecContext(ctx, `
+		UPDATE time_entries SET assignment_id = ?, started_at = ?, ended_at = ?,
+		       duration_seconds = ?, note = ?, billable = ?, status = ?, flagged = ?,
+		       rounding_rule_applied = ?, billable_seconds = ?, rate_minor = ?,
+		       amount_minor = ?, currency = ?, updated_at = ?
+		WHERE id = ?`,
+		e.AssignmentID, e.StartedAt.UTC().Format(time.RFC3339), endedAt, e.DurationSeconds,
+		e.Note, boolInt(e.Billable), string(e.Status), boolInt(e.Flagged),
+		e.RoundingRuleApplied, e.BillableSeconds, e.RateMinor, e.AmountMinor, e.Currency,
+		time.Now().UTC().Format(time.RFC3339), e.ID)
+	if err != nil {
+		return fmt.Errorf("update time entry: %w", err)
+	}
+	return nil
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
