@@ -45,8 +45,9 @@ func newTestServer(t *testing.T) (*Server, domain.User) {
 		t.Fatalf("create user: %v", err)
 	}
 
-	srv, err := New(svc, config.Config{Mode: config.ModeLocal}, logger,
-		func(*http.Request) (domain.User, error) { return user, nil })
+	srv, err := New(svc, config.Config{Mode: config.ModeLocal}, logger, Options{
+		Identity: func(*http.Request) (domain.User, error) { return user, nil },
+	})
 	if err != nil {
 		t.Fatalf("build server: %v", err)
 	}
@@ -300,4 +301,317 @@ func themeBlock(css, theme string) string {
 		return ""
 	}
 	return css[start : start+end]
+}
+
+// ---------------------------------------------------------- server mode ----
+
+// newServerModeTestServer wires the server the way --mode=server does: the RBAC
+// authoriser, real sessions, and CSRF enforcement.
+func newServerModeTestServer(t *testing.T) (*Server, *service.Accounts) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("server-mode tests touch the filesystem; skipped under -short")
+	}
+
+	ctx := context.Background()
+	db, err := store.Open(ctx, filepath.Join(t.TempDir(), "server.db"))
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc := service.New(db, auth.RoleAuthorizer{IsProjectMember: db.IsProjectMember}, logger, time.Now)
+	accounts := service.NewAccounts(db, svc, time.Now)
+
+	if _, err := accounts.BootstrapFirstAdmin(ctx, service.NewUserInput{
+		DisplayName: "Admin", Email: "admin@example.com", Password: "a-long-enough-password",
+	}); err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+
+	srv, err := New(svc, config.Config{Mode: config.ModeServer}, logger, Options{
+		Identity: func(r *http.Request) (domain.User, error) {
+			cookie, err := r.Cookie(auth.SessionCookieName)
+			if err != nil {
+				return domain.User{}, auth.ErrUnauthenticated
+			}
+			user, _, err := accounts.ResolveSession(r.Context(), cookie.Value)
+			return user, err
+		},
+		Accounts: accounts,
+	})
+	if err != nil {
+		t.Fatalf("build server: %v", err)
+	}
+	return srv, accounts
+}
+
+// signIn performs a real login and returns the session cookie.
+func signIn(t *testing.T, srv *Server) *http.Cookie {
+	t.Helper()
+	rec := post(t, srv, "/login", url.Values{
+		"email": {"admin@example.com"}, "password": {"a-long-enough-password"},
+	})
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("login = %d: %s", rec.Code, rec.Body.String())
+	}
+	for _, cookie := range rec.Result().Cookies() {
+		if cookie.Name == auth.SessionCookieName {
+			return cookie
+		}
+	}
+	t.Fatal("login set no session cookie")
+	return nil
+}
+
+// TestUnauthenticatedReachesNoData is the direct check of ASR-005: an
+// unauthenticated request to any route other than login, static assets and
+// health must receive a redirect, never data.
+func TestUnauthenticatedReachesNoData(t *testing.T) {
+	srv, _ := newServerModeTestServer(t)
+
+	for _, path := range []string{
+		"/", "/today", "/week", "/entries", "/admin", "/users",
+		"/export/csv", "/export/json",
+	} {
+		t.Run(path, func(t *testing.T) {
+			rec := get(t, srv, path)
+			if rec.Code != http.StatusSeeOther && rec.Code != http.StatusUnauthorized {
+				t.Fatalf("GET %s = %d, want a redirect or 401", path, rec.Code)
+			}
+			// Not merely the right status: the body must contain no data.
+			body := rec.Body.String()
+			for _, leak := range []string{"admin@example.com", "csrf_token", "<table"} {
+				if strings.Contains(body, leak) {
+					t.Errorf("unauthenticated response to %s contained %q", path, leak)
+				}
+			}
+		})
+	}
+}
+
+// TestCSRFIsEnforced: an authenticated request without the token must be
+// refused, which is what stops another site driving the application with the
+// browser's cookies.
+func TestCSRFIsEnforced(t *testing.T) {
+	srv, _ := newServerModeTestServer(t)
+	cookie := signIn(t, srv)
+
+	postWithCookie := func(form url.Values) int {
+		req := httptest.NewRequest(http.MethodPost, "/customers", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.AddCookie(cookie)
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	if code := postWithCookie(url.Values{"name": {"Acme"}}); code != http.StatusForbidden {
+		t.Errorf("a POST with no CSRF token = %d, want 403", code)
+	}
+	if code := postWithCookie(url.Values{
+		"name": {"Acme"}, "csrf_token": {"not-the-right-token"},
+	}); code != http.StatusForbidden {
+		t.Errorf("a POST with a wrong CSRF token = %d, want 403", code)
+	}
+
+	// With the real token it goes through.
+	token := csrfTokenFor(t, srv, cookie)
+	if code := postWithCookie(url.Values{
+		"name": {"Acme"}, "currency": {"EUR"}, "csrf_token": {token},
+	}); code != http.StatusSeeOther {
+		t.Errorf("a POST with the correct CSRF token = %d, want 303", code)
+	}
+}
+
+// csrfTokenFor reads the token the server rendered into a page's forms.
+func csrfTokenFor(t *testing.T, srv *Server, cookie *http.Cookie) string {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	const marker = `name="csrf_token" value="`
+	body := rec.Body.String()
+	start := strings.Index(body, marker)
+	if start < 0 {
+		t.Fatalf("no CSRF token in the rendered page (status %d)", rec.Code)
+	}
+	rest := body[start+len(marker):]
+	end := strings.Index(rest, `"`)
+	if end < 0 {
+		t.Fatal("malformed CSRF token in the page")
+	}
+	return rest[:end]
+}
+
+// TestSessionCookieAttributes: the cookie is the credential, so its flags are
+// part of the security posture rather than a detail.
+func TestSessionCookieAttributes(t *testing.T) {
+	srv, _ := newServerModeTestServer(t)
+	cookie := signIn(t, srv)
+
+	if !cookie.HttpOnly {
+		t.Error("the session cookie is readable by script")
+	}
+	if cookie.SameSite != http.SameSiteLaxMode {
+		t.Errorf("SameSite = %v, want Lax", cookie.SameSite)
+	}
+	if cookie.Domain != "" {
+		t.Errorf("the cookie is not host-only: Domain = %q", cookie.Domain)
+	}
+	if cookie.Path != "/" {
+		t.Errorf("Path = %q, want /", cookie.Path)
+	}
+}
+
+// TestLoginDoesNotEnumerateAccounts: the response to an unknown address and to a
+// wrong password must be identical.
+func TestLoginDoesNotEnumerateAccounts(t *testing.T) {
+	srv, _ := newServerModeTestServer(t)
+
+	unknown := post(t, srv, "/login", url.Values{
+		"email": {"nobody@example.com"}, "password": {"some-long-password"},
+	})
+	wrong := post(t, srv, "/login", url.Values{
+		"email": {"admin@example.com"}, "password": {"the-wrong-password"},
+	})
+
+	if unknown.Code != wrong.Code {
+		t.Errorf("different statuses: unknown %d, wrong password %d", unknown.Code, wrong.Code)
+	}
+	if unknown.Body.String() != wrong.Body.String() {
+		t.Error("the login page distinguishes an unknown account from a wrong password")
+	}
+}
+
+// TestLoginRedirectIsNotOpen: ?next= must not become a redirect to another site.
+func TestLoginRedirectIsNotOpen(t *testing.T) {
+	srv, _ := newServerModeTestServer(t)
+
+	for _, hostile := range []string{
+		"https://evil.example/phish",
+		"//evil.example/phish",
+		"http://evil.example",
+	} {
+		rec := post(t, srv, "/login", url.Values{
+			"email": {"admin@example.com"}, "password": {"a-long-enough-password"},
+			"next": {hostile},
+		})
+		if location := rec.Header().Get("Location"); strings.Contains(location, "evil.example") {
+			t.Errorf("next=%q produced an off-site redirect to %q", hostile, location)
+		}
+	}
+}
+
+// TestLogoutRevokesServerSide: forgetting the cookie is not enough, because the
+// cookie is still a valid credential until the session row is gone.
+func TestLogoutRevokesServerSide(t *testing.T) {
+	srv, accounts := newServerModeTestServer(t)
+	cookie := signIn(t, srv)
+	token := csrfTokenFor(t, srv, cookie)
+
+	req := httptest.NewRequest(http.MethodPost, "/logout",
+		strings.NewReader(url.Values{"csrf_token": {token}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("logout = %d", rec.Code)
+	}
+	// The old cookie value must no longer resolve, independently of the browser.
+	if _, _, err := accounts.ResolveSession(context.Background(), cookie.Value); err == nil {
+		t.Error("the session survived sign-out on the server side")
+	}
+}
+
+// TestMemberCannotReachUserAdministration, through HTTP rather than the service
+// alone: hiding a nav link is presentation, never enforcement.
+func TestMemberCannotReachUserAdministration(t *testing.T) {
+	srv, accounts := newServerModeTestServer(t)
+	adminCookie := signIn(t, srv)
+	token := csrfTokenFor(t, srv, adminCookie)
+
+	req := httptest.NewRequest(http.MethodPost, "/users", strings.NewReader(url.Values{
+		"display_name": {"Member"}, "email": {"member@example.com"},
+		"password": {"a-long-enough-password"}, "role": {"member"},
+		"csrf_token": {token},
+	}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(adminCookie)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("creating the member = %d: %s", rec.Code, rec.Body.String())
+	}
+
+	memberLogin, err := accounts.Login(context.Background(), service.LoginRequest{
+		Email: "member@example.com", Password: "a-long-enough-password", IP: "203.0.113.1",
+	})
+	if err != nil {
+		t.Fatalf("member login: %v", err)
+	}
+	memberCookie := &http.Cookie{Name: auth.SessionCookieName, Value: memberLogin.CookieValue}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/users", nil)
+	listReq.AddCookie(memberCookie)
+	listRec := httptest.NewRecorder()
+	srv.ServeHTTP(listRec, listReq)
+
+	if listRec.Code == http.StatusOK {
+		t.Errorf("a member reached the user administration screen: %d", listRec.Code)
+	}
+	if strings.Contains(listRec.Body.String(), "admin@example.com") {
+		t.Error("a member saw another account's email address")
+	}
+}
+
+// TestFormsAcceptBothEncodings is a regression test for a real bug.
+//
+// The browser's fetch(FormData) sends multipart/form-data. r.ParseForm does not
+// parse a multipart body but does set r.Form, so the later r.FormValue never
+// falls back to the multipart parser and every field arrived empty - the handler
+// then rejected a fully completed form with "customer name is required".
+//
+// Both encodings must therefore produce identical results.
+func TestFormsAcceptBothEncodings(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	// Plain form post, as a browser without JavaScript sends it.
+	if rec := post(t, srv, "/customers", url.Values{
+		"name": {"MCF"}, "currency": {"SEK"},
+	}); rec.Code != http.StatusSeeOther {
+		t.Fatalf("urlencoded = %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Multipart, as fetch(FormData) sends it.
+	var body strings.Builder
+	const boundary = "testboundary"
+	for field, value := range map[string]string{"name": "MCF Multipart", "currency": "SEK"} {
+		body.WriteString("--" + boundary + "\r\n")
+		body.WriteString(`Content-Disposition: form-data; name="` + field + `"` + "\r\n\r\n")
+		body.WriteString(value + "\r\n")
+	}
+	body.WriteString("--" + boundary + "--\r\n")
+
+	req := httptest.NewRequest(http.MethodPost, "/customers", strings.NewReader(body.String()))
+	req.Header.Set("Content-Type", "multipart/form-data; boundary="+boundary)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("multipart = %d, want 303: %s", rec.Code, rec.Body.String())
+	}
+
+	// Both must actually exist, not merely have been accepted.
+	page := get(t, srv, "/admin").Body.String()
+	for _, want := range []string{"MCF", "MCF Multipart"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("customer %q was not created", want)
+		}
+	}
 }

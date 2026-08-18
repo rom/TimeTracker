@@ -45,11 +45,22 @@ make check                        # format, vet, lint and the full test suite
 * **Audit trail.** Every mutation records who did what, when, in the same
   transaction as the change itself.
 
+## Shared server
+
+```sh
+TT_ADMIN_EMAIL=you@example.com TT_ADMIN_PASSWORD='a long password' \
+  ./bin/timetracker --mode=server --addr=0.0.0.0:8420 --secure-cookies
+```
+
+Local accounts with Argon2id, optional OIDC single sign-on, server-side sessions,
+CSRF protection, four roles scoped by project membership, and rsyslog forwarding.
+Terminate TLS in front of it; the server refuses to bind a public address without
+either TLS upstream or an explicit `--allow-insecure`.
+
 ## Not yet
 
-Server mode (authentication, RBAC, rsyslog) refuses to start rather than
-pretending; PDF and DOCX export return 501; attachments, expenses, colleague
-proxy entries and approvals are designed but not built. See
+PDF and DOCX export return 501; attachments, expenses, colleague proxy entries
+and approvals are designed but not built. See
 [docs/MVP_PLAN.md](docs/MVP_PLAN.md) for the sequence.
 
 ## Documentation

@@ -49,6 +49,46 @@ type Config struct {
 	// unchecked forwarded header makes the audit trail record whatever an
 	// attacker types.
 	TrustedProxies []string
+
+	// ---- server mode only ----
+
+	// ForceSecureCookies sets the Secure attribute regardless of how the request
+	// arrived. Needed when TLS terminates somewhere that does not set
+	// X-Forwarded-Proto.
+	ForceSecureCookies bool
+	// AllowInsecure acknowledges binding a non-loopback address without TLS.
+	// Without it the server refuses, because serving a login form over plain
+	// HTTP puts passwords on the wire.
+	AllowInsecure bool
+
+	// Syslog forwarding. An empty network disables it.
+	SyslogNetwork  string
+	SyslogAddress  string
+	SyslogFacility int
+
+	// Single sign-on. An empty issuer disables it and leaves local accounts as
+	// the only way in.
+	OIDCIssuer       string
+	OIDCClientID     string
+	OIDCClientSecret string
+	OIDCRedirectURL  string
+	// OIDCLabel is the text on the sign-in button, e.g. "Sign in with Entra ID".
+	OIDCLabel string
+	// OIDCRoleClaim and OIDCRoleMapping map a provider claim onto an application
+	// role. Unmapped users get the least privilege.
+	OIDCRoleClaim   string
+	OIDCRoleMapping map[string]string
+
+	// Bootstrap credentials for the first administrator on an empty instance.
+	// Used once and then ignored.
+	AdminEmail    string
+	AdminPassword string
+	AdminName     string
+}
+
+// OIDCEnabled reports whether single sign-on is configured.
+func (c Config) OIDCEnabled() bool {
+	return c.OIDCIssuer != "" && c.OIDCClientID != "" && c.OIDCRedirectURL != ""
 }
 
 // Parse resolves configuration from the command line and the environment.
@@ -84,6 +124,26 @@ func Parse(args []string) (Config, error) {
 	fs.StringVar(&cfg.TimeZone, "tz", cfg.TimeZone, "default IANA time zone for new users")
 	proxies := fs.String("trusted-proxies", strings.Join(cfg.TrustedProxies, ","),
 		"comma-separated proxy addresses whose X-Forwarded-For header is believed")
+
+	// Server-mode flags. Secrets may also be given through the environment,
+	// which is what a systemd unit or a container orchestrator will use - a
+	// password on a command line is visible in the process list to every other
+	// user on the machine.
+	fs.BoolVar(&cfg.ForceSecureCookies, "secure-cookies", cfg.ForceSecureCookies,
+		"always set the Secure cookie attribute (use when TLS terminates upstream)")
+	fs.BoolVar(&cfg.AllowInsecure, "allow-insecure", cfg.AllowInsecure,
+		"permit binding a public address without TLS in front (not for production)")
+	fs.StringVar(&cfg.SyslogNetwork, "syslog-network", cfg.SyslogNetwork,
+		"syslog transport: unixgram, unix, tcp, tcp+tls, udp (empty disables forwarding)")
+	fs.StringVar(&cfg.SyslogAddress, "syslog-address", cfg.SyslogAddress,
+		"syslog socket path or host:port")
+	fs.IntVar(&cfg.SyslogFacility, "syslog-facility", cfg.SyslogFacility,
+		"syslog facility number (default 10, authpriv)")
+	fs.StringVar(&cfg.OIDCIssuer, "oidc-issuer", cfg.OIDCIssuer, "OIDC issuer URL")
+	fs.StringVar(&cfg.OIDCClientID, "oidc-client-id", cfg.OIDCClientID, "OIDC client id")
+	fs.StringVar(&cfg.OIDCRedirectURL, "oidc-redirect-url", cfg.OIDCRedirectURL,
+		"OIDC redirect URL, matching what is registered with the provider")
+	fs.StringVar(&cfg.OIDCLabel, "oidc-label", cfg.OIDCLabel, "text on the single sign-on button")
 
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
@@ -129,6 +189,42 @@ func applyEnv(cfg *Config) {
 	if v := os.Getenv("TT_TRUSTED_PROXIES"); v != "" {
 		cfg.TrustedProxies = strings.Split(v, ",")
 	}
+
+	// Secrets come from the environment by preference: a value on the command
+	// line is readable by every other user on the machine through the process
+	// list.
+	cfg.OIDCIssuer = envOr("TT_OIDC_ISSUER", cfg.OIDCIssuer)
+	cfg.OIDCClientID = envOr("TT_OIDC_CLIENT_ID", cfg.OIDCClientID)
+	cfg.OIDCClientSecret = envOr("TT_OIDC_CLIENT_SECRET", cfg.OIDCClientSecret)
+	cfg.OIDCRedirectURL = envOr("TT_OIDC_REDIRECT_URL", cfg.OIDCRedirectURL)
+	cfg.OIDCLabel = envOr("TT_OIDC_LABEL", cfg.OIDCLabel)
+	cfg.OIDCRoleClaim = envOr("TT_OIDC_ROLE_CLAIM", cfg.OIDCRoleClaim)
+	cfg.SyslogNetwork = envOr("TT_SYSLOG_NETWORK", cfg.SyslogNetwork)
+	cfg.SyslogAddress = envOr("TT_SYSLOG_ADDRESS", cfg.SyslogAddress)
+	cfg.AdminEmail = envOr("TT_ADMIN_EMAIL", cfg.AdminEmail)
+	cfg.AdminPassword = envOr("TT_ADMIN_PASSWORD", cfg.AdminPassword)
+	cfg.AdminName = envOr("TT_ADMIN_NAME", cfg.AdminName)
+
+	if v := os.Getenv("TT_OIDC_ROLE_MAPPING"); v != "" {
+		// "group-name=role,other-group=role"
+		cfg.OIDCRoleMapping = map[string]string{}
+		for _, pair := range strings.Split(v, ",") {
+			if name, role, ok := strings.Cut(strings.TrimSpace(pair), "="); ok {
+				cfg.OIDCRoleMapping[name] = role
+			}
+		}
+	}
+	if os.Getenv("TT_SECURE_COOKIES") == "1" {
+		cfg.ForceSecureCookies = true
+	}
+}
+
+// envOr returns the environment value when set, otherwise the current value.
+func envOr(key, current string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return current
 }
 
 // validate rejects combinations that would be unsafe or nonsensical.
@@ -163,6 +259,26 @@ func (c Config) validate() error {
 		return fmt.Errorf(
 			"local mode has no authentication and may only bind a loopback address; "+
 				"%q is not loopback - use --mode=server for a shared instance", c.Addr)
+	}
+
+	if c.Mode == ModeServer {
+		// A login form served over plain HTTP puts every password on the wire in
+		// clear. Refusing is the only defensible default; an operator who really
+		// is terminating TLS somewhere this cannot detect says so explicitly.
+		if !isLoopback(c.Addr) && !c.AllowInsecure && !c.ForceSecureCookies {
+			return fmt.Errorf(
+				"refusing to serve %q without TLS: terminate TLS in front of this "+
+					"process and pass --secure-cookies, or pass --allow-insecure "+
+					"if you accept sending passwords in clear", c.Addr)
+		}
+		// A partially configured provider fails at the moment a user tries to
+		// sign in, which is the worst time to discover it.
+		anyOIDC := c.OIDCIssuer != "" || c.OIDCClientID != "" || c.OIDCRedirectURL != ""
+		if anyOIDC && !c.OIDCEnabled() {
+			return fmt.Errorf(
+				"single sign-on needs an issuer, a client id and a redirect URL; " +
+					"one or more is missing")
+		}
 	}
 	return nil
 }

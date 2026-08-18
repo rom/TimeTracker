@@ -24,7 +24,7 @@ add it.
 |---|---|---|
 | **0** | Documentation, ADR/ASR set, Makefile, project skeleton | ✅ delivered |
 | **1** | Local-mode MVP: domain, storage, timers, day/week, themes, CSV/JSON | ✅ delivered |
-| **2** | Server mode: auth, RBAC, sessions, rsyslog | 🔨 next |
+| **2** | Server mode: auth, RBAC, sessions, rsyslog | ✅ delivered |
 | **3** | Attachments, paste, expenses | ⬜ planned |
 | **4** | Proxy entries and approval workflow | ⬜ planned |
 | **5** | Reports, PDF and DOCX export | ⬜ planned |
@@ -90,7 +90,7 @@ ever added without one).
 
 ---
 
-## Layer 2 — Server mode
+## Layer 2 — Server mode ✅
 
 Local accounts (Argon2id) and OIDC/PKCE; server-side sessions with rotation, idle
 and absolute lifetimes; CSRF enforcement; login rate limiting and lockout; optional
@@ -101,7 +101,13 @@ roles, memberships and the audit trail.
 
 **Done when:** the RBAC test matrix passes (every role × every action × in- and
 out-of-scope), an unauthenticated request reaches no data, and mutations appear in
-both the audit table and rsyslog.
+both the audit table and rsyslog. **All of this now works.**
+
+Delivered beyond the original slice: scoped listing queries
+([ADR-0016](adr/0016-scoped-listing-queries.md)), the per-person project rate
+level, transparent Argon2id parameter upgrades on login, and session revocation
+on every privilege change. TOTP and API tokens are designed for but deferred -
+neither is load-bearing for a small team behind SSO, and both are additive.
 
 ## Layer 3 — Attachments and expenses
 

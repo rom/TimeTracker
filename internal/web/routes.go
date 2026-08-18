@@ -15,6 +15,22 @@ func (s *Server) routes() {
 	// Health, for a reverse proxy or a monitoring check.
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 
+	// Authentication. Registered in both modes; every handler returns 404 when
+	// there is no account service, so a local instance exposes nothing.
+	mux.HandleFunc("GET /login", s.handleLoginForm)
+	mux.HandleFunc("POST /login", s.handleLogin)
+	mux.HandleFunc("POST /logout", s.handleLogout)
+	mux.HandleFunc("GET /auth/oidc/start", s.handleOIDCStart)
+	mux.HandleFunc("GET /auth/oidc/callback", s.handleOIDCCallback)
+
+	// Accounts and project membership - the server-mode administration screen.
+	mux.HandleFunc("GET /users", s.handleUsers)
+	mux.HandleFunc("POST /users", s.handleCreateUser)
+	mux.HandleFunc("POST /users/{id}", s.handleUpdateUser)
+	mux.HandleFunc("POST /users/{id}/password", s.handleSetPassword)
+	mux.HandleFunc("POST /members", s.handleAddMember)
+	mux.HandleFunc("POST /members/remove", s.handleRemoveMember)
+
 	// Screens.
 	mux.HandleFunc("GET /{$}", s.handleToday)   // {$} matches only "/"
 	mux.HandleFunc("GET /today", s.handleToday) // with an optional ?date=

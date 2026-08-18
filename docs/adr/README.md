@@ -41,6 +41,7 @@ Statuses: `proposed` → `accepted` → `superseded by ADR-NNNN` | `deprecated`.
 | [0013](0013-attachment-storage.md) | Content-addressed attachments on disk | accepted | 2026-08-18 | ASR-013 |
 | [0014](0014-exact-money-and-duration.md) | Integer minor units and whole seconds | accepted | 2026-08-18 | ASR-014 |
 | [0015](0015-utc-storage-local-display.md) | Timestamps stored in UTC, displayed local | accepted | 2026-08-18 | ASR-014 |
+| [0016](0016-scoped-listing-queries.md) | Listing queries take the actor's scope | accepted | 2026-08-18 | ASR-005 |
 
 ## Writing a new one
 

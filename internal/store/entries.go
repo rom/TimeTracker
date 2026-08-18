@@ -169,6 +169,9 @@ type EntryFilter struct {
 	AssignmentID int64
 	ProjectID    int64
 	CustomerID   int64
+	// Scope restricts the query to what the actor may see. It is applied in
+	// addition to any explicit narrowing above.
+	Scope Scope
 	// Statuses limits to particular workflow states; empty means all of them.
 	Statuses []domain.EntryStatus
 	// BillableOnly restricts to entries marked billable.
@@ -231,6 +234,10 @@ func (f EntryFilter) build() (string, []any) {
 	}
 	if f.BillableOnly {
 		conditions = append(conditions, `e.billable = 1`)
+	}
+	if scoped, scopeArgs := f.Scope.condition("a.project_id", "p.customer_id"); scoped != "" {
+		conditions = append(conditions, scoped)
+		args = append(args, scopeArgs...)
 	}
 
 	query := whereClause(conditions) + ` ORDER BY e.started_at DESC, e.id DESC`

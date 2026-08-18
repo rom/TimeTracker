@@ -46,6 +46,11 @@ const (
 )
 
 // User is a person who records time.
+//
+// It deliberately carries no credential material: no password hash, no session
+// token, no TOTP secret. Those live in store.Account and never leave the storage
+// and service layers, so there is no field here for a template or a JSON
+// response to leak by accident.
 type User struct {
 	ID          int64
 	DisplayName string
@@ -53,10 +58,24 @@ type User struct {
 	Role        Role
 	// TimeZone is an IANA name such as "Europe/Stockholm". It decides which day
 	// an entry belongs to; see docs/adr/0015-utc-storage-local-display.md.
-	TimeZone  string
-	Theme     string
-	Active    bool
-	CreatedAt time.Time
+	TimeZone string
+	Theme    string
+	Active   bool
+	// ClientCustomerID scopes a user with the client role to one customer. It is
+	// zero for every other role.
+	ClientCustomerID int64
+	// UsesSSO is display-only: it tells an administrator that this account signs
+	// in through the identity provider rather than with a local password.
+	UsesSSO     bool
+	LastLoginAt time.Time
+	CreatedAt   time.Time
+}
+
+// CanSeeMoney reports whether this user's role may see rates and amounts at all.
+// It is a presentation convenience; the authoritative check is auth.Can with
+// ActionViewMoney.
+func (u User) CanSeeMoney() bool {
+	return u.Role == RoleAdmin || u.Role == RoleManager || u.Role == RoleMember
 }
 
 // Customer is the party that gets billed.

@@ -22,6 +22,21 @@
 </head>
 <body>
 
+{{if eq .Active "login"}}
+<header class="topbar topbar-plain">
+  <a class="brand" href="/login">
+    <span class="brand-mark" aria-hidden="true">◷</span>
+    TimeTracker
+  </a>
+</header>
+
+<main class="content content-narrow">
+  {{if .Error}}<div class="banner banner-error" role="alert">{{.Error}}</div>{{end}}
+  {{template "content" .}}
+</main>
+
+{{else}}
+
 <header class="topbar">
   <a class="brand" href="/today">
     <span class="brand-mark" aria-hidden="true">◷</span>
@@ -33,6 +48,9 @@
     <a href="/week"    class="{{if eq .Active "week"}}active{{end}}">Week</a>
     <a href="/entries" class="{{if eq .Active "entries"}}active{{end}}">Entries</a>
     <a href="/admin"   class="{{if eq .Active "admin"}}active{{end}}">Admin</a>
+    {{if .ServerMode}}
+      <a href="/users" class="{{if eq .Active "users"}}active{{end}}">Users</a>
+    {{end}}
   </nav>
 
   <div class="topbar-right">
@@ -48,6 +66,14 @@
       </select>
     </label>
     <span class="whoami" title="Signed in as">{{.User.DisplayName}}</span>
+    {{if .ServerMode}}
+      {{/* Sign-out is a POST: a GET that ends a session can be triggered by any
+           page that embeds an image pointing at it. */}}
+      <form method="post" action="/logout">
+        {{template "csrf" .CSRFToken}}
+        <button type="submit" class="btn btn-quiet btn-small">Sign out</button>
+      </form>
+    {{end}}
   </div>
 </header>
 
@@ -62,6 +88,8 @@
   {{if .Error}}<div class="banner banner-error" role="alert">{{.Error}}</div>{{end}}
   {{template "content" .}}
 </main>
+
+{{end}}
 
 <footer class="footer">
   <span>TimeTracker</span>

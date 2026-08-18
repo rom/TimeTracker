@@ -1,0 +1,132 @@
+{{define "content"}}
+<section class="admin">
+
+  <header class="screen-header">
+    <div class="screen-title"><h1>Users</h1></div>
+  </header>
+
+  <p class="hint">
+    A new account starts as a member with no project memberships, so it can see
+    nothing but its own timesheet until access is granted below. Changing a role
+    or disabling an account signs that person out everywhere immediately.
+  </p>
+
+  {{/* ---------------------------------------------------------- new user */}}
+  <form class="entry-form" method="post" action="/users" hx-post="/users">
+    {{template "csrf" .CSRFToken}}
+    <input type="text"  name="display_name" placeholder="Name" required aria-label="Name">
+    <input type="email" name="email" placeholder="Email" required aria-label="Email">
+    <input type="password" name="password" placeholder="Password (12+ characters)"
+           autocomplete="new-password" aria-label="Password">
+    <select name="role" aria-label="Role">
+      <option value="member" selected>member</option>
+      <option value="manager">manager</option>
+      <option value="admin">admin</option>
+      <option value="client">client</option>
+    </select>
+    <select name="client_customer_id" aria-label="Customer (client role only)">
+      <option value="0">— customer, for the client role —</option>
+      {{range .Customers}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+    </select>
+    <button type="submit" class="btn btn-primary">Add user</button>
+  </form>
+
+  <table class="admin-table">
+    <thead>
+      <tr><th>Name</th><th>Email</th><th>Role</th><th>Signs in</th><th>Last seen</th><th></th></tr>
+    </thead>
+    <tbody>
+      {{$csrf := .CSRFToken}}
+      {{$customers := .Customers}}
+      {{range .Users}}
+        <tr class="{{if not .Active}}archived{{end}}">
+          <td>{{.DisplayName}}</td>
+          <td>{{.Email}}</td>
+          <td>
+            <form method="post" action="/users/{{.ID}}" hx-post="/users/{{.ID}}" class="inline-form">
+              {{template "csrf" $csrf}}
+              <input type="hidden" name="display_name" value="{{.DisplayName}}">
+              <input type="hidden" name="email" value="{{.Email}}">
+              {{$role := .Role}}
+              <select name="role" aria-label="Role">
+                <option value="member"  {{if eq $role "member"}}selected{{end}}>member</option>
+                <option value="manager" {{if eq $role "manager"}}selected{{end}}>manager</option>
+                <option value="admin"   {{if eq $role "admin"}}selected{{end}}>admin</option>
+                <option value="client"  {{if eq $role "client"}}selected{{end}}>client</option>
+              </select>
+              {{$assigned := .ClientCustomerID}}
+              <select name="client_customer_id" aria-label="Customer">
+                <option value="0">—</option>
+                {{range $customers}}
+                  <option value="{{.ID}}" {{if eq .ID $assigned}}selected{{end}}>{{.Name}}</option>
+                {{end}}
+              </select>
+              <label class="inline-check">
+                <input type="checkbox" name="active" {{if .Active}}checked{{end}}> active
+              </label>
+              <button type="submit" class="btn btn-small">Save</button>
+            </form>
+          </td>
+          <td>{{if .UsesSSO}}single sign-on{{else}}password{{end}}</td>
+          <td>{{if .LastLoginAt.IsZero}}never{{else}}{{date .LastLoginAt}}{{end}}</td>
+          <td></td>
+        </tr>
+      {{else}}
+        <tr><td colspan="6" class="empty">No users yet.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+
+  {{/* ------------------------------------------------------- memberships */}}
+  <h2 class="section-heading">Project access</h2>
+  <p class="hint">
+    Membership is what scopes a manager's or member's view. Someone with no
+    memberships sees only their own records. The optional rate is that person's
+    rate on that project, sitting between the assignment and the project in the
+    resolution order.
+  </p>
+
+  <form class="entry-form" method="post" action="/members" hx-post="/members">
+    {{template "csrf" .CSRFToken}}
+    <select name="user_id" required aria-label="User">
+      <option value="">User…</option>
+      {{range .Users}}{{if .Active}}<option value="{{.ID}}">{{.DisplayName}}</option>{{end}}{{end}}
+    </select>
+    <select name="project_id" required aria-label="Project">
+      <option value="">Project…</option>
+      {{range .Projects}}
+        <option value="{{.ID}}">{{.CustomerName}} / {{.Name}}</option>
+      {{end}}
+    </select>
+    <input type="text" name="rate" placeholder="Rate/h (optional)" size="10" aria-label="Rate">
+    <input type="text" name="currency" placeholder="EUR" size="4" maxlength="3" aria-label="Currency">
+    <button type="submit" class="btn btn-primary">Grant access</button>
+  </form>
+
+  <table class="admin-table">
+    <thead><tr><th>User</th><th>Project</th><th>Customer</th><th>Rate</th><th></th></tr></thead>
+    <tbody>
+      {{range .Members}}
+        <tr>
+          <td>{{.UserName}}</td>
+          <td>{{.ProjectName}}</td>
+          <td>{{.CustomerName}}</td>
+          <td>{{if gt .RateMinor 0}}{{money .RateMinor ""}}{{end}}</td>
+          <td>
+            <form method="post" action="/members/remove" hx-post="/members/remove"
+                  hx-confirm="Remove this person's access to the project?">
+              {{template "csrf" $csrf}}
+              <input type="hidden" name="project_id" value="{{.ProjectID}}">
+              <input type="hidden" name="user_id" value="{{.UserID}}">
+              <button type="submit" class="btn btn-small btn-quiet">Remove</button>
+            </form>
+          </td>
+        </tr>
+      {{else}}
+        <tr><td colspan="5" class="empty">Nobody has project access yet.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+
+</section>
+{{end}}

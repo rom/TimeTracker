@@ -35,6 +35,16 @@ type pageData struct {
 	Projects  []domain.Project
 	Entry     *domain.TimeEntry
 	Filter    entryFilterForm
+	// Server-mode payloads. Nil or empty in local mode.
+	Users   []domain.User
+	Members []service.Membership
+	Login   *loginData
+	// CSRFToken is rendered into every form. Empty in local mode, where there is
+	// no session to bind it to.
+	CSRFToken string
+	// ServerMode drives the parts of the chrome that only make sense with
+	// accounts: the sign-out control and the Users screen.
+	ServerMode bool
 }
 
 // availableThemes is the list offered in the theme switcher. It is defined here
@@ -51,12 +61,14 @@ func (s *Server) newPageData(r *http.Request, title, active string) (pageData, e
 		return pageData{}, err
 	}
 	return pageData{
-		Title:   title,
-		Active:  active,
-		User:    user,
-		Now:     s.svc.Now(),
-		Running: running,
-		Themes:  availableThemes,
+		Title:      title,
+		Active:     active,
+		User:       user,
+		Now:        s.svc.Now(),
+		Running:    running,
+		Themes:     availableThemes,
+		CSRFToken:  csrfTokenFrom(r),
+		ServerMode: s.accounts != nil,
 	}, nil
 }
 
@@ -205,7 +217,7 @@ func (s *Server) entryFilter(r *http.Request) (service.EntryFilter, entryFilterF
 // handleStartTimer starts a timer. It does not stop any other: several may run at
 // once (docs/adr/0004-concurrent-timers.md).
 func (s *Server) handleStartTimer(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
+	if err := parseForm(r); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -244,7 +256,7 @@ func (s *Server) handleStopAllTimers(w http.ResponseWriter, r *http.Request) {
 
 // handleCreateEntry records time that has already happened.
 func (s *Server) handleCreateEntry(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
+	if err := parseForm(r); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -267,7 +279,7 @@ func (s *Server) handleCreateEntry(w http.ResponseWriter, r *http.Request) {
 // resolved, because a wrong guess that silently becomes billable time is worse
 // than a second click.
 func (s *Server) handleQuickAdd(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
+	if err := parseForm(r); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -305,7 +317,7 @@ func (s *Server) handleEditEntryForm(w http.ResponseWriter, r *http.Request) {
 
 // handleUpdateEntry saves an edit.
 func (s *Server) handleUpdateEntry(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
+	if err := parseForm(r); err != nil {
 		s.fail(w, r, err)
 		return
 	}

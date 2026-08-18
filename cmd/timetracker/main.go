@@ -65,7 +65,8 @@ func run() error {
 		return err
 	}
 
-	log := logging.New(os.Stderr, cfg.LogLevel, cfg.LogFormat)
+	log, closeLog := buildLogger(cfg)
+	defer closeLog()
 	log.Info("starting",
 		"version", version, "mode", string(cfg.Mode), "data_dir", cfg.DataDir)
 
@@ -96,15 +97,21 @@ func run() error {
 
 	// Mode selects the collaborators once, here. Nothing below this point asks
 	// which mode it is running in.
-	authorizer, identity, err := buildIdentity(ctx, cfg, db, log)
+	svc, opts, cleanup, err := buildMode(ctx, cfg, db, log)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	server, err := web.New(svc, cfg, log, opts)
 	if err != nil {
 		return err
 	}
 
-	svc := service.New(db, authorizer, log, time.Now)
-	server, err := web.New(svc, cfg, log, identity)
-	if err != nil {
-		return err
+	// Background maintenance. Each piece is one goroutine bound to the root
+	// context, so shutdown cancels it.
+	if opts.Accounts != nil {
+		go pruneSessions(ctx, opts.Accounts, log)
 	}
 
 	httpServer := &http.Server{
@@ -152,15 +159,48 @@ func run() error {
 	return nil
 }
 
-// buildIdentity assembles the mode-specific authoriser and identity resolver.
+// buildLogger sets up logging, adding rsyslog forwarding in server mode.
+//
+// Forwarding is additive: stderr logging continues regardless, so an operator
+// watching the console still sees everything even while the collector is
+// unreachable. See docs/adr/0010-audit-log-and-rsyslog.md.
+func buildLogger(cfg config.Config) (*slog.Logger, func()) {
+	base := logging.New(os.Stderr, cfg.LogLevel, cfg.LogFormat)
+	if cfg.Mode != config.ModeServer {
+		return base, func() {}
+	}
+
+	network, address := cfg.SyslogNetwork, cfg.SyslogAddress
+	if network == "" && address == "" {
+		// Fall back to the platform's local socket when one exists, so an
+		// operator on Linux gets syslog forwarding without configuring anything.
+		network, address = logging.DefaultSyslogAddress()
+	}
+	if network == "" || address == "" {
+		base.Warn("no syslog destination configured or detected; " +
+			"audit events are written to the database and stderr only")
+		return base, func() {}
+	}
+
+	handler := logging.NewSyslogHandler(base.Handler(), logging.SyslogConfig{
+		Network: network, Address: address, Facility: cfg.SyslogFacility,
+	})
+	logger := slog.New(handler)
+	logger.Info("forwarding logs to syslog", "network", network, "address", address)
+	return logger, handler.Close
+}
+
+// buildMode assembles the mode-specific collaborators.
 //
 // This is the only function in the application that branches on the run mode.
-// Everything downstream receives an Authorizer and an identity function and
-// cannot tell which mode produced them, which is what stops the two modes from
-// growing separate behaviour (docs/adr/0001-single-binary-two-modes.md).
-func buildIdentity(ctx context.Context, cfg config.Config, db *store.DB, log *slog.Logger) (
-	auth.Authorizer, func(*http.Request) (domain.User, error), error,
+// Everything downstream receives a Service and a set of Options and cannot tell
+// which mode produced them, which is what stops the two from growing separate
+// behaviour (docs/adr/0001-single-binary-two-modes.md).
+func buildMode(ctx context.Context, cfg config.Config, db *store.DB, log *slog.Logger) (
+	*service.Service, web.Options, func(), error,
 ) {
+	noCleanup := func() {}
+
 	switch cfg.Mode {
 	case config.ModeLocal:
 		// Local mode has exactly one user: whoever launched the process. There
@@ -170,30 +210,118 @@ func buildIdentity(ctx context.Context, cfg config.Config, db *store.DB, log *sl
 		// Note that this is still a real Authorizer, not a bypass: every service
 		// method consults it exactly as it will in server mode, so the
 		// authorisation path is exercised in both.
-		bootstrap := service.New(db, auth.SingleUserAuthorizer{}, log, time.Now)
-		if err := bootstrap.EnsureLocalUser(ctx, defaultDisplayName(), cfg.TimeZone); err != nil {
-			return nil, nil, fmt.Errorf("prepare local user: %w", err)
+		svc := service.New(db, auth.SingleUserAuthorizer{}, log, time.Now)
+		if err := svc.EnsureLocalUser(ctx, defaultDisplayName(), cfg.TimeZone); err != nil {
+			return nil, web.Options{}, noCleanup, fmt.Errorf("prepare local user: %w", err)
 		}
 
 		identity := func(r *http.Request) (domain.User, error) {
 			// Re-read on each request rather than caching, so a preference
 			// change (theme, time zone) takes effect on the next page load.
-			return bootstrap.LocalUser(r.Context())
+			return svc.LocalUser(r.Context())
 		}
-		return auth.SingleUserAuthorizer{}, identity, nil
+		return svc, web.Options{Identity: identity}, noCleanup, nil
 
 	case config.ModeServer:
-		// Server mode needs sessions, password verification and OIDC, which
-		// arrive in layer 2 (docs/MVP_PLAN.md). Refusing to start is the honest
-		// answer: silently falling back to the single-user identity would serve
-		// everyone's timesheet to anyone who connected.
-		return nil, nil, errors.New(
-			"server mode is not implemented yet: authentication, RBAC and rsyslog " +
-				"arrive in layer 2 (see docs/MVP_PLAN.md). Run without --mode=server " +
-				"for the local single-user application")
+		// The RBAC authoriser needs a membership lookup. Injecting the store
+		// method keeps internal/auth free of any database dependency, so the
+		// decision table can be tested exhaustively without fixtures.
+		authorizer := auth.RoleAuthorizer{IsProjectMember: db.IsProjectMember}
+		svc := service.New(db, authorizer, log, time.Now)
+		accounts := service.NewAccounts(db, svc, time.Now)
+
+		if err := bootstrapAdmin(ctx, cfg, accounts, log); err != nil {
+			return nil, web.Options{}, noCleanup, err
+		}
+
+		var provider *auth.OIDCProvider
+		if cfg.OIDCEnabled() {
+			var err error
+			provider, err = auth.NewOIDCProvider(ctx, auth.OIDCConfig{
+				Issuer:       cfg.OIDCIssuer,
+				ClientID:     cfg.OIDCClientID,
+				ClientSecret: cfg.OIDCClientSecret,
+				RedirectURL:  cfg.OIDCRedirectURL,
+				RoleClaim:    cfg.OIDCRoleClaim,
+				RoleMapping:  cfg.OIDCRoleMapping,
+			}, nil)
+			if err != nil {
+				// Discovery happens at start-up, while an operator is watching,
+				// rather than at the moment a user first tries to sign in.
+				return nil, web.Options{}, noCleanup, fmt.Errorf("configure single sign-on: %w", err)
+			}
+			log.Info("single sign-on enabled", "issuer", cfg.OIDCIssuer)
+		}
+
+		identity := func(r *http.Request) (domain.User, error) {
+			cookie, err := r.Cookie(auth.SessionCookieName)
+			if err != nil {
+				return domain.User{}, auth.ErrUnauthenticated
+			}
+			user, _, err := accounts.ResolveSession(r.Context(), cookie.Value)
+			return user, err
+		}
+
+		return svc, web.Options{
+			Identity: identity, Accounts: accounts, OIDC: provider,
+		}, noCleanup, nil
 
 	default:
-		return nil, nil, fmt.Errorf("unknown mode %q", cfg.Mode)
+		return nil, web.Options{}, noCleanup, fmt.Errorf("unknown mode %q", cfg.Mode)
+	}
+}
+
+// bootstrapAdmin creates the first administrator on an empty instance.
+//
+// Without it a fresh server has no accounts and no way to make one, since
+// account creation itself requires an administrator. It refuses once any account
+// exists, so it cannot later be used to mint privilege.
+func bootstrapAdmin(ctx context.Context, cfg config.Config, accounts *service.Accounts, log *slog.Logger) error {
+	if cfg.AdminEmail == "" || cfg.AdminPassword == "" {
+		return nil
+	}
+	user, err := accounts.BootstrapFirstAdmin(ctx, service.NewUserInput{
+		DisplayName: cfg.AdminName,
+		Email:       cfg.AdminEmail,
+		Password:    cfg.AdminPassword,
+		TimeZone:    cfg.TimeZone,
+	})
+	if err != nil {
+		if errors.Is(err, service.ErrForbidden) {
+			// Already bootstrapped. Not an error: the credentials are likely
+			// still in a unit file from the first run.
+			log.Info("administrator bootstrap skipped: accounts already exist")
+			return nil
+		}
+		return fmt.Errorf("create the first administrator: %w", err)
+	}
+	log.Info("created the first administrator", "email", user.Email)
+	return nil
+}
+
+// pruneSessions removes expired sessions periodically.
+//
+// Expiry is also enforced on every read, so this is housekeeping to stop the
+// table growing, not a security control - a missed sweep can never leave an
+// expired session usable.
+func pruneSessions(ctx context.Context, accounts *service.Accounts, log *slog.Logger) {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			removed, err := accounts.PruneSessions(ctx)
+			if err != nil {
+				log.Error("pruning sessions", "error", err.Error())
+				continue
+			}
+			if removed > 0 {
+				log.Debug("pruned expired sessions", "count", removed)
+			}
+		}
 	}
 }
 

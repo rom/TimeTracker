@@ -26,14 +26,19 @@ type billingContext struct {
 	assignment domain.Assignment
 	project    domain.Project
 	customer   domain.Customer
+	// memberRateMinor is the acting person's rate on this project, 0 when none
+	// is set. It is the level between the assignment and the project, and it is
+	// what expresses "a senior costs more than a junior on the same work".
+	memberRateMinor int64
 	// defaults are the instance-wide fallbacks from the settings row.
 	defaultRateMinor int64
 	defaultCurrency  string
 	defaultRounding  string
 }
 
-// billingContextFor loads the assignment, its project and its customer.
-func (s *Service) billingContextFor(ctx context.Context, assignmentID int64) (billingContext, error) {
+// billingContextFor loads the assignment, its project, its customer and the
+// subject's per-project rate.
+func (s *Service) billingContextFor(ctx context.Context, assignmentID, subjectID int64) (billingContext, error) {
 	assignment, err := s.db.GetAssignment(ctx, assignmentID)
 	if err != nil {
 		return billingContext{}, err
@@ -50,10 +55,18 @@ func (s *Service) billingContextFor(ctx context.Context, assignmentID int64) (bi
 	if err != nil {
 		return billingContext{}, err
 	}
+	// The per-person rate is looked up for whoever the time belongs to, not for
+	// whoever is recording it - otherwise a manager entering time on behalf of a
+	// junior would bill it at the manager's rate.
+	memberRate, err := s.db.MemberRateMinor(ctx, subjectID, project.ID)
+	if err != nil {
+		return billingContext{}, err
+	}
 	return billingContext{
 		assignment:       assignment,
 		project:          project,
 		customer:         customer,
+		memberRateMinor:  memberRate,
 		defaultRateMinor: settings.DefaultRateMinor,
 		defaultCurrency:  settings.DefaultCurrency,
 		defaultRounding:  settings.DefaultRounding,
@@ -62,19 +75,17 @@ func (s *Service) billingContextFor(ctx context.Context, assignmentID int64) (bi
 
 // rate resolves the hourly rate, most specific level first.
 //
-// The order is assignment → project → customer → instance default. A rate of
-// zero at any level means "inherit", not "free": billing something at nothing is
-// almost always a missing configuration rather than an intention, and treating
-// zero as a real rate would hide that.
-//
-// (The person-on-project level described in docs/DESIGN.md sits between
-// assignment and project, and arrives with the multi-user model in layer 2. Its
-// absence here changes no result while there is one user.)
+// The order is assignment → person-on-project → project → customer → instance
+// default. A rate of zero at any level means "inherit", not "free": billing
+// something at nothing is almost always a missing configuration rather than an
+// intention, and treating zero as a real rate would hide that.
 func (b billingContext) rate() domain.Money {
 	currency := b.currency()
 	switch {
 	case b.assignment.RateMinor > 0:
 		return domain.NewMoney(b.assignment.RateMinor, currency)
+	case b.memberRateMinor > 0:
+		return domain.NewMoney(b.memberRateMinor, currency)
 	case b.project.RateMinor > 0:
 		return domain.NewMoney(b.project.RateMinor, currency)
 	case b.customer.RateMinor > 0:
@@ -139,7 +150,7 @@ func (b billingContext) applyBilling(entry *domain.TimeEntry) {
 
 // applyBillingTo loads the hierarchy and writes the snapshot onto an entry.
 func (s *Service) applyBillingTo(ctx context.Context, entry *domain.TimeEntry) error {
-	context, err := s.billingContextFor(ctx, entry.AssignmentID)
+	context, err := s.billingContextFor(ctx, entry.AssignmentID, entry.UserID)
 	if err != nil {
 		return err
 	}

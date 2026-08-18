@@ -13,6 +13,7 @@
   {{/* ------------------------------------------------------------ customers */}}
   <h2 class="section-heading">Customers</h2>
   <form class="entry-form" method="post" action="/customers" hx-post="/customers">
+    {{template "csrf" $.CSRFToken}}
     <input type="text" name="name" placeholder="Customer name" required aria-label="Customer name">
     <input type="text" name="code" placeholder="Code" size="8" aria-label="Code">
     <input type="text" name="currency" placeholder="EUR" size="4" maxlength="3" aria-label="Currency">
@@ -47,6 +48,7 @@
           <td>{{if gt .RateMinor 0}}{{money .RateMinor .Currency}}{{end}}</td>
           <td>
             <form method="post" action="/customers/{{.ID}}/archive" hx-post="/customers/{{.ID}}/archive">
+    {{template "csrf" $.CSRFToken}}
               {{if .Archived}}<input type="hidden" name="restore" value="1">{{end}}
               <button type="submit" class="btn btn-small btn-quiet">
                 {{if .Archived}}Restore{{else}}Archive{{end}}
@@ -63,6 +65,7 @@
   {{/* ------------------------------------------------------------- projects */}}
   <h2 class="section-heading">Projects</h2>
   <form class="entry-form" method="post" action="/projects" hx-post="/projects">
+    {{template "csrf" $.CSRFToken}}
     <select name="customer_id" required aria-label="Customer">
       <option value="">Customer…</option>
       {{range .Customers}}{{if not .Archived}}<option value="{{.ID}}">{{.Name}}</option>{{end}}{{end}}
@@ -91,6 +94,7 @@
           <td>{{if gt .RateMinor 0}}{{money .RateMinor .Currency}}{{end}}</td>
           <td>
             <form method="post" action="/projects/{{.ID}}/archive" hx-post="/projects/{{.ID}}/archive">
+    {{template "csrf" $.CSRFToken}}
               {{if .Archived}}<input type="hidden" name="restore" value="1">{{end}}
               <button type="submit" class="btn btn-small btn-quiet">
                 {{if .Archived}}Restore{{else}}Archive{{end}}
@@ -109,6 +113,7 @@
   <p class="hint">An assignment is what a timer runs against. Its colour and icon
      are what make the day view scannable at a glance.</p>
   <form class="entry-form" method="post" action="/assignments" hx-post="/assignments">
+    {{template "csrf" $.CSRFToken}}
     <select name="project_id" required aria-label="Project">
       <option value="">Project…</option>
       {{range .Projects}}{{if not .Archived}}
@@ -149,6 +154,7 @@
           <td>{{.CustomerName}}</td>
           <td>
             <form method="post" action="/assignments/{{.ID}}/archive" hx-post="/assignments/{{.ID}}/archive">
+    {{template "csrf" $.CSRFToken}}
               {{if .Archived}}<input type="hidden" name="restore" value="1">{{end}}
               <button type="submit" class="btn btn-small btn-quiet">
                 {{if .Archived}}Restore{{else}}Archive{{end}}

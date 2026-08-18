@@ -16,6 +16,8 @@ import (
 // only need to distinguish the user's mistake from ours.
 func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, errBadForm):
+		http.Error(w, "The submitted form could not be read.", http.StatusBadRequest)
 	case errors.Is(err, service.ErrValidation):
 		// The user's input was wrong, and the message describes what to fix.
 		http.Error(w, err.Error(), http.StatusBadRequest)

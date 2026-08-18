@@ -4,6 +4,17 @@
   the two paths from drifting apart.
 */}}
 
+{{/* ------------------------------------------------------------------- csrf */}}
+{{/*
+  Every state-changing form carries the session's anti-forgery token. It is a
+  hidden field rather than only a header so that the no-JavaScript path - a plain
+  form post - is protected too, not just the background submit.
+
+  The value is empty in local mode, where there is no session to bind it to and
+  the CSRF middleware skips the check.
+*/}}
+{{define "csrf"}}<input type="hidden" name="csrf_token" value="{{.}}">{{end}}
+
 {{/* ---------------------------------------------------------- running timers */}}
 {{define "running-timers"}}
   {{if .Running}}
@@ -21,6 +32,7 @@
                  latency-sensitive element on the page never round-trips. */}}
             <time class="live-clock" data-started="{{iso .StartedAt}}">0:00:00</time>
             <form method="post" action="/timers/{{.ID}}/stop" hx-post="/timers/{{.ID}}/stop">
+              {{template "csrf" $.CSRFToken}}
               <button type="submit" class="btn btn-stop" title="Stop this timer">Stop</button>
             </form>
           </li>
@@ -28,6 +40,7 @@
       </ul>
       {{if gt (len .Running) 1}}
         <form method="post" action="/timers/stop-all" hx-post="/timers/stop-all">
+          {{template "csrf" .CSRFToken}}
           <button type="submit" class="btn btn-quiet">Stop all</button>
         </form>
       {{end}}
@@ -64,46 +77,49 @@
 
 {{/* ------------------------------------------------------------- entry rows */}}
 {{define "entry-row"}}
-  <tr class="entry-row {{if .Flagged}}flagged{{end}} {{if eq (printf "%s" .Status) "pending"}}pending{{end}}">
+{{- $e := .Entry -}}
+  <tr class="entry-row {{if $e.Flagged}}flagged{{end}} {{if eq (printf "%s" $e.Status) "pending"}}pending{{end}}">
     <td class="cell-chip">
-      <span class="chip" data-colour="{{.ColourKey}}" title="{{.CustomerName}}">
-        {{if .Icon}}{{.Icon}}{{else}}●{{end}}
+      <span class="chip" data-colour="{{$e.ColourKey}}" title="{{$e.CustomerName}}">
+        {{if $e.Icon}}{{$e.Icon}}{{else}}●{{end}}
       </span>
     </td>
     <td class="cell-what">
-      <span class="entry-assignment">{{.AssignmentName}}</span>
-      <span class="entry-path">{{.CustomerName}} · {{.ProjectName}}</span>
-      {{if .Note}}<span class="entry-note">{{.Note}}</span>{{end}}
-      {{if .IsProxy}}
+      <span class="entry-assignment">{{$e.AssignmentName}}</span>
+      <span class="entry-path">{{$e.CustomerName}} · {{$e.ProjectName}}</span>
+      {{if $e.Note}}<span class="entry-note">{{$e.Note}}</span>{{end}}
+      {{if $e.IsProxy}}
         {{/* Proxy entries always show who recorded them. Time in someone's name
              that they did not enter must never look like their own. */}}
         <span class="badge badge-proxy" title="Recorded by someone else">
-          entered by {{.EnteredByName}}
+          entered by {{$e.EnteredByName}}
         </span>
       {{end}}
-      {{if eq (printf "%s" .Status) "pending"}}
+      {{if eq (printf "%s" $e.Status) "pending"}}
         <span class="badge badge-pending" title="Not counted until confirmed">pending</span>
       {{end}}
-      {{if .Flagged}}
+      {{if $e.Flagged}}
         <span class="badge badge-flagged" title="Excluded from totals until reviewed">needs review</span>
       {{end}}
     </td>
     <td class="cell-time">
-      {{if .Running}}
-        <time class="live-clock" data-started="{{iso .StartedAt}}">running</time>
+      {{if $e.Running}}
+        <time class="live-clock" data-started="{{iso $e.StartedAt}}">running</time>
       {{else}}
-        {{duration .DurationSeconds}}
+        {{duration $e.DurationSeconds}}
       {{end}}
     </td>
-    <td class="cell-billable">{{if .Billable}}<span title="Billable">€</span>{{end}}</td>
+    <td class="cell-billable">{{if $e.Billable}}<span title="Billable">€</span>{{end}}</td>
     <td class="cell-actions">
-      {{if .Running}}
-        <form method="post" action="/timers/{{.ID}}/stop" hx-post="/timers/{{.ID}}/stop">
+      {{if $e.Running}}
+        <form method="post" action="/timers/{{$e.ID}}/stop" hx-post="/timers/{{$e.ID}}/stop">
+          {{template "csrf" $.CSRF}}
           <button type="submit" class="btn btn-small btn-stop">Stop</button>
         </form>
       {{end}}
-      <form method="post" action="/entries/{{.ID}}/delete" hx-post="/entries/{{.ID}}/delete"
+      <form method="post" action="/entries/{{$e.ID}}/delete" hx-post="/entries/{{$e.ID}}/delete"
             hx-confirm="Delete this entry?">
+        {{template "csrf" $.CSRF}}
         <button type="submit" class="btn btn-small btn-quiet" title="Delete">×</button>
       </form>
     </td>
@@ -121,6 +137,7 @@
 {{define "entry-edit-form"}}
   <form class="entry-form" method="post" action="/entries/{{.Entry.ID}}"
         hx-post="/entries/{{.Entry.ID}}">
+    {{template "csrf" .CSRF}}
     <select name="assignment_id" required>
       {{$selected := .Entry.AssignmentID}}
       {{range .Assignments}}
