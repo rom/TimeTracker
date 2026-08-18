@@ -91,13 +91,48 @@ func scanUser(row rowScanner) (domain.User, error) {
 
 // ----------------------------------------------------------------- customers --
 
+// customerColumns is the column list every customer query uses.
+//
+// One list rather than four copies: the rate rules add a dozen columns, and a
+// rule that is written by the insert but missing from the select would be a
+// silently forgotten contract term - the kind of bug that shows up as an
+// under-billed invoice months later.
+const customerColumns = `id, name, code, currency, colour_key, icon, notes, rate_minor,
+	overtime_rate_minor, overtime_multiplier_pct,
+	overtime_daily_threshold_seconds, overtime_weekly_threshold_seconds,
+	travel_billing, travel_rate_minor, travel_multiplier_pct,
+	expense_markup_pct, expense_billing, mileage_rate_minor, per_diem_minor,
+	receipt_required_above_minor,
+	archived_at, created_at`
+
+// customerRuleArgs returns the rule values in the order customerColumns lists
+// them, so the insert, the update and the scan cannot drift apart.
+func customerRuleArgs(c domain.Customer) []any {
+	r := c.Rules
+	return []any{
+		r.OvertimeRateMinor, r.OvertimeMultiplierPct,
+		r.OvertimeDailyThresholdSeconds, r.OvertimeWeeklyThresholdSeconds,
+		string(r.TravelBilling), r.TravelRateMinor, r.TravelMultiplierPct,
+		r.ExpenseMarkupPct, string(r.ExpenseBilling), r.MileageRateMinor, r.PerDiemMinor,
+		r.ReceiptRequiredAboveMinor,
+	}
+}
+
 // CreateCustomer inserts a customer.
 func (db *DB) CreateCustomer(ctx context.Context, c domain.Customer) (domain.Customer, error) {
 	now := time.Now()
+	args := []any{c.Name, c.Code, c.Currency, c.ColourKey, c.Icon, c.Notes, c.RateMinor}
+	args = append(args, customerRuleArgs(c)...)
+	args = append(args, formatTime(now))
+
 	res, err := db.write.ExecContext(ctx, `
-		INSERT INTO customers (name, code, currency, colour_key, icon, notes, rate_minor, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		c.Name, c.Code, c.Currency, c.ColourKey, c.Icon, c.Notes, c.RateMinor, formatTime(now))
+		INSERT INTO customers (name, code, currency, colour_key, icon, notes, rate_minor,
+			overtime_rate_minor, overtime_multiplier_pct,
+			overtime_daily_threshold_seconds, overtime_weekly_threshold_seconds,
+			travel_billing, travel_rate_minor, travel_multiplier_pct,
+			expense_markup_pct, expense_billing, mileage_rate_minor, per_diem_minor,
+			receipt_required_above_minor, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, args...)
 	if err != nil {
 		return domain.Customer{}, fmt.Errorf("create customer: %w", err)
 	}
@@ -112,11 +147,19 @@ func (db *DB) CreateCustomer(ctx context.Context, c domain.Customer) (domain.Cus
 
 // UpdateCustomer saves the editable fields of an existing customer.
 func (db *DB) UpdateCustomer(ctx context.Context, c domain.Customer) error {
+	args := []any{c.Name, c.Code, c.Currency, c.ColourKey, c.Icon, c.Notes, c.RateMinor}
+	args = append(args, customerRuleArgs(c)...)
+	args = append(args, c.ID)
+
 	res, err := db.write.ExecContext(ctx, `
 		UPDATE customers SET name = ?, code = ?, currency = ?, colour_key = ?, icon = ?,
-		       notes = ?, rate_minor = ?
-		WHERE id = ?`,
-		c.Name, c.Code, c.Currency, c.ColourKey, c.Icon, c.Notes, c.RateMinor, c.ID)
+		       notes = ?, rate_minor = ?,
+		       overtime_rate_minor = ?, overtime_multiplier_pct = ?,
+		       overtime_daily_threshold_seconds = ?, overtime_weekly_threshold_seconds = ?,
+		       travel_billing = ?, travel_rate_minor = ?, travel_multiplier_pct = ?,
+		       expense_markup_pct = ?, expense_billing = ?, mileage_rate_minor = ?,
+		       per_diem_minor = ?, receipt_required_above_minor = ?
+		WHERE id = ?`, args...)
 	if err != nil {
 		return fmt.Errorf("update customer: %w", err)
 	}
@@ -144,7 +187,7 @@ func (db *DB) SetCustomerArchived(ctx context.Context, id int64, archived bool) 
 // GetCustomer loads one customer.
 func (db *DB) GetCustomer(ctx context.Context, id int64) (domain.Customer, error) {
 	row := db.read.QueryRowContext(ctx, `
-		SELECT id, name, code, currency, colour_key, icon, notes, rate_minor, archived_at, created_at
+		SELECT `+customerColumns+`
 		FROM customers WHERE id = ?`, id)
 	return scanCustomer(row)
 }
@@ -178,7 +221,7 @@ func (db *DB) ListCustomers(ctx context.Context, scope Scope, includeArchived bo
 	}
 
 	query := `
-		SELECT id, name, code, currency, colour_key, icon, notes, rate_minor, archived_at, created_at
+		SELECT ` + customerColumns + `
 		FROM customers` + whereClause(conditions) + ` ORDER BY name COLLATE NOCASE`
 
 	rows, err := db.read.QueryContext(ctx, query, args...)
@@ -202,8 +245,15 @@ func scanCustomer(row rowScanner) (domain.Customer, error) {
 	var c domain.Customer
 	var archivedAt sql.NullString
 	var createdAt string
+	var travelBilling, expenseBilling string
 	err := row.Scan(&c.ID, &c.Name, &c.Code, &c.Currency, &c.ColourKey, &c.Icon,
-		&c.Notes, &c.RateMinor, &archivedAt, &createdAt)
+		&c.Notes, &c.RateMinor,
+		&c.Rules.OvertimeRateMinor, &c.Rules.OvertimeMultiplierPct,
+		&c.Rules.OvertimeDailyThresholdSeconds, &c.Rules.OvertimeWeeklyThresholdSeconds,
+		&travelBilling, &c.Rules.TravelRateMinor, &c.Rules.TravelMultiplierPct,
+		&c.Rules.ExpenseMarkupPct, &expenseBilling, &c.Rules.MileageRateMinor,
+		&c.Rules.PerDiemMinor, &c.Rules.ReceiptRequiredAboveMinor,
+		&archivedAt, &createdAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Customer{}, ErrNotFound
 	}
@@ -216,6 +266,8 @@ func scanCustomer(row rowScanner) (domain.Customer, error) {
 	if c.CreatedAt, err = parseTime(createdAt); err != nil {
 		return domain.Customer{}, err
 	}
+	c.Rules.TravelBilling = domain.TravelBilling(travelBilling)
+	c.Rules.ExpenseBilling = domain.ExpenseBilling(expenseBilling)
 	return c, nil
 }
 

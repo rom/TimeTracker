@@ -15,7 +15,8 @@ import (
 const expenseSelect = `
 	SELECT e.id, e.user_id, e.entered_by, e.project_id, e.spent_on, e.category,
 	       e.description, e.amount_minor, e.currency, e.billable, e.reimbursable,
-	       e.markup_pct, e.billed_minor, e.status, e.created_at, e.updated_at,
+	       e.markup_pct, e.billed_minor, e.quantity_milli, e.unit, e.unit_rate_minor,
+	       e.status, e.created_at, e.updated_at,
 	       p.name, c.id, c.name, u.display_name, eb.display_name,
 	       (SELECT COUNT(*) FROM attachments a
 	         WHERE a.owner_type = 'expense' AND a.owner_id = e.id)
@@ -31,11 +32,14 @@ func (db *DB) CreateExpense(ctx context.Context, e domain.Expense) (domain.Expen
 	res, err := db.write.ExecContext(ctx, `
 		INSERT INTO expenses (user_id, entered_by, project_id, spent_on, category,
 		    description, amount_minor, currency, billable, reimbursable, markup_pct,
-		    billed_minor, status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		    billed_minor, quantity_milli, unit, unit_rate_minor,
+		    status, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.UserID, e.EnteredBy, e.ProjectID, e.SpentOn, e.Category, e.Description,
 		e.AmountMinor, e.Currency, boolToInt(e.Billable), boolToInt(e.Reimbursable),
-		e.MarkupPercent, e.BilledMinor, string(e.Status), formatTime(now), formatTime(now))
+		e.MarkupPercent, e.BilledMinor,
+		e.QuantityMilli, string(e.Unit), e.UnitRateMinor,
+		string(e.Status), formatTime(now), formatTime(now))
 	if err != nil {
 		return domain.Expense{}, fmt.Errorf("create expense: %w", err)
 	}
@@ -52,10 +56,13 @@ func (db *DB) UpdateExpense(ctx context.Context, e domain.Expense) error {
 	res, err := db.write.ExecContext(ctx, `
 		UPDATE expenses SET project_id = ?, spent_on = ?, category = ?, description = ?,
 		       amount_minor = ?, currency = ?, billable = ?, reimbursable = ?,
-		       markup_pct = ?, billed_minor = ?, status = ?, updated_at = ?
+		       markup_pct = ?, billed_minor = ?,
+		       quantity_milli = ?, unit = ?, unit_rate_minor = ?,
+		       status = ?, updated_at = ?
 		WHERE id = ?`,
 		e.ProjectID, e.SpentOn, e.Category, e.Description, e.AmountMinor, e.Currency,
 		boolToInt(e.Billable), boolToInt(e.Reimbursable), e.MarkupPercent, e.BilledMinor,
+		e.QuantityMilli, string(e.Unit), e.UnitRateMinor,
 		string(e.Status), formatTime(time.Now()), e.ID)
 	if err != nil {
 		return fmt.Errorf("update expense: %w", err)
@@ -158,12 +165,13 @@ func (db *DB) ListExpenses(ctx context.Context, f ExpenseFilter) ([]domain.Expen
 
 func scanExpense(row rowScanner) (domain.Expense, error) {
 	var e domain.Expense
-	var status, createdAt, updatedAt string
+	var status, createdAt, updatedAt, unit string
 	var billable, reimbursable int
 
 	err := row.Scan(&e.ID, &e.UserID, &e.EnteredBy, &e.ProjectID, &e.SpentOn, &e.Category,
 		&e.Description, &e.AmountMinor, &e.Currency, &billable, &reimbursable,
-		&e.MarkupPercent, &e.BilledMinor, &status, &createdAt, &updatedAt,
+		&e.MarkupPercent, &e.BilledMinor, &e.QuantityMilli, &unit, &e.UnitRateMinor,
+		&status, &createdAt, &updatedAt,
 		&e.ProjectName, &e.CustomerID, &e.CustomerName, &e.UserName, &e.EnteredByName,
 		&e.AttachmentCount)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -175,6 +183,7 @@ func scanExpense(row rowScanner) (domain.Expense, error) {
 
 	e.Billable = billable != 0
 	e.Reimbursable = reimbursable != 0
+	e.Unit = domain.ExpenseUnit(unit)
 	e.Status = domain.EntryStatus(status)
 	if e.CreatedAt, err = parseTime(createdAt); err != nil {
 		return domain.Expense{}, err

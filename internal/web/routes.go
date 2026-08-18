@@ -91,6 +91,9 @@ func (s *Server) routes() {
 	// Editing the catalogue.
 	mux.HandleFunc("GET /customers/{id}/edit", s.handleEditCustomer)
 	mux.HandleFunc("POST /customers/{id}", s.handleUpdateCustomer)
+	// Contract terms beyond the base rate: overtime, travel, reimbursement.
+	mux.HandleFunc("GET /customers/{id}/rules", s.handleCustomerRules)
+	mux.HandleFunc("POST /customers/{id}/rules", s.handleUpdateCustomerRules)
 	mux.HandleFunc("GET /projects/{id}/edit", s.handleEditProject)
 	mux.HandleFunc("POST /projects/{id}", s.handleUpdateProject)
 	mux.HandleFunc("GET /assignments/{id}/edit", s.handleEditAssignment)

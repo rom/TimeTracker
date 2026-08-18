@@ -118,6 +118,12 @@
       {{if $e.Flagged}}
         <span class="badge badge-flagged" title="{{$page.T "entry.flagged.title"}}">{{$page.T "entry.flagged"}}</span>
       {{end}}
+      {{/* Only when it is not ordinary work: a badge on every row would carry
+           no information. */}}
+      {{$kind := printf "%s" $e.KindOrDefault}}
+      {{if ne $kind "work"}}
+        <span class="badge badge-kind badge-{{$kind}}">{{$page.T (printf "kind.%s" $kind)}}</span>
+      {{end}}
     </td>
     <td class="cell-time">
       {{if $e.Running}}
@@ -228,6 +234,17 @@
       <input type="time" id="edit-end" name="end" value=""
              aria-describedby="edit-end-help">
       <p class="field-help" id="edit-end-help">{{$page.T "entry.end.help"}}</p>
+    </div>
+
+    <div class="field">
+      <label for="edit-kind">{{$page.T "entry.kind"}}</label>
+      {{$kind := printf "%s" $entry.KindOrDefault}}
+      <select id="edit-kind" name="kind" aria-describedby="edit-kind-help">
+        {{range entryKinds}}
+          <option value="{{.}}" {{if eq (printf "%s" .) $kind}}selected{{end}}>{{$page.T .MessageKey}}</option>
+        {{end}}
+      </select>
+      <p class="field-help" id="edit-kind-help">{{$page.T "entry.kind.help"}}</p>
     </div>
 
     <div class="field field-wide">

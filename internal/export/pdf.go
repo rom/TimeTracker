@@ -90,6 +90,13 @@ func WritePDF(w io.Writer, report Report) error {
 				fontRegular, 8.5, 0.25)
 
 			note := line.Note
+			// A line billed at something other than the base rate has to say
+			// why, on the same document as the figure. Prefixed onto the note
+			// rather than given a column of its own: it is the exception, and a
+			// mostly-empty column would cost every row space to say nothing.
+			if line.Kind != "" && line.Kind != string(domain.KindWork) {
+				note = "(" + line.Kind + ") " + note
+			}
 			if line.Status == string(domain.StatusPending) {
 				// A pending proposal is listed but counts for nothing, and the
 				// document has to say so rather than leaving a reader to wonder

@@ -38,7 +38,17 @@
            aria-label="{{.T "expenses.category"}}">
     <input type="text" name="description" placeholder="{{.T "expenses.description"}}"
            aria-label="{{.T "expenses.description"}}">
-    <input type="text" name="amount" placeholder="{{.T "expenses.amount"}}" size="10" required
+    {{/* A claim can be an amount, or a quantity the customer's rate prices:
+         a distance at their mileage rate, days at their per diem. Nobody
+         should be multiplying 42.5 by 2.50 in their head. */}}
+    <select name="unit" aria-label="{{.T "expense.unit"}}">
+      <option value="">{{.T "expense.unit.none"}}</option>
+      <option value="km">{{.T "expense.unit.km"}}</option>
+      <option value="day">{{.T "expense.unit.day"}}</option>
+    </select>
+    <input type="text" name="quantity" placeholder="{{.T "expense.quantity"}}" size="7"
+           aria-label="{{.T "expense.quantity"}}" aria-describedby="quantity-help">
+    <input type="text" name="amount" placeholder="{{.T "expenses.amount"}}" size="10"
            aria-label="{{.T "expenses.amount"}}">
     <label class="inline-check">
       <input type="checkbox" name="billable"> {{.T "expenses.billable"}}
@@ -50,6 +60,7 @@
            aria-label="{{.T "expenses.markup"}}">
     <button type="submit" class="btn btn-primary">{{.T "expenses.add"}}</button>
   </form>
+  <p class="field-help" id="quantity-help">{{.T "expense.quantity.help"}}</p>
 
   {{if .Expenses}}
     <table class="entries">
@@ -87,9 +98,25 @@
                   📎 {{.AttachmentCount}}
                 </span>
               {{end}}
+              {{/* The customer requires evidence above an amount and there is
+                   none. Shown here rather than only refused at submission, so
+                   it can be fixed while the receipt is still in a pocket. */}}
+              {{if index $page.NeedsReceipt .ID}}
+                <span class="badge badge-flagged" title="{{$page.T "expense.receipt.needed.title"}}">
+                  {{$page.T "expense.receipt.needed"}}
+                </span>
+              {{end}}
             </td>
             <td>{{.CustomerName}} / {{.ProjectName}}</td>
-            <td class="cell-time">{{$page.Printer.FormatMoney .AmountMinor .Currency}}</td>
+            <td class="cell-time">
+              {{$page.Printer.FormatMoney .AmountMinor .Currency}}
+              {{/* A priced quantity shows its working: what was claimed, and at
+                   what rate, so the amount can be checked without opening it. */}}
+              {{if .QuantityMilli}}
+                <span class="entry-path">{{quantity .QuantityMilli}} {{.Unit}}
+                  × {{$page.Printer.FormatMoney .UnitRateMinor .Currency}}</span>
+              {{end}}
+            </td>
             <td>
               {{/* Two independent flags, shown as two independent marks. */}}
               {{if .Billable}}<span class="badge">{{$page.T "expenses.total.billable"}}</span>{{end}}

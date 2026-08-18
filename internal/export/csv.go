@@ -26,7 +26,7 @@ func WriteCSV(w io.Writer, report Report) error {
 
 	header := []string{
 		"id", "date", "start", "end", "customer", "project", "assignment",
-		"note", "user", "entered_by", "billable", "status",
+		"note", "user", "entered_by", "billable", "kind", "status",
 		"duration_hours", "duration_seconds",
 		"billable_hours", "rounding_rule", "rate", "amount", "currency",
 	}
@@ -52,6 +52,7 @@ func WriteCSV(w io.Writer, report Report) error {
 			line.User,
 			line.EnteredBy,
 			strconv.FormatBool(line.Billable),
+			line.Kind,
 			line.Status,
 			// Decimal hours is what invoicing systems consume; raw seconds is
 			// carried alongside so nothing is lost to rounding on the way out.

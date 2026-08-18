@@ -142,6 +142,11 @@ func documentXML(report Report) string {
 
 		for _, line := range group.lines {
 			note := line.Note
+			// The same rule as the PDF: a line billed at other than the base
+			// rate says why on the document carrying the figure.
+			if line.Kind != "" && line.Kind != string(domain.KindWork) {
+				note = "(" + line.Kind + ") " + note
+			}
 			if line.Status == string(domain.StatusPending) {
 				note = "(pending) " + note
 			}

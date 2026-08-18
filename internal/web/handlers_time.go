@@ -58,9 +58,13 @@ type pageData struct {
 	// Expenses, attachments and the proxy inbox.
 	Expenses      []domain.Expense
 	ExpenseTotals service.ExpenseTotals
-	Inbox         *service.Inbox
-	Proposed      []domain.TimeEntry
-	Attachments   []domain.Attachment
+	// NeedsReceipt marks expenses above their customer's evidence threshold with
+	// nothing attached. A map so a template can ask about a row without the
+	// template calling into the service.
+	NeedsReceipt map[int64]bool
+	Inbox        *service.Inbox
+	Proposed     []domain.TimeEntry
+	Attachments  []domain.Attachment
 
 	// Editing the catalogue. Non-nil when an edit form is being rendered.
 	EditCustomer   *domain.Customer
@@ -69,9 +73,12 @@ type pageData struct {
 
 	// Weekly submit and approve.
 	PeriodView *service.PeriodView
-	Approvals  []domain.TimesheetPeriod
-	Approved   []domain.TimesheetPeriod
-	MyPeriods  []domain.TimesheetPeriod
+	// Overtime is where a customer's threshold has been passed without the time
+	// being marked as overtime. Prompts, not findings.
+	Overtime  []service.OvertimeNotice
+	Approvals []domain.TimesheetPeriod
+	Approved  []domain.TimesheetPeriod
+	MyPeriods []domain.TimesheetPeriod
 
 	// Moving time.
 	MoveIDs []string
@@ -287,6 +294,15 @@ func (s *Server) handleWeek(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data.PeriodView = &period
+
+	// Where a customer's overtime threshold has been passed without any of the
+	// time being marked as such. A prompt, never a reclassification - the week
+	// view is where somebody reviews their hours before submitting, which is
+	// the moment this is worth raising.
+	if data.Overtime, err = s.svc.OvertimeNotices(r.Context(), date); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 
 	if data.Assignments, err = s.svc.Assignments(r.Context(), 0, false); err != nil {
 		s.fail(w, r, err)
@@ -536,10 +552,16 @@ func (s *Server) handleDeleteEntry(w http.ResponseWriter, r *http.Request) {
 func (s *Server) entryInputFromForm(r *http.Request) (service.EntryInput, error) {
 	loc := userLocation(r)
 
+	kind := domain.EntryKind(r.FormValue("kind"))
+	if kind != "" && !kind.Valid() {
+		return service.EntryInput{}, domainValidation("unknown kind of time: " + r.FormValue("kind"))
+	}
+
 	input := service.EntryInput{
 		AssignmentID: int64Param(r.FormValue("assignment_id")),
 		Note:         r.FormValue("note"),
 		Billable:     r.FormValue("billable") != "",
+		Kind:         kind,
 		OnBehalfOf:   int64Param(r.FormValue("on_behalf_of")),
 	}
 

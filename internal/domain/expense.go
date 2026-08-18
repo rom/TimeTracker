@@ -30,6 +30,13 @@ type Expense struct {
 	Reimbursable bool
 	// MarkupPercent applies only to the billable side.
 	MarkupPercent int64
+	// A quantity-priced expense: 42.5 km at 2.50/km, or 3 days of per diem. The
+	// quantity is in thousandths of a unit so a distance stays exact without a
+	// float touching a persisted field. Unit is empty for an ordinary expense
+	// whose amount was simply typed in.
+	QuantityMilli int64
+	Unit          ExpenseUnit
+	UnitRateMinor int64
 	// BilledMinor is the amount to invoice, including markup, frozen when the
 	// expense is recorded - the same reasoning that freezes a rate onto a time
 	// entry (docs/adr/0014-exact-money-and-duration.md).

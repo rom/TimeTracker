@@ -118,6 +118,13 @@ func (s *Service) SubmitWeek(ctx context.Context, date time.Time) (domain.Timesh
 		return domain.TimesheetPeriod{}, fmt.Errorf(
 			"%w: there is nothing recorded in this week to submit", ErrValidation)
 	}
+	// A customer that requires receipts above an amount requires them before the
+	// claim is made, not after it has been invoiced. This is the first point at
+	// which the requirement can be enforced: an attachment needs an expense to
+	// belong to, so it cannot be demanded when the expense is created.
+	if err := s.checkReceiptsPresent(ctx, actor.ID, view.Period.WeekStart, locationFor(actor)); err != nil {
+		return domain.TimesheetPeriod{}, err
+	}
 
 	period := view.Period
 	period.UserID = actor.ID

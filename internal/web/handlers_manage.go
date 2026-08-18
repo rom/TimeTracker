@@ -54,6 +54,11 @@ func (s *Server) handleUpdateCustomer(w http.ResponseWriter, r *http.Request) {
 	existing.Notes = r.FormValue("notes")
 	existing.RateMinor = rate
 
+	if existing.Rules, err = rateRulesFromForm(r, existing.Currency); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
 	if err := s.svc.UpdateCustomer(r.Context(), existing); err != nil {
 		s.fail(w, r, err)
 		return
@@ -487,4 +492,50 @@ func (s *Server) backupOptions(r *http.Request) service.BackupOptions {
 		opts.To = to.AddDate(0, 0, 1)
 	}
 	return opts
+}
+
+// handleCustomerRules renders one customer's contract terms.
+//
+// A screen of its own rather than a dozen more boxes on the customer row: these
+// are read off a signed agreement and typed in once, and they need labels and
+// units to be entered correctly.
+func (s *Server) handleCustomerRules(w http.ResponseWriter, r *http.Request) {
+	customer, err := s.svc.Customer(r.Context(), int64Param(r.PathValue("id")))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	data, err := s.newPageData(r, "", "admin")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	data.Title = data.Printer.T("rules.title", customer.Name)
+	data.EditCustomer = &customer
+	s.render(w, r, "page_customer_rules.html", data)
+}
+
+// handleUpdateCustomerRules saves them.
+func (s *Server) handleUpdateCustomerRules(w http.ResponseWriter, r *http.Request) {
+	if err := parseForm(r); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	customer, err := s.svc.Customer(r.Context(), int64Param(r.PathValue("id")))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	// The customer's own currency, so a rate typed as "2.50" is 2.50 of what
+	// this customer is invoiced in rather than of the instance default.
+	if customer.Rules, err = rateRulesFromForm(r, customer.Currency); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if err := s.svc.UpdateCustomer(r.Context(), customer); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }

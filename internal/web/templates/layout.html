@@ -112,9 +112,19 @@
     </label>
 
     {{/* Optional chrome, because whether a clock belongs in a timesheet header
-         is a matter of taste rather than a decision to make for everybody. */}}
+         is a matter of taste rather than a decision to make for everybody.
+
+         The time is rendered by the server, not left as a placeholder for a
+         script to fill in. A placeholder is indistinguishable from a broken
+         clock, and it is wrong for as long as the script takes to run - or
+         forever, if it never does. Script only keeps this moving.
+
+         The zone is the user's own, so the header agrees with every other time
+         on the page rather than with whatever zone the browser happens to be
+         in. */}}
     {{if .Settings.ShowClock}}
-      <span class="header-clock" id="header-clock" aria-hidden="true">--:--:--</span>
+      <span class="header-clock" id="header-clock" aria-hidden="true"
+            data-zone="{{.User.TimeZone}}">{{clockSeconds .Now .Zone}}</span>
     {{end}}
     {{if .Settings.ShowTimeAndDate}}
       <span class="header-date">{{.Printer.FormatDate .Now}}</span>

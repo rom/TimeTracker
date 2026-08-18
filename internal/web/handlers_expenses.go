@@ -27,6 +27,19 @@ func (s *Server) handleExpenses(w http.ResponseWriter, r *http.Request) {
 	}
 	data.ExpenseTotals = s.svc.ExpenseTotals(data.Expenses)
 
+	// Which claims are missing evidence their customer's contract requires.
+	// Resolved here rather than in the template, which has no business calling
+	// into the service.
+	data.NeedsReceipt = make(map[int64]bool, len(data.Expenses))
+	for _, expense := range data.Expenses {
+		needs, receiptErr := s.svc.NeedsReceipt(r.Context(), expense)
+		if receiptErr != nil {
+			s.fail(w, r, receiptErr)
+			return
+		}
+		data.NeedsReceipt[expense.ID] = needs
+	}
+
 	if data.Projects, err = s.svc.Projects(r.Context(), 0, false); err != nil {
 		s.fail(w, r, err)
 		return
@@ -85,7 +98,12 @@ func (s *Server) handleCreateExpense(w http.ResponseWriter, r *http.Request) {
 		Billable:      r.FormValue("billable") != "",
 		Reimbursable:  r.FormValue("reimbursable") != "",
 		MarkupPercent: markup,
-		OnBehalfOf:    int64Param(r.FormValue("on_behalf_of")),
+		// Whether the field was filled in at all, so an explicit 0% is not
+		// overwritten by the customer's default markup.
+		MarkupGiven: r.FormValue("markup") != "",
+		Quantity:    r.FormValue("quantity"),
+		Unit:        domain.ExpenseUnit(r.FormValue("unit")),
+		OnBehalfOf:  int64Param(r.FormValue("on_behalf_of")),
 	})
 	if err != nil {
 		s.fail(w, r, err)
@@ -111,6 +129,9 @@ func (s *Server) handleUpdateExpense(w http.ResponseWriter, r *http.Request) {
 		Billable:      r.FormValue("billable") != "",
 		Reimbursable:  r.FormValue("reimbursable") != "",
 		MarkupPercent: markup,
+		MarkupGiven:   r.FormValue("markup") != "",
+		Quantity:      r.FormValue("quantity"),
+		Unit:          domain.ExpenseUnit(r.FormValue("unit")),
 	})
 	if err != nil {
 		s.fail(w, r, err)

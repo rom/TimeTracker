@@ -229,6 +229,15 @@ func templateFuncs() template.FuncMap {
 			}
 			return t.In(loc).Format("15:04")
 		},
+		// clockSeconds renders an instant as "09:30:15", for the header clock.
+		// Rendered on the server so the clock shows the right time before any
+		// script runs, and still shows it if none ever does.
+		"clockSeconds": func(t time.Time, loc *time.Location) string {
+			if loc == nil {
+				loc = time.UTC
+			}
+			return t.In(loc).Format("15:04:05")
+		},
 		"date":     func(t time.Time) string { return t.Format("2006-01-02") },
 		"dateLong": func(t time.Time) string { return t.Format("Monday 2 January 2006") },
 		"weekday":  func(t time.Time) string { return t.Format("Mon") },
@@ -236,7 +245,14 @@ func templateFuncs() template.FuncMap {
 		"iso":      func(t time.Time) string { return t.UTC().Format(time.RFC3339) },
 		// addDays is used by the previous/next navigation links.
 		"addDays": func(t time.Time, days int) time.Time { return t.AddDate(0, 0, days) },
-		"index": func(values []int64, i int) int64 {
+		// nth is a bounds-safe element lookup, for the week grid where a row can
+		// be shorter than the number of columns.
+		//
+		// Deliberately not called "index": that is the name of a Go template
+		// builtin, and shadowing it silently breaks every other use - a map
+		// lookup elsewhere on the page fails with "expected []int64", which
+		// says nothing about the real cause.
+		"nth": func(values []int64, i int) int64 {
 			if i < 0 || i >= len(values) {
 				return 0
 			}
@@ -258,6 +274,13 @@ func templateFuncs() template.FuncMap {
 			}
 			return value / by
 		},
+		// hoursOf renders a seconds threshold as the hours a contract states it
+		// in, so what is displayed is what can be typed back.
+		"hoursOf": formatHours,
+		// quantity renders a thousandths quantity as a plain decimal.
+		"quantity": domain.FormatQuantity,
+		// entryKinds are work, overtime and travel.
+		"entryKinds": domain.EntryKinds,
 		// humanBytes renders a file size the way a person reads one.
 		"humanBytes": humanBytes,
 		// colours are the palette keys an entity may carry. Stored as keys
