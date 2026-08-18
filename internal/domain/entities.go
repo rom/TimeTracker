@@ -71,6 +71,9 @@ type Customer struct {
 	ColourKey string
 	Icon      string
 	Notes     string
+	// RateMinor is the customer-level default hourly rate in minor units, used
+	// when neither the assignment nor the project sets one. 0 means "no default".
+	RateMinor int64
 	// ArchivedAt is set instead of deleting. Deleting a customer would orphan
 	// invoiced history, so nothing in this application removes one.
 	ArchivedAt *time.Time

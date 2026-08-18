@@ -1,0 +1,461 @@
+package web
+
+import (
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/rom/timetracker/internal/auth"
+	"github.com/rom/timetracker/internal/domain"
+	"github.com/rom/timetracker/internal/service"
+)
+
+// pageData is what every full page render receives. The common fields (the
+// acting user, the running timers, the theme) appear on every screen, so they are
+// assembled once rather than by each handler.
+type pageData struct {
+	Title  string
+	Active string // which navigation item to highlight
+	User   domain.User
+	Now    time.Time
+	// Running is drawn in the header on every screen, so a timer left going is
+	// impossible to miss.
+	Running     []domain.TimeEntry
+	Themes      []string
+	Assignments []domain.Assignment
+	Recent      []domain.Assignment
+	Error       string
+
+	// Screen-specific payloads.
+	Day       *service.DayView
+	Week      *service.WeekView
+	Entries   []domain.TimeEntry
+	Totals    domain.Totals
+	Customers []domain.Customer
+	Projects  []domain.Project
+	Entry     *domain.TimeEntry
+	Filter    entryFilterForm
+}
+
+// availableThemes is the list offered in the theme switcher. It is defined here
+// and in the stylesheet's token blocks; a theme missing from either is caught by
+// the contrast test described in docs/TEST.md.
+var availableThemes = []string{"light", "dark", "gold", "sand", "spring", "autumn", "contrast"}
+
+// newPageData assembles the fields every screen needs.
+func (s *Server) newPageData(r *http.Request, title, active string) (pageData, error) {
+	user, _ := auth.UserFrom(r.Context())
+
+	running, err := s.svc.RunningTimers(r.Context())
+	if err != nil {
+		return pageData{}, err
+	}
+	return pageData{
+		Title:   title,
+		Active:  active,
+		User:    user,
+		Now:     s.svc.Now(),
+		Running: running,
+		Themes:  availableThemes,
+	}, nil
+}
+
+// handleHealth reports that the process is up. Deliberately free of detail: an
+// unauthenticated endpoint should not describe the system to a stranger.
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"status":"ok"}`))
+}
+
+// handleToday renders the day view, defaulting to today.
+func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
+	date := s.dateParam(r, "date")
+
+	data, err := s.newPageData(r, "Today", "today")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	day, err := s.svc.Day(r.Context(), date)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	data.Day = &day
+	data.Totals = day.Totals
+
+	if data.Recent, err = s.svc.RecentAssignments(r.Context(), 8); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if data.Assignments, err = s.svc.Assignments(r.Context(), 0, false); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	s.render(w, r, "page_today.html", data)
+}
+
+// handleWeek renders the weekly grid.
+func (s *Server) handleWeek(w http.ResponseWriter, r *http.Request) {
+	date := s.dateParam(r, "date")
+
+	data, err := s.newPageData(r, "Week", "week")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	week, err := s.svc.Week(r.Context(), date)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	data.Week = &week
+	data.Totals = week.Totals
+
+	if data.Assignments, err = s.svc.Assignments(r.Context(), 0, false); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.render(w, r, "page_week.html", data)
+}
+
+// entryFilterForm is the Entries screen's filter, kept as a struct so the form
+// can be re-rendered with the user's selections intact.
+type entryFilterForm struct {
+	From         string
+	To           string
+	CustomerID   int64
+	ProjectID    int64
+	AssignmentID int64
+	BillableOnly bool
+}
+
+// handleEntries renders the filterable entry list, which is also what every
+// export is generated from.
+func (s *Server) handleEntries(w http.ResponseWriter, r *http.Request) {
+	data, err := s.newPageData(r, "Entries", "entries")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	filter, form := s.entryFilter(r)
+	data.Filter = form
+
+	if data.Entries, err = s.svc.Entries(r.Context(), filter); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	data.Totals = s.svc.Totals(data.Entries)
+
+	if data.Customers, err = s.svc.Customers(r.Context(), false); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if data.Assignments, err = s.svc.Assignments(r.Context(), 0, false); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.render(w, r, "page_entries.html", data)
+}
+
+// entryFilter reads the filter from the query string.
+//
+// It defaults to the last 30 days rather than to everything: an unbounded query
+// on a multi-year database is slow and is almost never what someone wanted.
+func (s *Server) entryFilter(r *http.Request) (service.EntryFilter, entryFilterForm) {
+	now := s.svc.Now()
+	form := entryFilterForm{
+		From: r.URL.Query().Get("from"),
+		To:   r.URL.Query().Get("to"),
+	}
+
+	from, err := time.Parse("2006-01-02", form.From)
+	if err != nil {
+		from = now.AddDate(0, 0, -30)
+		form.From = from.Format("2006-01-02")
+	}
+	to, err := time.Parse("2006-01-02", form.To)
+	if err != nil {
+		to = now
+		form.To = to.Format("2006-01-02")
+	}
+
+	form.CustomerID = int64Param(r.URL.Query().Get("customer"))
+	form.ProjectID = int64Param(r.URL.Query().Get("project"))
+	form.AssignmentID = int64Param(r.URL.Query().Get("assignment"))
+	form.BillableOnly = r.URL.Query().Get("billable") == "1"
+
+	return service.EntryFilter{
+		// The end of the range is exclusive, so "to" is inclusive of that whole
+		// day - which is what a user typing a date means.
+		From:         time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, time.UTC),
+		To:           time.Date(to.Year(), to.Month(), to.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, 1),
+		CustomerID:   form.CustomerID,
+		ProjectID:    form.ProjectID,
+		AssignmentID: form.AssignmentID,
+		BillableOnly: form.BillableOnly,
+		Limit:        1000,
+	}, form
+}
+
+// handleStartTimer starts a timer. It does not stop any other: several may run at
+// once (docs/adr/0004-concurrent-timers.md).
+func (s *Server) handleStartTimer(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	assignmentID := int64Param(r.FormValue("assignment_id"))
+	if assignmentID == 0 {
+		http.Error(w, "Choose an assignment to start a timer on.", http.StatusBadRequest)
+		return
+	}
+
+	if _, err := s.svc.StartTimer(r.Context(), assignmentID, r.FormValue("note")); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.refreshOrRedirect(w, r)
+}
+
+// handleStopTimer stops one timer. Stopping is idempotent, so a double-click or
+// two open tabs cannot produce a doubled duration.
+func (s *Server) handleStopTimer(w http.ResponseWriter, r *http.Request) {
+	id := int64Param(r.PathValue("id"))
+	if _, err := s.svc.StopTimer(r.Context(), id); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.refreshOrRedirect(w, r)
+}
+
+// handleStopAllTimers stops everything running, for the end of the day.
+func (s *Server) handleStopAllTimers(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.svc.StopAllTimers(r.Context()); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.refreshOrRedirect(w, r)
+}
+
+// handleCreateEntry records time that has already happened.
+func (s *Server) handleCreateEntry(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	input, err := s.entryInputFromForm(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if _, err := s.svc.CreateEntry(r.Context(), input); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.refreshOrRedirect(w, r)
+}
+
+// handleQuickAdd parses a single line into an entry.
+//
+// An ambiguous line is not guessed at: the user is told what could not be
+// resolved, because a wrong guess that silently becomes billable time is worse
+// than a second click.
+func (s *Server) handleQuickAdd(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	_, parsed, err := s.svc.QuickAdd(r.Context(), r.FormValue("text"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if parsed.Ambiguous {
+		http.Error(w, "Could not read that: "+parsed.Reason, http.StatusBadRequest)
+		return
+	}
+	s.refreshOrRedirect(w, r)
+}
+
+// handleEditEntryForm returns the edit form for one entry, as an HTMX fragment.
+func (s *Server) handleEditEntryForm(w http.ResponseWriter, r *http.Request) {
+	entry, err := s.svc.Entry(r.Context(), int64Param(r.PathValue("id")))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	assignments, err := s.svc.Assignments(r.Context(), 0, false)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	s.renderFragment(w, r, "page_today.html", "entry-edit-form", map[string]any{
+		"Entry":       entry,
+		"Assignments": assignments,
+	})
+}
+
+// handleUpdateEntry saves an edit.
+func (s *Server) handleUpdateEntry(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	input, err := s.entryInputFromForm(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if _, err := s.svc.UpdateEntry(r.Context(), int64Param(r.PathValue("id")), input); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.refreshOrRedirect(w, r)
+}
+
+// handleDeleteEntry removes an entry. The prior state survives in the audit
+// trail, so the deletion is still explicable afterwards.
+func (s *Server) handleDeleteEntry(w http.ResponseWriter, r *http.Request) {
+	if err := s.svc.DeleteEntry(r.Context(), int64Param(r.PathValue("id"))); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.refreshOrRedirect(w, r)
+}
+
+// entryInputFromForm decodes the manual entry form.
+//
+// It accepts either a duration or an explicit end time, because both are natural:
+// "2h on the migration" and "09:00 to 10:30" are the same statement made two ways.
+func (s *Server) entryInputFromForm(r *http.Request) (service.EntryInput, error) {
+	user, _ := auth.UserFrom(r.Context())
+	loc := time.UTC
+	if user.TimeZone != "" {
+		if parsed, err := time.LoadLocation(user.TimeZone); err == nil {
+			loc = parsed
+		}
+	}
+
+	input := service.EntryInput{
+		AssignmentID: int64Param(r.FormValue("assignment_id")),
+		Note:         r.FormValue("note"),
+		Billable:     r.FormValue("billable") != "",
+		OnBehalfOf:   int64Param(r.FormValue("on_behalf_of")),
+	}
+
+	// The date and start time are entered in the user's local zone; they become
+	// an absolute instant here and are stored as UTC.
+	date := r.FormValue("date")
+	startTime := r.FormValue("start")
+	if date == "" {
+		date = s.svc.Now().In(loc).Format("2006-01-02")
+	}
+	if startTime == "" {
+		startTime = "09:00"
+	}
+	started, err := time.ParseInLocation("2006-01-02 15:04", date+" "+startTime, loc)
+	if err != nil {
+		return service.EntryInput{}, domainValidation("could not read the date and time: " + err.Error())
+	}
+	input.StartedAt = started
+
+	if endTime := r.FormValue("end"); endTime != "" {
+		ended, err := time.ParseInLocation("2006-01-02 15:04", date+" "+endTime, loc)
+		if err != nil {
+			return service.EntryInput{}, domainValidation("could not read the end time: " + err.Error())
+		}
+		// An end before the start means the work ran past midnight.
+		if !ended.After(started) {
+			ended = ended.AddDate(0, 0, 1)
+		}
+		input.EndedAt = &ended
+		return input, nil
+	}
+
+	if durationText := r.FormValue("duration"); durationText != "" {
+		seconds, err := domain.ParseDuration(durationText)
+		if err != nil {
+			return service.EntryInput{}, domainValidation(
+				"could not read the duration " + strconv.Quote(durationText) +
+					": try 1.5, 1h30 or 90m")
+		}
+		input.DurationSeconds = seconds
+	}
+	return input, nil
+}
+
+// domainValidation wraps a message so the error mapping renders it as a 400 with
+// the text shown to the user.
+func domainValidation(message string) error {
+	return validationError{message: message}
+}
+
+type validationError struct{ message string }
+
+func (e validationError) Error() string { return e.message }
+
+// Is makes errors.Is(err, service.ErrValidation) true for these, so they map onto
+// a 400 alongside the domain's own validation failures.
+func (e validationError) Is(target error) bool { return target == service.ErrValidation }
+
+// refreshOrRedirect answers a mutation.
+//
+// For an HTMX request it asks the client to refresh the affected regions, so the
+// page updates in place. For a plain form post - which is what happens with
+// JavaScript disabled - it redirects back, giving the ordinary post/redirect/get
+// behaviour that keeps a reload from repeating the action.
+func (s *Server) refreshOrRedirect(w http.ResponseWriter, r *http.Request) {
+	if isHTMX(r) {
+		// HX-Refresh re-renders the current screen. It is one round trip more
+		// than a targeted swap, and it is used here because every mutation
+		// affects several regions at once (the timer header, the day list and
+		// both totals); a partial update that missed one would show stale
+		// numbers, which is worse than a redraw.
+		w.Header().Set("HX-Refresh", "true")
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	target := r.Header.Get("Referer")
+	if target == "" {
+		target = "/today"
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+// dateParam reads a ?date=YYYY-MM-DD parameter, defaulting to today in the user's
+// zone.
+func (s *Server) dateParam(r *http.Request, name string) time.Time {
+	user, _ := auth.UserFrom(r.Context())
+	loc := time.UTC
+	if user.TimeZone != "" {
+		if parsed, err := time.LoadLocation(user.TimeZone); err == nil {
+			loc = parsed
+		}
+	}
+	if raw := r.URL.Query().Get(name); raw != "" {
+		if parsed, err := time.ParseInLocation("2006-01-02", raw, loc); err == nil {
+			return parsed
+		}
+	}
+	return s.svc.Now().In(loc)
+}
+
+// int64Param parses an identifier from a form field or path segment, returning 0
+// for anything unparseable. Handlers treat 0 as "not supplied"; the service layer
+// then fails to find it, which is the correct answer either way.
+func int64Param(raw string) int64 {
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return value
+}

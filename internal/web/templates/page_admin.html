@@ -1,0 +1,166 @@
+{{define "content"}}
+<section class="admin">
+
+  <header class="screen-header">
+    <div class="screen-title"><h1>Admin</h1></div>
+  </header>
+
+  <p class="hint">
+    Customers, projects and assignments are archived rather than deleted:
+    removing one would leave past invoices unable to say who was billed.
+  </p>
+
+  {{/* ------------------------------------------------------------ customers */}}
+  <h2 class="section-heading">Customers</h2>
+  <form class="entry-form" method="post" action="/customers" hx-post="/customers">
+    <input type="text" name="name" placeholder="Customer name" required aria-label="Customer name">
+    <input type="text" name="code" placeholder="Code" size="8" aria-label="Code">
+    <input type="text" name="currency" placeholder="EUR" size="4" maxlength="3" aria-label="Currency">
+    <input type="text" name="rate" placeholder="Rate/h" size="8" aria-label="Default hourly rate">
+    <select name="colour_key" aria-label="Colour">
+      <option value="blue">blue</option>
+      <option value="green">green</option>
+      <option value="amber">amber</option>
+      <option value="red">red</option>
+      <option value="purple">purple</option>
+      <option value="teal">teal</option>
+      <option value="slate" selected>slate</option>
+    </select>
+    <input type="text" name="icon" placeholder="🏢" size="3" aria-label="Icon">
+    <button type="submit" class="btn btn-primary">Add customer</button>
+  </form>
+
+  <table class="admin-table">
+    <thead><tr><th>Name</th><th>Code</th><th>Currency</th><th>Default rate</th><th></th></tr></thead>
+    <tbody>
+      {{range .Customers}}
+        <tr class="{{if .Archived}}archived{{end}}">
+          <td>
+            <span class="chip" data-colour="{{.ColourKey}}" aria-hidden="true">
+              {{if .Icon}}{{.Icon}}{{else}}●{{end}}
+            </span>
+            {{.Name}}
+            {{if .Archived}}<span class="badge">archived</span>{{end}}
+          </td>
+          <td>{{.Code}}</td>
+          <td>{{.Currency}}</td>
+          <td>{{if gt .RateMinor 0}}{{money .RateMinor .Currency}}{{end}}</td>
+          <td>
+            <form method="post" action="/customers/{{.ID}}/archive" hx-post="/customers/{{.ID}}/archive">
+              {{if .Archived}}<input type="hidden" name="restore" value="1">{{end}}
+              <button type="submit" class="btn btn-small btn-quiet">
+                {{if .Archived}}Restore{{else}}Archive{{end}}
+              </button>
+            </form>
+          </td>
+        </tr>
+      {{else}}
+        <tr><td colspan="5" class="empty">No customers yet.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+
+  {{/* ------------------------------------------------------------- projects */}}
+  <h2 class="section-heading">Projects</h2>
+  <form class="entry-form" method="post" action="/projects" hx-post="/projects">
+    <select name="customer_id" required aria-label="Customer">
+      <option value="">Customer…</option>
+      {{range .Customers}}{{if not .Archived}}<option value="{{.ID}}">{{.Name}}</option>{{end}}{{end}}
+    </select>
+    <input type="text" name="name" placeholder="Project name" required aria-label="Project name">
+    <input type="text" name="code" placeholder="Code" size="8" aria-label="Code">
+    <input type="text" name="rate" placeholder="Rate/h" size="8" aria-label="Hourly rate">
+    <input type="text" name="currency" placeholder="EUR" size="4" maxlength="3" aria-label="Currency">
+    <select name="rounding_rule" aria-label="Rounding">
+      <option value="none">No rounding</option>
+      <option value="up/900/0">Round up to 15 min</option>
+      <option value="up/1800/0">Round up to 30 min</option>
+      <option value="nearest/900/0">Nearest 15 min</option>
+    </select>
+    <label class="inline-check"><input type="checkbox" name="billable" checked> Billable</label>
+    <button type="submit" class="btn btn-primary">Add project</button>
+  </form>
+
+  <table class="admin-table">
+    <thead><tr><th>Project</th><th>Customer</th><th>Rate</th><th></th></tr></thead>
+    <tbody>
+      {{range .Projects}}
+        <tr class="{{if .Archived}}archived{{end}}">
+          <td>{{.Name}}{{if .Archived}} <span class="badge">archived</span>{{end}}</td>
+          <td>{{.CustomerName}}</td>
+          <td>{{if gt .RateMinor 0}}{{money .RateMinor .Currency}}{{end}}</td>
+          <td>
+            <form method="post" action="/projects/{{.ID}}/archive" hx-post="/projects/{{.ID}}/archive">
+              {{if .Archived}}<input type="hidden" name="restore" value="1">{{end}}
+              <button type="submit" class="btn btn-small btn-quiet">
+                {{if .Archived}}Restore{{else}}Archive{{end}}
+              </button>
+            </form>
+          </td>
+        </tr>
+      {{else}}
+        <tr><td colspan="4" class="empty">No projects yet.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+
+  {{/* ---------------------------------------------------------- assignments */}}
+  <h2 class="section-heading">Assignments</h2>
+  <p class="hint">An assignment is what a timer runs against. Its colour and icon
+     are what make the day view scannable at a glance.</p>
+  <form class="entry-form" method="post" action="/assignments" hx-post="/assignments">
+    <select name="project_id" required aria-label="Project">
+      <option value="">Project…</option>
+      {{range .Projects}}{{if not .Archived}}
+        <option value="{{.ID}}">{{.CustomerName}} / {{.Name}}</option>
+      {{end}}{{end}}
+    </select>
+    <input type="text" name="name" placeholder="Assignment name" required aria-label="Assignment name">
+    <input type="text" name="code" placeholder="Code" size="8" aria-label="Code">
+    <select name="colour_key" aria-label="Colour">
+      <option value="blue">blue</option>
+      <option value="green">green</option>
+      <option value="amber">amber</option>
+      <option value="red">red</option>
+      <option value="purple">purple</option>
+      <option value="teal">teal</option>
+      <option value="slate" selected>slate</option>
+    </select>
+    <input type="text" name="icon" placeholder="⚙" size="3" aria-label="Icon">
+    <label class="inline-check"><input type="checkbox" name="billable" checked> Billable</label>
+    <label class="inline-check"><input type="checkbox" name="favourite"> Favourite</label>
+    <button type="submit" class="btn btn-primary">Add assignment</button>
+  </form>
+
+  <table class="admin-table">
+    <thead><tr><th>Assignment</th><th>Project</th><th>Customer</th><th></th></tr></thead>
+    <tbody>
+      {{range .Assignments}}
+        <tr class="{{if .Archived}}archived{{end}}">
+          <td>
+            <span class="chip" data-colour="{{.ColourKey}}" aria-hidden="true">
+              {{if .Icon}}{{.Icon}}{{else}}●{{end}}
+            </span>
+            {{.Name}}
+            {{if .Favourite}}<span class="badge">favourite</span>{{end}}
+            {{if .Archived}}<span class="badge">archived</span>{{end}}
+          </td>
+          <td>{{.ProjectName}}</td>
+          <td>{{.CustomerName}}</td>
+          <td>
+            <form method="post" action="/assignments/{{.ID}}/archive" hx-post="/assignments/{{.ID}}/archive">
+              {{if .Archived}}<input type="hidden" name="restore" value="1">{{end}}
+              <button type="submit" class="btn btn-small btn-quiet">
+                {{if .Archived}}Restore{{else}}Archive{{end}}
+              </button>
+            </form>
+          </td>
+        </tr>
+      {{else}}
+        <tr><td colspan="4" class="empty">No assignments yet.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+
+</section>
+{{end}}

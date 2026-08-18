@@ -254,3 +254,21 @@ How the architecture answers the ASRs, and where it is weak:
 * Automatic activity tracking is limited to what a web page can observe
   ([DESIGN.md](DESIGN.md) §semi-automatic); anything deeper requires a desktop agent
   that does not yet exist.
+
+## 12. Implementation status
+
+What is described above is the target architecture. As of the current release:
+
+| Area | State |
+|---|---|
+| Layers, service boundary, audit-in-transaction | implemented, enforced by an architecture test |
+| Local mode | implemented |
+| Server mode (auth, RBAC, sessions, rsyslog) | **not implemented** — the binary refuses to start with `--mode=server` rather than degrading to an unauthenticated multi-user service |
+| Concurrent timers, dual totals, gap detection | implemented |
+| Billing: layered rates, rounding, per-entry snapshot | implemented (the person-on-project rate level arrives with layer 2) |
+| CSV and JSON export | implemented |
+| PDF and DOCX export | **not implemented** — the endpoint returns 501 |
+| Attachments, expenses, proxy entries, approvals, tags | designed, not implemented |
+| Client-side enhancement | `static/js/app.js` implements the HTMX subset in use (`hx-post`, `hx-confirm`, `HX-Request`/`HX-Refresh`); the upstream library is a drop-in replacement requiring no template changes |
+
+See [MVP_PLAN.md](MVP_PLAN.md) for the sequence.

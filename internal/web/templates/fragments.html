@@ -1,0 +1,139 @@
+{{/*
+  Shared fragments. Each is rendered either as part of a full page or on its own
+  in response to an HTMX request, from the same definition - which is what stops
+  the two paths from drifting apart.
+*/}}
+
+{{/* ---------------------------------------------------------- running timers */}}
+{{define "running-timers"}}
+  {{if .Running}}
+    <div class="running-timers" role="status" aria-live="polite">
+      <span class="running-label">{{len .Running}} running</span>
+      <ul class="running-list">
+        {{range .Running}}
+          <li class="running-item" data-colour="{{.ColourKey}}">
+            <span class="chip" data-colour="{{.ColourKey}}" aria-hidden="true">
+              {{if .Icon}}{{.Icon}}{{else}}●{{end}}
+            </span>
+            <span class="running-name">{{.AssignmentName}}</span>
+            <span class="running-customer">{{.CustomerName}}</span>
+            {{/* The clock ticks client-side from this start instant, so the most
+                 latency-sensitive element on the page never round-trips. */}}
+            <time class="live-clock" data-started="{{iso .StartedAt}}">0:00:00</time>
+            <form method="post" action="/timers/{{.ID}}/stop" hx-post="/timers/{{.ID}}/stop">
+              <button type="submit" class="btn btn-stop" title="Stop this timer">Stop</button>
+            </form>
+          </li>
+        {{end}}
+      </ul>
+      {{if gt (len .Running) 1}}
+        <form method="post" action="/timers/stop-all" hx-post="/timers/stop-all">
+          <button type="submit" class="btn btn-quiet">Stop all</button>
+        </form>
+      {{end}}
+    </div>
+  {{end}}
+{{end}}
+
+{{/* ------------------------------------------------------------------ totals */}}
+{{define "totals"}}
+  {{/* Summed and elapsed are always shown together. They differ when timers
+       overlapped, and showing only one makes a genuinely parallel day look like
+       either an error or under-billing. */}}
+  <dl class="totals">
+    <div class="total">
+      <dt>Tracked</dt>
+      <dd class="total-value">{{duration .SummedSeconds}}</dd>
+    </div>
+    <div class="total">
+      <dt>Billable</dt>
+      <dd class="total-value">{{duration .BillableSeconds}}</dd>
+    </div>
+    <div class="total">
+      <dt title="Wall-clock time covered by at least one entry">Elapsed</dt>
+      <dd class="total-value">{{duration .ElapsedSeconds}}</dd>
+    </div>
+    {{if gt .OverlapSeconds 0}}
+      <div class="total total-overlap">
+        <dt title="Time counted more than once because work ran in parallel">Overlap</dt>
+        <dd class="total-value">{{duration .OverlapSeconds}}</dd>
+      </div>
+    {{end}}
+  </dl>
+{{end}}
+
+{{/* ------------------------------------------------------------- entry rows */}}
+{{define "entry-row"}}
+  <tr class="entry-row {{if .Flagged}}flagged{{end}} {{if eq (printf "%s" .Status) "pending"}}pending{{end}}">
+    <td class="cell-chip">
+      <span class="chip" data-colour="{{.ColourKey}}" title="{{.CustomerName}}">
+        {{if .Icon}}{{.Icon}}{{else}}●{{end}}
+      </span>
+    </td>
+    <td class="cell-what">
+      <span class="entry-assignment">{{.AssignmentName}}</span>
+      <span class="entry-path">{{.CustomerName}} · {{.ProjectName}}</span>
+      {{if .Note}}<span class="entry-note">{{.Note}}</span>{{end}}
+      {{if .IsProxy}}
+        {{/* Proxy entries always show who recorded them. Time in someone's name
+             that they did not enter must never look like their own. */}}
+        <span class="badge badge-proxy" title="Recorded by someone else">
+          entered by {{.EnteredByName}}
+        </span>
+      {{end}}
+      {{if eq (printf "%s" .Status) "pending"}}
+        <span class="badge badge-pending" title="Not counted until confirmed">pending</span>
+      {{end}}
+      {{if .Flagged}}
+        <span class="badge badge-flagged" title="Excluded from totals until reviewed">needs review</span>
+      {{end}}
+    </td>
+    <td class="cell-time">
+      {{if .Running}}
+        <time class="live-clock" data-started="{{iso .StartedAt}}">running</time>
+      {{else}}
+        {{duration .DurationSeconds}}
+      {{end}}
+    </td>
+    <td class="cell-billable">{{if .Billable}}<span title="Billable">€</span>{{end}}</td>
+    <td class="cell-actions">
+      {{if .Running}}
+        <form method="post" action="/timers/{{.ID}}/stop" hx-post="/timers/{{.ID}}/stop">
+          <button type="submit" class="btn btn-small btn-stop">Stop</button>
+        </form>
+      {{end}}
+      <form method="post" action="/entries/{{.ID}}/delete" hx-post="/entries/{{.ID}}/delete"
+            hx-confirm="Delete this entry?">
+        <button type="submit" class="btn btn-small btn-quiet" title="Delete">×</button>
+      </form>
+    </td>
+  </tr>
+{{end}}
+
+{{/* -------------------------------------------------- assignment <select> */}}
+{{define "assignment-options"}}
+  {{range .}}
+    <option value="{{.ID}}">{{.Label}}</option>
+  {{end}}
+{{end}}
+
+{{/* ------------------------------------------------------- entry edit form */}}
+{{define "entry-edit-form"}}
+  <form class="entry-form" method="post" action="/entries/{{.Entry.ID}}"
+        hx-post="/entries/{{.Entry.ID}}">
+    <select name="assignment_id" required>
+      {{$selected := .Entry.AssignmentID}}
+      {{range .Assignments}}
+        <option value="{{.ID}}" {{if eq .ID $selected}}selected{{end}}>{{.Label}}</option>
+      {{end}}
+    </select>
+    <input type="date" name="date" value="{{date .Entry.StartedAt}}" required>
+    <input type="text" name="duration" value="{{duration .Entry.DurationSeconds}}"
+           placeholder="1h30" aria-label="Duration">
+    <input type="text" name="note" value="{{.Entry.Note}}" placeholder="Note">
+    <label class="inline-check">
+      <input type="checkbox" name="billable" {{if .Entry.Billable}}checked{{end}}> Billable
+    </label>
+    <button type="submit" class="btn btn-primary">Save</button>
+  </form>
+{{end}}

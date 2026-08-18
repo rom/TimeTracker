@@ -12,6 +12,46 @@ the decision.
 
 ### Added
 
+* **Working local-mode application** (layer 1 of [MVP_PLAN.md](MVP_PLAN.md)).
+  `bin/timetracker` starts, migrates its own database, and serves the UI on
+  loopback with no configuration.
+  * **Domain layer** — `Money` as integer minor units with currency checking,
+    duration parsing (`1.5`, `1h30`, `90m`, `1:30`), rounding rules applied at
+    one documented point, entity types and validation, interval union
+    arithmetic.
+  * **Storage** — SQLite through the pure-Go driver with WAL, foreign keys and a
+    single write connection; embedded forward-only migrations with checksum
+    verification, a newer-schema guard and a pre-migration backup.
+  * **Service layer** — the single enforcement point: every method consults the
+    authoriser, every mutation writes its audit row inside the same transaction
+    as the change.
+  * **Concurrent timers** — any number may run at once; overlapping intervals
+    are recorded and reported, never auto-split. Stopping is idempotent, and a
+    timer past the configured maximum is flagged for review rather than billed.
+  * **Totals** — summed and elapsed reported side by side wherever entries can
+    overlap, with the overlap stated explicitly.
+  * **Billing** — layered rate resolution (assignment → project → customer →
+    instance default) with the resolved rate and applied rounding rule stored on
+    the entry, so a later rate change cannot rewrite an invoiced amount.
+  * **Screens** — Today (timeline, gaps, quick add, one-click start), Week
+    (assignment × day grid), Entries (filterable, the basis of every export),
+    Admin (customers, projects, assignments with colours and icons).
+  * **Quick add** — `2h acme/migration fixed the login redirect #travel`, with
+    ambiguity reported rather than guessed.
+  * **Gap detection** — unaccounted stretches surfaced on the day view as
+    prompts, never filled in automatically.
+  * **Seven themes** — light, dark, gold, sand, spring, autumn and high
+    contrast, as redefinitions of one semantic token set, applied server-side
+    before first paint.
+  * **Exports** — CSV (UTF-8 with BOM so Excel reads it correctly) and JSON
+    against a versioned schema, both rendered from one `Report` value so they
+    cannot disagree.
+  * **Keyboard shortcuts**, live client-side timer clocks, and a background
+    submit layer, all degrading to plain form posts without JavaScript.
+* **Tests** — domain, store, service, HTTP and architecture suites, including a
+  test that fails the build if `internal/web` ever imports `internal/store`, and
+  one that checks every theme defines every semantic token.
+
 * **Documentation set.** `MVP_PLAN.md`, `DESIGN.md`, `ARCHITECTURE.md`, `TEST.md`,
   `SECURITY.md` and this changelog.
 * **Architecturally Significant Requirements register** ([ASR.md](ASR.md)) — 14
@@ -39,5 +79,21 @@ the decision.
   macOS/Linux/Windows on amd64 and arm64, plus test, lint, vet, fmt, coverage and
   clean targets.
 * Go module and layered package skeleton.
+
+### Known gaps
+
+* **Server mode refuses to start.** Authentication, RBAC and rsyslog arrive in
+  layer 2; starting with `--mode=server` fails with an explanatory message
+  rather than silently serving everyone's timesheet under the single-user
+  identity.
+* **PDF and DOCX export return 501.** Both arrive in layer 5. CSV and JSON are
+  complete.
+* **The HTMX library is not vendored yet.** The templates use HTMX's attribute
+  vocabulary, and `static/js/app.js` implements the subset the application
+  relies on (`hx-post`, `hx-confirm`, and the `HX-Request`/`HX-Refresh` header
+  protocol). Dropping the upstream library in its place needs no template
+  changes. Until then the tree contains no third-party JavaScript at all.
+* Attachments, expenses, proxy entries, tags and approvals are designed for but
+  not implemented; see [MVP_PLAN.md](MVP_PLAN.md).
 
 [Unreleased]: https://github.com/rom/timetracker/commits/main

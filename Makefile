@@ -80,9 +80,21 @@ checksums: build-all ## Produce SHA-256 checksums for the release artefacts
 
 ## ----------------------------------------------------------------- test ----
 
+# The race detector needs cgo, so it is enabled for tests only. The shipped
+# binary is still built with CGO_ENABLED=0 - a test-time tool has no bearing on
+# what the release artefact links against.
 .PHONY: test
 test: ## Run the full test suite with the race detector
-	go test -race -count=1 $(PKG)
+	@if go env CC >/dev/null 2>&1 && command -v "$$(go env CC)" >/dev/null 2>&1; then \
+		CGO_ENABLED=1 go test -race -count=1 $(PKG); \
+	else \
+		echo "no C compiler found: running tests without the race detector"; \
+		go test -count=1 $(PKG); \
+	fi
+
+.PHONY: test-norace
+test-norace: ## Run the tests without the race detector (no C toolchain needed)
+	go test -count=1 $(PKG)
 
 .PHONY: test-short
 test-short: ## Fast inner-loop tests (skips the store-heavy cases)
@@ -94,7 +106,7 @@ test-perf: ## Performance suite for the ASR-012 budgets (slow)
 
 .PHONY: coverage
 coverage: ## Produce a coverage profile and an HTML report
-	go test -race -count=1 -coverprofile=coverage.out -covermode=atomic $(PKG)
+	go test -count=1 -coverprofile=coverage.out -covermode=count $(PKG)
 	go tool cover -html=coverage.out -o coverage.html
 	@go tool cover -func=coverage.out | tail -1
 

@@ -23,8 +23,8 @@ add it.
 | Layer | Contents | Status |
 |---|---|---|
 | **0** | Documentation, ADR/ASR set, Makefile, project skeleton | ✅ delivered |
-| **1** | Local-mode MVP: domain, storage, timers, day/week, themes, CSV/JSON | 🔨 in progress |
-| **2** | Server mode: auth, RBAC, sessions, audit log, rsyslog | ⬜ planned |
+| **1** | Local-mode MVP: domain, storage, timers, day/week, themes, CSV/JSON | ✅ delivered |
+| **2** | Server mode: auth, RBAC, sessions, rsyslog | 🔨 next |
 | **3** | Attachments, paste, expenses | ⬜ planned |
 | **4** | Proxy entries and approval workflow | ⬜ planned |
 | **5** | Reports, PDF and DOCX export | ⬜ planned |
@@ -46,7 +46,7 @@ add it.
 
 ---
 
-## Layer 1 — Local-mode MVP 🔨
+## Layer 1 — Local-mode MVP ✅
 
 The vertical slice. Everything here is reachable from the UI.
 
@@ -81,7 +81,12 @@ CSV and JSON from the shared `Report` value.
 **Done when:** a user can create a customer, project and assignment; run three
 timers at once; correct a duration by hand; see the day and week with both totals;
 switch to any theme; and export a date range as CSV and JSON — all from one binary
-with no configuration.
+with no configuration. **All of this now works.**
+
+Delivered beyond the original slice: layered rate resolution with the billing
+snapshot stored per entry, gap detection, the quick-add parser, long-timer
+flagging, and the audit trail (written from layer 1 so that no mutation path is
+ever added without one).
 
 ---
 
