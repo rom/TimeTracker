@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"github.com/rom/timetracker/internal/auth"
 	"github.com/rom/timetracker/internal/blob"
 	"github.com/rom/timetracker/internal/domain"
+	"github.com/rom/timetracker/internal/preview"
 )
 
 // Attachments: files and photographs on a time entry or an expense.
@@ -119,6 +121,73 @@ func (s *Service) OpenAttachment(ctx context.Context, id int64) (domain.Attachme
 		return domain.Attachment{}, nil, ErrNotFound
 	}
 	return attachment, reader, nil
+}
+
+// PreviewAttachment authorises an attachment and prepares it for display.
+//
+// It goes through exactly the same authorisation as OpenAttachment - against
+// the owning record - because a preview is a way of reading a file, and a
+// second, laxer path to the bytes would make the first one pointless.
+func (s *Service) PreviewAttachment(ctx context.Context, id int64) (domain.Attachment, preview.Result, error) {
+	attachment, reader, err := s.OpenAttachment(ctx, id)
+	if err != nil {
+		return domain.Attachment{}, preview.Result{}, err
+	}
+	defer func() { _ = reader.Close() }()
+
+	result, err := preview.Render(attachment.MIME, attachment.Filename, reader)
+	if err != nil {
+		if errors.Is(err, preview.ErrNotPreviewable) {
+			// Not an error worth a page of its own: the download link is still
+			// there, and the screen simply does not offer a preview.
+			return attachment, preview.Result{}, ErrNotFound
+		}
+		return domain.Attachment{}, preview.Result{}, err
+	}
+	return attachment, result, nil
+}
+
+// TextPreviews extracts the text of every attachment that has any.
+//
+// Done in one pass here rather than one call per row from a template, because a
+// template cannot report an error and a screen that silently drops a preview
+// when a file has gone missing is worse than one that says so.
+func (s *Service) TextPreviews(ctx context.Context, attachments []domain.Attachment) map[int64]preview.Result {
+	var previews map[int64]preview.Result
+	for _, attachment := range attachments {
+		if Previewable(attachment) != preview.KindText {
+			continue
+		}
+		_, result, err := s.PreviewAttachment(ctx, attachment.ID)
+		if err != nil {
+			// A file that has gone missing, or a document this version cannot
+			// read. The row still shows its name, its size and its download
+			// link; only the preview is absent.
+			if s.log != nil {
+				s.log.WarnContext(ctx, "an attachment could not be previewed",
+					"attachment_id", attachment.ID, "error", err.Error())
+			}
+			continue
+		}
+		if previews == nil {
+			previews = map[int64]preview.Result{}
+		}
+		previews[attachment.ID] = result
+	}
+	return previews
+}
+
+// TextPreview is the extracted text of one attachment, re-exported so the HTTP
+// layer can name it without importing the preview package for one type.
+type TextPreview = preview.Result
+
+// Previewable reports how an attachment can be shown, without reading it.
+//
+// The listing calls this for every row, so it must not touch the blob store:
+// deciding from the recorded type and name is what keeps a page with twenty
+// receipts on it from opening twenty files.
+func Previewable(attachment domain.Attachment) preview.Kind {
+	return preview.Kinds(attachment.MIME, attachment.Filename)
 }
 
 // DeleteAttachment removes an attachment.

@@ -594,6 +594,16 @@ input[type="text"], input[type="date"], input[type="time"], select {
 
 .cell-chip { width: 2em; }
 .cell-time { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* The date column. Tabular figures so the dates form a straight edge down the
+   list rather than shifting by a fraction on every 1, and nowrap because
+   "2026-08-19" broken across two lines is unreadable. */
+.cell-date { white-space: nowrap; vertical-align: top; width: 1%; }
+.entry-date { display: block; font-variant-numeric: tabular-nums; }
+.entry-weekday {
+  display: block; color: var(--text-muted); font-size: 0.82em;
+  text-transform: lowercase;
+}
 .cell-actions { text-align: right; white-space: nowrap; }
 .cell-actions form { display: inline; }
 
@@ -1297,6 +1307,200 @@ kbd {
 
 /* Inline forms inside a table cell, used on the user administration screen. */
 .inline-form { display: flex; gap: var(--gap-sm); align-items: center; flex-wrap: wrap; }
+
+/* -------------------------------------------------- navigation position --- */
+
+/*
+  The left-hand rail. Chosen in the settings, applied as one attribute on <html>
+  and no markup change at all: the same elements in the same source order, laid
+  out differently. That is what keeps the reading order a screen reader follows
+  and the tab order a keyboard follows identical in both arrangements - a layout
+  that reordered the DOM would quietly make one of them worse.
+
+  Everything below is guarded on [data-nav="left"], so the default and any
+  unrecognised value both leave the top bar exactly as it was.
+*/
+[data-nav="left"] {
+  /* One definition, used by both the grid column and the painted background
+     below. Two numbers that had to agree would eventually stop agreeing. */
+  --rail-width: 15rem;
+}
+
+[data-nav="left"] body {
+  display: grid;
+  grid-template-columns: var(--rail-width) minmax(0, 1fr);
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas:
+    "rail running"
+    "rail main"
+    "rail footer";
+  min-height: 100vh;
+
+  /* The rail's colour and its edge are painted on the body rather than left to
+     the bar itself. The bar is sticky and therefore only as tall as its own
+     content, so its background would stop halfway down a long page and leave
+     the column looking unfinished. This paints the full height of whatever the
+     page turns out to be, and the sticky bar keeps its own background on top so
+     content never shows through as it scrolls beneath. */
+  background-image: linear-gradient(to right,
+    var(--surface-raised) 0, var(--surface-raised) var(--rail-width),
+    var(--border) var(--rail-width), var(--border) calc(var(--rail-width) + 1px),
+    transparent calc(var(--rail-width) + 1px));
+  background-repeat: no-repeat;
+}
+
+[data-nav="left"] .topbar {
+  grid-area: rail;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--gap);
+  /* Sticky rather than fixed, so the rail scrolls its own overflow when the
+     navigation is longer than the viewport instead of losing the last items
+     off the bottom. */
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: 100vh;
+  overflow-y: auto;
+  border-bottom: none;
+  /* No border of its own: the body's gradient draws the full-height edge, and a
+     second one here would stop where the bar does. */
+  border-right: none;
+}
+
+[data-nav="left"] .mainnav { flex-direction: column; flex: 0 0 auto; gap: 2px; }
+[data-nav="left"] .topbar-right {
+  flex-wrap: wrap;
+  /* Pushed to the foot of the rail: the pickers and the sign-out button are
+     what somebody reaches for least, and putting them under the navigation
+     keeps the item they came for at a predictable height. */
+  margin-top: auto;
+}
+[data-nav="left"] .topbar-right .picker,
+[data-nav="left"] .topbar-right form { width: 100%; }
+[data-nav="left"] .topbar-right select { width: 100%; }
+
+[data-nav="left"] #running-bar { grid-area: running; }
+[data-nav="left"] main { grid-area: main; }
+[data-nav="left"] .footer { grid-area: footer; }
+/* The skip link and the help panel are taken out of flow already; naming their
+   areas stops the grid auto-placing them into a column of their own. */
+[data-nav="left"] .skip-link,
+[data-nav="left"] .help-panel { grid-area: main; }
+
+/* Below the breakpoint there is no room for a rail, so it becomes the top bar
+   again. The setting still applies on the desktop it was chosen for. */
+@media (max-width: 900px) {
+  [data-nav="left"] body { display: block; background-image: none; }
+  [data-nav="left"] .topbar {
+    flex-direction: row;
+    max-height: none;
+    overflow-y: visible;
+    border-bottom: 1px solid var(--border);
+  }
+  [data-nav="left"] .mainnav { flex-direction: row; flex: 1; }
+  [data-nav="left"] .topbar-right { margin-top: 0; }
+  [data-nav="left"] .topbar-right .picker,
+  [data-nav="left"] .topbar-right form,
+  [data-nav="left"] .topbar-right select { width: auto; }
+}
+
+/* --------------------------------------------- time outside the day pane -- */
+
+/*
+  Shown only when the pane is set to keep a fixed window. It reports a count and
+  a total rather than being a bare arrow, because "there is something up there"
+  is not enough to decide whether it is worth going to look at.
+*/
+.timeline-outside {
+  display: flex; align-items: baseline; gap: var(--gap-sm);
+  margin: 0; padding: 6px 10px;
+  color: var(--text-muted); font-size: 0.88em;
+  background: var(--surface-sunken);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+.timeline-outside-earlier { margin-bottom: 4px; }
+.timeline-outside-later { margin-top: 4px; }
+
+/* Radio choices that each carry their own explanation. The help text sits under
+   the label rather than beside it, so a long explanation does not push the two
+   options apart until they stop reading as a pair. */
+.radio-group { border: none; padding: 0; margin: var(--gap) 0 0; }
+.radio-group > legend { font-size: 0.9em; font-weight: 600; padding: 0; }
+.radio-group .inline-check { display: grid; grid-template-columns: auto 1fr; gap: 0 var(--gap-sm); align-items: start; }
+.radio-group .inline-check .field-help { grid-column: 2; margin: 2px 0 var(--gap-sm); }
+
+/* -------------------------------------------------- attachment previews --- */
+
+.attachments { margin-top: var(--gap-lg); }
+
+.attachment-list {
+  display: grid;
+  /* Wide enough for a receipt to be legible, and as many across as fit. */
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--gap);
+  list-style: none; margin: 0 0 var(--gap); padding: 0;
+}
+
+.attachment {
+  display: flex; flex-direction: column; gap: var(--gap-sm);
+  padding: var(--gap-sm);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.attachment-figure {
+  display: block;
+  /* A chequerboard, so a transparent PNG or SVG is visible as transparent
+     rather than as whatever the theme's background happens to be. Drawn with
+     gradients rather than an image so it needs no asset and costs no request. */
+  background-color: var(--surface-sunken);
+  background-image:
+    linear-gradient(45deg, var(--border) 25%, transparent 25%, transparent 75%, var(--border) 75%),
+    linear-gradient(45deg, var(--border) 25%, transparent 25%, transparent 75%, var(--border) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.attachment-figure img {
+  display: block; width: 100%; height: auto;
+  /* Bounded, because nothing here knows a file's dimensions without decoding
+     it: a 6000-pixel scan must not push the page out of shape. */
+  max-height: 18rem; object-fit: contain;
+}
+
+.attachment-pdf {
+  width: 100%; height: 22rem;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface-sunken);
+}
+
+.attachment-text {
+  margin: 0; padding: var(--gap-sm);
+  max-height: 18rem; overflow: auto;
+  font-family: var(--font-mono); font-size: 0.82em; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-word;
+  background: var(--surface-sunken);
+  border-radius: var(--radius);
+}
+
+.attachment-meta {
+  display: flex; align-items: baseline; gap: var(--gap-sm); flex-wrap: wrap;
+  font-size: 0.85em;
+}
+.attachment-name { font-weight: 600; word-break: break-all; }
+.attachment-detail { color: var(--text-muted); }
+.attachment-hash { font-family: var(--font-mono); font-size: 0.9em; }
+.attachment-meta form { margin-left: auto; }
+
+/* The receipts row on the expenses listing. It belongs to the claim above it,
+   so it carries no colour bar of its own - the row above already says whose
+   it is. */
+.attachment-row > td { padding-top: 0; }
+.attachment-row summary { cursor: pointer; color: var(--text-muted); font-size: 0.88em; }
 
 /* --------------------------------------------------------- responsive ----- */
 

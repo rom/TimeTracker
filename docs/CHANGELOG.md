@@ -10,7 +10,72 @@ the decision.
 
 ## [Unreleased]
 
+### Added
+
+* **PDF, DOCX and Markdown on the Entries screen.** PDF and DOCX had been
+  written and tested since layer 5; the screen offered CSV and JSON under a hint
+  saying the other two arrived later. All five now come from one list in the
+  export package that both the screen and the router read, so a format cannot be
+  offered that cannot be produced. Markdown is new, for the case the others do
+  not cover — pasting a week into a ticket, a wiki or an email — and its tables
+  are padded so the output is legible as source too.
+* **Backups are zip archives carrying their attachments**, optionally encrypted
+  with AES-256 in the WinZip AE-2 scheme using a password set in Settings
+  ([ADR-0030](adr/0030-encrypted-backup-archives.md)). ADR-0013 always said a
+  backup with a timesheet and no receipts is not a backup; it is now true. The
+  format is the one 7-Zip, WinZip and Keka already read, because an archive only
+  this binary can open is not a backup. Restore accepts an encrypted zip, a
+  plain zip, or a bare JSON document from before archives existed.
+* **Attachments are previewed in place** — PNG, JPEG, GIF, WEBP, BMP, SVG, TIFF,
+  PDF, and the text of a Word document
+  ([ADR-0031](adr/0031-attachment-previews.md)). There had been no screen listing
+  attachments at all, so the download and delete routes were unreachable. TIFF is
+  transcoded to PNG because no browser but Safari renders one; a DOCX yields its
+  text, labelled an extract rather than a preview.
+* **SVG can be attached.** It was refused outright as script-capable. It is
+  accepted now because the preview route makes it inert: served inside an `<img>`,
+  where no browser runs script, behind a response policy of `default-src 'none';
+  sandbox`. Verified against a hostile SVG in a real browser, both in the page and
+  navigated to directly.
+* **Every entry row carries its date and weekday**, and the Entries filter gains
+  project, assignment, and time recorded on a day its project also had an expense.
+  A "clear filter" link appears once anything is narrowed.
+* **Where the navigation sits** is now a setting: across the top or down the left.
+  One attribute on `<html>` and no markup change, so the reading order and the tab
+  order are identical either way. Below 900px the rail becomes the top bar again.
+* **Clock and date formats** are settings: 24- or 12-hour, and ISO, day-first or
+  month-first dates. Both default to following the interface language.
+* **The day pane's hours are configurable**, along with what happens to time
+  outside them: grow the pane to cover it, or keep the hours fixed and report what
+  fell outside above and below the pane. The pane was hard-coded to 08:00–18:00
+  and always grew, which suits somebody who works late once a month and squeezes
+  the ordinary day of somebody whose evenings are routinely busy.
+
 ### Fixed
+
+* **An encrypted archive was structurally perfect and no other archiver could
+  open it.** The general-purpose "encrypted" flag bit was never set, so every
+  real tool handed the ciphertext straight to its inflater and failed with a
+  decompression error. Nothing testable against our own reader could see it —
+  found by opening an archive in another implementation, which is now a release
+  step rather than a nicety.
+* **No TIFF could ever be uploaded.** `image/tiff` was on the accepted list, but
+  Go's content sniffer implements the WHATWG list and has no TIFF rule, so a TIFF
+  arrived as `application/octet-stream` — which the same list explicitly refuses.
+  Pre-2007 `.doc` and `.xls` were unreachable for the same reason. The allow-list
+  said one thing and the code did another.
+* **Every attachment in a backup lost its file extension.** A guard meant to keep
+  path separators out of an archive entry name passed `".."` to `ContainsAny`,
+  which matches the dot in every extension.
+* **A downloaded export could cover more than the screen it was taken from.** The
+  links were assembled by hand once per format and carried the customer but not
+  the tags, the kind or the search query. They are built once now, from the same
+  struct the screen was rendered with.
+* **Expenses were backed up and never restored.** `RestoreResult` had a field for
+  them and nothing filled it.
+* **The day pane could claim a full day was empty.** With a fixed window and every
+  entry outside it, the empty state was rendered without asking whether anything
+  had been pushed out.
 
 * **Two themes were below WCAG AA on text, and nothing was checking.** The
   contrast test only ever examined the theme named for contrast; the sand

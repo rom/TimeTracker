@@ -14,10 +14,15 @@
   * lang is not decoration: a screen reader picks its voice and its pronunciation
     rules from it. Claiming Swedish while rendering English is worse than
     claiming nothing.
+  * data-nav places the navigation on top or down the left. Like the theme it is
+    one attribute and no markup change: the same elements in the same order,
+    laid out differently, so the reading order a screen reader follows and the
+    tab order a keyboard follows stay identical in both.
 */}}
 <!DOCTYPE html>
 <html lang="{{if .Lang}}{{.Lang}}{{else}}en{{end}}"
-      data-theme="{{if .User.Theme}}{{.User.Theme}}{{else}}light{{end}}">
+      data-theme="{{if .User.Theme}}{{.User.Theme}}{{else}}light{{end}}"
+      data-nav="{{.Nav}}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -130,7 +135,9 @@
          in. */}}
     {{if .Settings.ShowClock}}
       <span class="header-clock" id="header-clock" aria-hidden="true"
-            data-zone="{{.User.TimeZone}}">{{clockSeconds .Now .Zone}}</span>
+            data-zone="{{.User.TimeZone}}"
+            data-hour12="{{if .Printer.ClockIs12Hour}}1{{else}}0{{end}}"
+            >{{.Printer.FormatClock .Now .Zone}}</span>
     {{end}}
     {{if .Settings.ShowTimeAndDate}}
       <span class="header-date">{{.Printer.FormatDate .Now}}</span>

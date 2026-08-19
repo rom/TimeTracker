@@ -271,6 +271,8 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 	weekStart, _ := strconv.Atoi(r.FormValue("week_start"))
 	maxTimer, _ := strconv.ParseInt(r.FormValue("max_timer_hours"), 10, 64)
+	dayStart, _ := strconv.Atoi(r.FormValue("day_start_hour"))
+	dayEnd, _ := strconv.Atoi(r.FormValue("day_end_hour"))
 
 	err := s.svc.UpdateSettings(r.Context(), service.SettingsInput{
 		DefaultCurrency: strings.ToUpper(r.FormValue("default_currency")),
@@ -280,6 +282,18 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		MaxTimerHours:   maxTimer,
 		ShowClock:       r.FormValue("show_clock") != "",
 		ShowTimeAndDate: r.FormValue("show_time_and_date") != "",
+
+		NavPosition:  r.FormValue("nav_position"),
+		ClockFormat:  r.FormValue("clock_format"),
+		DateFormat:   r.FormValue("date_format"),
+		DayStartHour: dayStart,
+		DayEndHour:   dayEnd,
+		DayOverflow:  r.FormValue("day_overflow"),
+
+		// The password field is blank unless somebody typed in it, and blank
+		// means "unchanged". Removing one is the checkbox's job.
+		BackupPassword:      r.FormValue("backup_password"),
+		ClearBackupPassword: r.FormValue("clear_backup_password") != "",
 	})
 	if err != nil {
 		s.fail(w, r, err)
@@ -397,11 +411,12 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDownloadBackup(w http.ResponseWriter, r *http.Request) {
 	opts := s.backupOptions(r)
 
-	filename := "timetracker-backup-" + s.svc.Now().Format("20060102-150405") + ".json"
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	filename := "timetracker-backup-" + s.svc.Now().Format("20060102-150405") + ".zip"
+	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", contentDisposition(filename))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 
-	if err := s.svc.WriteBackup(r.Context(), w, opts); err != nil {
+	if err := s.svc.WriteArchive(r.Context(), w, opts); err != nil {
 		// The status line is already sent, so the download will be truncated.
 		// Logging is all that remains - and a truncated backup is exactly why
 		// the on-disk path writes to a temporary file and renames.
@@ -434,14 +449,17 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, _, err := r.FormFile("file")
+	file, header, err := r.FormFile("file")
 	if err != nil {
 		http.Error(w, "No file was uploaded.", http.StatusBadRequest)
 		return
 	}
 	defer func() { _ = file.Close() }()
 
-	result, err := s.svc.Restore(r.Context(), file)
+	// A multipart.File is an io.ReaderAt, which is what reading a zip needs -
+	// the central directory is at the end of the file. The size comes from the
+	// part header rather than being counted, so nothing has to be buffered.
+	result, err := s.svc.RestoreArchive(r.Context(), file, header.Size)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -449,7 +467,7 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 
 	s.log.InfoContext(r.Context(), "backup restored",
 		"created", result.Total(), "skipped", result.Skipped,
-		"problems", len(result.Problems))
+		"attachments", result.Attachments, "problems", len(result.Problems))
 
 	data, dataErr := s.newPageData(r, "", "backup")
 	if dataErr != nil {

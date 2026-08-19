@@ -511,6 +511,23 @@ type Settings struct {
 	// a choice rather than a decision made for everyone by the designer.
 	ShowClock       bool
 	ShowTimeAndDate bool
+	// NavPosition is "top" or "left".
+	NavPosition string
+	// ClockFormat is "auto", "24h" or "12h"; DateFormat is "auto", "iso", "dmy"
+	// or "mdy". "auto" means "whatever the interface language uses", which is
+	// what the application did before these columns existed.
+	ClockFormat string
+	DateFormat  string
+	// DayStartHour and DayEndHour bound the day pane's default window.
+	DayStartHour int
+	DayEndHour   int
+	// DayOverflow is "expand" or "arrows": what the day pane does with time
+	// recorded outside that window.
+	DayOverflow string
+	// BackupPassword encrypts a backup archive, or is empty for a plain one.
+	// It is deliberately never rendered back into a form
+	// (docs/adr/0030-encrypted-backup-archives.md).
+	BackupPassword string
 }
 
 // GetSettings reads the single settings row.
@@ -519,10 +536,14 @@ func (db *DB) GetSettings(ctx context.Context) (Settings, error) {
 	var showClock, showTimeAndDate int
 	err := db.read.QueryRowContext(ctx, `
 		SELECT default_currency, default_rounding, default_rate_minor, week_start,
-		       max_timer_seconds, show_clock, show_time_and_date
+		       max_timer_seconds, show_clock, show_time_and_date,
+		       nav_position, clock_format, date_format,
+		       day_start_hour, day_end_hour, day_overflow, backup_password
 		FROM settings WHERE id = 1`).
 		Scan(&s.DefaultCurrency, &s.DefaultRounding, &s.DefaultRateMinor, &s.WeekStart,
-			&s.MaxTimerSeconds, &showClock, &showTimeAndDate)
+			&s.MaxTimerSeconds, &showClock, &showTimeAndDate,
+			&s.NavPosition, &s.ClockFormat, &s.DateFormat,
+			&s.DayStartHour, &s.DayEndHour, &s.DayOverflow, &s.BackupPassword)
 	if err != nil {
 		return Settings{}, fmt.Errorf("read settings: %w", err)
 	}
@@ -535,10 +556,14 @@ func (db *DB) GetSettings(ctx context.Context) (Settings, error) {
 func (db *DB) UpdateSettings(ctx context.Context, s Settings) error {
 	_, err := db.write.ExecContext(ctx, `
 		UPDATE settings SET default_currency = ?, default_rounding = ?, default_rate_minor = ?,
-		       week_start = ?, max_timer_seconds = ?, show_clock = ?, show_time_and_date = ?
+		       week_start = ?, max_timer_seconds = ?, show_clock = ?, show_time_and_date = ?,
+		       nav_position = ?, clock_format = ?, date_format = ?,
+		       day_start_hour = ?, day_end_hour = ?, day_overflow = ?, backup_password = ?
 		WHERE id = 1`,
 		s.DefaultCurrency, s.DefaultRounding, s.DefaultRateMinor, s.WeekStart,
-		s.MaxTimerSeconds, boolToInt(s.ShowClock), boolToInt(s.ShowTimeAndDate))
+		s.MaxTimerSeconds, boolToInt(s.ShowClock), boolToInt(s.ShowTimeAndDate),
+		s.NavPosition, s.ClockFormat, s.DateFormat,
+		s.DayStartHour, s.DayEndHour, s.DayOverflow, s.BackupPassword)
 	return err
 }
 

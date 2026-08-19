@@ -34,13 +34,17 @@ Attachment **bytes live on disk**, **metadata lives in the database**.
   `X-Content-Type-Options: nosniff`.
 * **Uploads are validated**: a configurable size cap, a total-per-record cap, an
   allow-list of types (images, PDF, common office and text formats), and a
-  server-side content sniff that must agree with the extension. SVG is treated as
-  hostile (it is script-capable) and is rasterised or refused rather than served
-  inline.
+  server-side content sniff that must agree with the extension. SVG was refused
+  outright here; it is accepted since [ADR-0031](0031-attachment-previews.md),
+  which replaced the refusal with a preview route that serves it inside an
+  `<img>` behind a response policy forbidding scripts and every subresource. It
+  is still never served as a document.
 * **Pasted images** arrive as a clipboard blob, are given a generated name, and
   otherwise follow exactly the same path — there is no second, laxer upload route.
 * **Backups include the blob directory** (ADR-0009), because a backup with a
-  timesheet but no receipts is not a backup.
+  timesheet but no receipts is not a backup. This was true on paper and false in
+  the code until [ADR-0030](0030-encrypted-backup-archives.md) made a backup a
+  zip carrying the attachments themselves.
 
 ## Consequences
 

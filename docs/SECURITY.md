@@ -144,10 +144,18 @@ Content-addressed storage means the client's filename never becomes a path — p
 traversal is structurally impossible. Every download goes through an **authorising
 handler**; the blob directory is never a static route. Uploads are size-capped and
 type-restricted, with a **server-side content sniff that must agree with the
-extension** (the client's claimed type is not trusted). Responses set a
+extension** (the client's claimed type is not trusted). Download responses set a
 server-determined `Content-Type`, `nosniff`, and `Content-Disposition: attachment`.
-SVG is treated as hostile — it is script-capable — and is refused or rasterised
-rather than served inline.
+
+**One route serves stored bytes inline**: `GET /attachments/{id}/preview`, added by
+[ADR-0031](adr/0031-attachment-previews.md). It authorises identically — against
+the owning record — and sends `Content-Security-Policy: default-src 'none';
+style-src 'unsafe-inline'; sandbox` alongside `nosniff`. `sandbox` with no tokens
+puts the response in a unique origin with scripts, forms, popups and plugins
+disabled, so even a hostile SVG opened directly at that URL can do nothing; the
+page itself renders SVG in an `<img>`, where no browser runs script regardless.
+SVG was refused at upload before that route existed. Every header on it is
+load-bearing: changing one is a security change.
 
 ### Audit and logging ([ADR-0010](adr/0010-audit-log-and-rsyslog.md))
 

@@ -22,6 +22,7 @@ import (
 	"github.com/rom/timetracker/internal/auth"
 	"github.com/rom/timetracker/internal/config"
 	"github.com/rom/timetracker/internal/domain"
+	"github.com/rom/timetracker/internal/export"
 	"github.com/rom/timetracker/internal/service"
 )
 
@@ -229,15 +230,6 @@ func templateFuncs() template.FuncMap {
 			}
 			return t.In(loc).Format("15:04")
 		},
-		// clockSeconds renders an instant as "09:30:15", for the header clock.
-		// Rendered on the server so the clock shows the right time before any
-		// script runs, and still shows it if none ever does.
-		"clockSeconds": func(t time.Time, loc *time.Location) string {
-			if loc == nil {
-				loc = time.UTC
-			}
-			return t.In(loc).Format("15:04:05")
-		},
 		"date":     func(t time.Time) string { return t.Format("2006-01-02") },
 		"dateLong": func(t time.Time) string { return t.Format("Monday 2 January 2006") },
 		"weekday":  func(t time.Time) string { return t.Format("Mon") },
@@ -301,8 +293,24 @@ func templateFuncs() template.FuncMap {
 		"reportStatuses": service.ApprovalStatuses,
 		// entryKinds are work, overtime and travel.
 		"entryKinds": domain.EntryKinds,
+		// exportFormats are every encoding the export package can write, so the
+		// buttons on the Entries screen cannot drift out of step with what the
+		// router accepts.
+		"exportFormats": func() []export.Format { return export.Formats },
+		// The presentation choices, from the same lists the validator accepts,
+		// so a form cannot offer an option that would be silently discarded.
+		"navPositions": service.NavPositions,
+		"clockFormats": service.ClockFormats,
+		"dateFormats":  service.DateFormats,
+		"dayOverflows": service.DayOverflows,
 		// humanBytes renders a file size the way a person reads one.
 		"humanBytes": humanBytes,
+		// previewKind says how an attachment can be shown, decided from its
+		// recorded type and name. It reads nothing, so a page listing twenty
+		// receipts does not open twenty files to lay itself out.
+		"previewKind": func(a domain.Attachment) string {
+			return string(service.Previewable(a))
+		},
 		// colours are the palette keys an entity may carry. Stored as keys
 		// rather than values so each theme maps them to something legible on
 		// its own background (docs/adr/0011-theming-via-css-custom-properties.md).

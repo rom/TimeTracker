@@ -21,6 +21,31 @@
         {{end}}
       </select>
     </label>
+    {{/* Project and assignment narrow the same hierarchy the customer select
+         starts. All three are plain selects rather than dependent ones: a
+         dependent select that empties itself when you change the customer is
+         worse than a long list, and this list is the size of one person's
+         working life. */}}
+    <label>{{.T "entries.project"}}
+      <select name="project">
+        <option value="">{{.T "entries.all"}}</option>
+        {{$project := .Filter.ProjectID}}
+        {{range .Projects}}
+          <option value="{{.ID}}" {{if eq .ID $project}}selected{{end}}>
+            {{.CustomerName}} / {{.Name}}
+          </option>
+        {{end}}
+      </select>
+    </label>
+    <label>{{.T "entries.assignment"}}
+      <select name="assignment">
+        <option value="">{{.T "entries.all"}}</option>
+        {{$assignment := .Filter.AssignmentID}}
+        {{range .Assignments}}
+          <option value="{{.ID}}" {{if eq .ID $assignment}}selected{{end}}>{{.Label}}</option>
+        {{end}}
+      </select>
+    </label>
     <label>{{.T "entries.kind"}}
       <select name="kind">
         <option value="">{{.T "entries.all"}}</option>
@@ -44,7 +69,20 @@
       <input type="checkbox" name="billable" value="1" {{if .Filter.BillableOnly}}checked{{end}}>
       {{.T "entries.billableonly"}}
     </label>
+    {{/* Expenses belong to a project and a date rather than to an entry, so this
+         means "time on a project that also had a cost that day". The title says
+         so, because a filter whose rule cannot be guessed is one people stop
+         trusting. */}}
+    <label class="inline-check" title="{{.T "entries.withexpenses.help"}}">
+      <input type="checkbox" name="expenses" value="1" {{if .Filter.WithExpenses}}checked{{end}}>
+      {{.T "entries.withexpenses"}}
+    </label>
     <button type="submit" class="btn btn-primary">{{.T "action.apply"}}</button>
+    {{/* Back to the default view in one click. Only offered once something is
+         actually narrowed, so it is not permanent clutter. */}}
+    {{if .Filter.Narrowed}}
+      <a class="btn btn-quiet" href="/entries">{{.T "action.clearfilter"}}</a>
+    {{end}}
   </form>
 
   {{/* Free text over the note, the assignment, the project, the customer and
@@ -56,9 +94,12 @@
     <input type="hidden" name="from" value="{{.Filter.From}}">
     <input type="hidden" name="to" value="{{.Filter.To}}">
     <input type="hidden" name="customer" value="{{if .Filter.CustomerID}}{{.Filter.CustomerID}}{{end}}">
+    <input type="hidden" name="project" value="{{if .Filter.ProjectID}}{{.Filter.ProjectID}}{{end}}">
+    <input type="hidden" name="assignment" value="{{if .Filter.AssignmentID}}{{.Filter.AssignmentID}}{{end}}">
     <input type="hidden" name="tags" value="{{.Filter.Tags}}">
     <input type="hidden" name="kind" value="{{.Filter.Kind}}">
     {{if .Filter.BillableOnly}}<input type="hidden" name="billable" value="1">{{end}}
+    {{if .Filter.WithExpenses}}<input type="hidden" name="expenses" value="1">{{end}}
 
     <label class="search-field">
       {{.T "entries.search"}}
@@ -87,11 +128,16 @@
 
   {{template "totals" .}}
 
+  {{/* Every format the export package can write, from one list, carrying the
+       whole filter. Both halves of that matter: a format offered here that the
+       router does not accept is a dead button, and a download that quietly
+       covers more than the screen it was taken from is a wrong invoice. */}}
   <div class="export-bar">
     <span>{{.T "entries.export"}}</span>
-    <a class="btn btn-quiet" href="/export/csv?from={{.Filter.From}}&to={{.Filter.To}}&customer={{.Filter.CustomerID}}{{if .Filter.BillableOnly}}&billable=1{{end}}">CSV</a>
-    <a class="btn btn-quiet" href="/export/json?from={{.Filter.From}}&to={{.Filter.To}}&customer={{.Filter.CustomerID}}{{if .Filter.BillableOnly}}&billable=1{{end}}">JSON</a>
-    <span class="hint">{{.T "entries.export.pending"}}</span>
+    {{range exportFormats}}
+      <a class="btn btn-quiet" href="{{$.Filter.ExportURL .}}">{{.Label}}</a>
+    {{end}}
+    <span class="hint">{{.T "entries.export.hint"}}</span>
   </div>
 
   {{if .Entries}}
@@ -99,6 +145,7 @@
       <thead>
         <tr>
           <th scope="col"><span class="visually-hidden">{{.T "entry.colour"}}</span></th>
+          <th scope="col">{{.T "entry.date"}}</th>
           <th scope="col">{{.T "entry.assignment"}}</th>
           <th scope="col">{{.T "entry.duration"}}</th>
           <th scope="col"><span class="visually-hidden">{{.T "entry.billable"}}</span></th>
@@ -106,7 +153,7 @@
         </tr>
       </thead>
       <tbody>
-        {{range .Entries}}{{template "entry-row" (dict "Entry" . "Page" $)}}{{end}}
+        {{range .Entries}}{{template "entry-row" (dict "Entry" . "Page" $ "ShowDate" true)}}{{end}}
       </tbody>
     </table>
   {{else}}

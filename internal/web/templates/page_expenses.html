@@ -143,6 +143,22 @@
               </form>
             </td>
           </tr>
+          {{/* The receipts themselves, in a row of their own beneath the claim.
+               Collapsed by default: a listing of forty expenses is a listing,
+               not a gallery, and <details> is the one control that opens
+               without a line of script. */}}
+          {{$receipts := index $page.AttachmentsByOwner .ID}}
+          {{if $receipts}}
+            <tr class="attachment-row" data-colour="{{.ColourKey}}">
+              <td colspan="6">
+                <details>
+                  <summary>{{$page.T "attachments.count" (len $receipts)}}</summary>
+                  {{template "attachment-previews" (dict
+                      "Page" $page "Attachments" $receipts)}}
+                </details>
+              </td>
+            </tr>
+          {{end}}
         {{end}}
       </tbody>
     </table>

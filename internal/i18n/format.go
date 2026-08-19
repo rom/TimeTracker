@@ -120,12 +120,24 @@ func (p *Printer) FormatDuration(seconds int64) string {
 
 // FormatDate renders a calendar date.
 //
-// Swedish uses ISO 8601 (2026-03-16) as its everyday format, which is both the
-// national standard and unambiguous. English here uses the same order rather
-// than a locale-specific one, because 03/04 is genuinely ambiguous between
-// British and American readers and a timesheet is not the place for that.
+// The default, for both languages, is ISO 8601 (2026-03-16): the Swedish
+// everyday format, the national standard, and unambiguous. English does not get
+// a locale-specific order of its own, because 03/04 is genuinely ambiguous
+// between British and American readers and a timesheet is not the place for
+// that.
+//
+// An administrator may still override it, because "unambiguous" is not the same
+// as "what the accounting department will accept" - and being told the tool is
+// right is no help to somebody who has to retype every date by hand.
 func (p *Printer) FormatDate(t time.Time) string {
-	return t.Format("2006-01-02")
+	switch p.formats.Date {
+	case "dmy":
+		return t.Format("02/01/2006")
+	case "mdy":
+		return t.Format("01/02/2006")
+	default:
+		return t.Format("2006-01-02")
+	}
 }
 
 // FormatDateLong renders a date with the month and weekday named.
@@ -147,11 +159,56 @@ func (p *Printer) FormatWeekday(t time.Time) string {
 	return p.T("weekday.short." + strings.ToLower(t.Weekday().String()))
 }
 
-// FormatTime renders a wall-clock time. Both supported locales use 24-hour
-// time, which is also what avoids am/pm ambiguity on a timesheet.
+// FormatTime renders a wall-clock time.
+//
+// Both supported locales use a 24-hour clock by default, which is also what
+// avoids am/pm ambiguity on a timesheet - "12:30 to 1:15" is a duration nobody
+// should have to think about. An administrator may still ask for 12-hour times,
+// because a preference this strong on a screen somebody reads all day is worth
+// more than the argument for consistency.
 func (p *Printer) FormatTime(t time.Time, loc *time.Location) string {
 	if loc == nil {
 		loc = time.UTC
 	}
-	return t.In(loc).Format("15:04")
+	return t.In(loc).Format(p.timeLayout())
 }
+
+// FormatClock renders a time with seconds, for the header clock.
+func (p *Printer) FormatClock(t time.Time, loc *time.Location) string {
+	if loc == nil {
+		loc = time.UTC
+	}
+	if p.formats.Clock == "12h" {
+		return t.In(loc).Format("3:04:05 PM")
+	}
+	return t.In(loc).Format("15:04:05")
+}
+
+// FormatHour renders a whole hour, for the timeline's rules.
+func (p *Printer) FormatHour(hour int) string {
+	if p.formats.Clock == "12h" {
+		suffix := "am"
+		display := hour % 24
+		if display >= 12 {
+			suffix = "pm"
+		}
+		display %= 12
+		if display == 0 {
+			display = 12
+		}
+		return fmt.Sprintf("%d%s", display, suffix)
+	}
+	return fmt.Sprintf("%02d:00", hour%24)
+}
+
+// timeLayout is the reference layout for a wall-clock time.
+func (p *Printer) timeLayout() string {
+	if p.formats.Clock == "12h" {
+		return "3:04 PM"
+	}
+	return "15:04"
+}
+
+// ClockIs12Hour reports the choice to callers that have to render a time
+// themselves - the browser-side clock, which ticks without asking the server.
+func (p *Printer) ClockIs12Hour() bool { return p.formats.Clock == "12h" }

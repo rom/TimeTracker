@@ -30,6 +30,15 @@ type pageData struct {
 	// actively harmful rather than merely untidy.
 	Lang      string
 	Languages []i18n.Language
+	// Nav is where the main navigation sits, already reduced to a value the
+	// stylesheet has a rule for. The template writes it into an attribute, so
+	// letting an unrecognised string through would leave the page with no
+	// layout at all.
+	Nav domain.NavPosition
+	// BackupEncrypted says whether a backup password is set, which is all the
+	// interface needs to know. The password itself is stripped from Settings
+	// before it reaches here.
+	BackupEncrypted bool
 
 	// Help is the context-sensitive help for the current screen.
 	Help       []helpSection
@@ -75,6 +84,13 @@ type pageData struct {
 	Inbox        *service.Inbox
 	Proposed     []domain.TimeEntry
 	Attachments  []domain.Attachment
+	// AttachmentsByOwner lists the files on each record of a listing, keyed by
+	// the owning record's id, for screens that show many records at once.
+	AttachmentsByOwner map[int64][]domain.Attachment
+	// AttachmentText holds extracted text previews, keyed by attachment id.
+	// Only text-shaped attachments appear: an image is fetched by the browser
+	// from the preview route rather than carried in the page.
+	AttachmentText map[int64]service.TextPreview
 
 	// Dated contract terms: one scope's history, and the revision being edited.
 	Terms     *service.TermsView
@@ -185,14 +201,28 @@ func (s *Server) newPageData(r *http.Request, title, active string) (pageData, e
 	if err != nil {
 		return pageData{}, err
 	}
-	printer := printerFor(r, user)
-
-	// The instance settings drive the chrome - the clock and the date display -
-	// so every page needs them. It is one indexed read of a single row.
+	// The instance settings drive the chrome - the clock, the date display, the
+	// navigation's position - so every page needs them. It is one indexed read
+	// of a single row.
 	settings, err := s.svc.Settings(r.Context())
 	if err != nil {
 		return pageData{}, err
 	}
+
+	// The backup password never travels to a template. Whether one is set is
+	// all the interface needs, and a struct carrying the secret into the
+	// rendering context is one careless {{.Settings.BackupPassword}} away from
+	// being on screen (docs/adr/0030-encrypted-backup-archives.md).
+	backupEncrypted := settings.BackupPassword != ""
+	settings.BackupPassword = ""
+
+	// The printer is built after the settings, because how it writes a clock
+	// and a date is one of them. Empty strings and "auto" both leave the
+	// language's own conventions in place.
+	printer := printerFor(r, user).WithFormats(i18n.Formats{
+		Clock: formatOverride(settings.ClockFormat, string(domain.ClockAuto)),
+		Date:  formatOverride(settings.DateFormat, string(domain.DateAuto)),
+	})
 
 	// The proxy inbox count is shown as a badge on every screen, because a
 	// proposal nobody looks at is unbilled work.
@@ -202,23 +232,25 @@ func (s *Server) newPageData(r *http.Request, title, active string) (pageData, e
 	}
 
 	return pageData{
-		Title:      title,
-		Active:     active,
-		User:       user,
-		Now:        s.svc.Now(),
-		Running:    running,
-		Themes:     availableThemes,
-		CSRFToken:  csrfTokenFrom(r),
-		ServerMode: s.accounts != nil,
-		Printer:    printer,
-		Lang:       printer.Code(),
-		Languages:  languageOptions(),
-		HasHelp:    helpAvailable(active),
-		HelpScreen: active,
-		Settings:   settings,
-		Rounding:   service.RoundingPresets(),
-		InboxCount: inboxCount,
-		Zone:       userLocation(r),
+		Title:           title,
+		Active:          active,
+		User:            user,
+		Now:             s.svc.Now(),
+		Running:         running,
+		Themes:          availableThemes,
+		CSRFToken:       csrfTokenFrom(r),
+		ServerMode:      s.accounts != nil,
+		Printer:         printer,
+		Lang:            printer.Code(),
+		Languages:       languageOptions(),
+		HasHelp:         helpAvailable(active),
+		HelpScreen:      active,
+		Settings:        settings,
+		BackupEncrypted: backupEncrypted,
+		Nav:             domain.NavPosition(settings.NavPosition).OrDefault(),
+		Rounding:        service.RoundingPresets(),
+		InboxCount:      inboxCount,
+		Zone:            userLocation(r),
 	}, nil
 }
 
@@ -367,6 +399,9 @@ type entryFilterForm struct {
 	Query     string
 	UseRegexp bool
 	Kind      string
+	// WithExpenses narrows to time recorded on the same project and day as an
+	// expense.
+	WithExpenses bool
 	// SearchMode is which mechanism answered, so the screen can say. A search
 	// that quietly used a different one from the one asked for produces results
 	// nobody can explain.
@@ -402,6 +437,10 @@ func (s *Server) handleEntries(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if data.Customers, err = s.svc.Customers(r.Context(), false); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if data.Projects, err = s.svc.Projects(r.Context(), 0, false); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -442,6 +481,7 @@ func (s *Server) entryFilter(r *http.Request) (service.EntryFilter, entryFilterF
 	form.Query = r.URL.Query().Get("q")
 	form.UseRegexp = r.URL.Query().Get("regexp") == "1"
 	form.Kind = r.URL.Query().Get("kind")
+	form.WithExpenses = r.URL.Query().Get("expenses") == "1"
 
 	var kinds []domain.EntryKind
 	if kind := domain.EntryKind(form.Kind); kind.Valid() {
@@ -461,6 +501,7 @@ func (s *Server) entryFilter(r *http.Request) (service.EntryFilter, entryFilterF
 		Query:        form.Query,
 		UseRegexp:    form.UseRegexp,
 		Kinds:        kinds,
+		WithExpenses: form.WithExpenses,
 		Limit:        1000,
 	}, form
 }
@@ -580,6 +621,12 @@ func (s *Server) handleEditEntryForm(w http.ResponseWriter, r *http.Request) {
 	if period, periodErr := s.svc.Period(r.Context(), entry.StartedAt); periodErr == nil {
 		data.PeriodView = &period
 	}
+	if data.Attachments, err = s.svc.Attachments(r.Context(),
+		domain.AttachmentOwnerTimeEntry, entry.ID); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	data.AttachmentText = s.svc.TextPreviews(r.Context(), data.Attachments)
 	s.render(w, r, "page_entry_edit.html", data)
 }
 
@@ -824,4 +871,18 @@ func (s *Server) handleMoveEntryBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.refreshOrRedirect(w, r)
+}
+
+// formatOverride turns a stored presentation setting into what the printer
+// wants, which is an override or nothing at all.
+//
+// "auto" is the setting's way of saying "follow the language", and the printer
+// spells the same thing as an empty string. Translating here rather than
+// teaching the i18n package about the word keeps that package a leaf with no
+// opinion about where its inputs came from.
+func formatOverride(value, auto string) string {
+	if value == auto {
+		return ""
+	}
+	return value
 }

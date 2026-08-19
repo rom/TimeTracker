@@ -49,7 +49,7 @@ func TestTimelinePlacesBlocksOnTheGrid(t *testing.T) {
 	}
 	for _, hour := range day.Hours {
 		if hour.Slot < 1 || hour.Slot > day.Slots {
-			t.Errorf("hour %s sits on slot %d, outside the grid", hour.Label, hour.Slot)
+			t.Errorf("hour %02d:00 sits on slot %d, outside the grid", hour.Hour, hour.Slot)
 		}
 	}
 }

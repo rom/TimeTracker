@@ -142,6 +142,35 @@ type Printer struct {
 	primary  *catalogue
 	fallback *catalogue
 	code     string
+	// formats overrides the conventions the language would otherwise imply. An
+	// organisation whose accounting department wants 12-hour times on a Swedish
+	// interface gets to have them; leaving these empty keeps the language's own
+	// conventions, which is what every caller did before the setting existed.
+	formats Formats
+}
+
+// Formats are the presentation choices that override a language's defaults.
+//
+// Both fields are the string forms of the domain's ClockFormat and DateFormat.
+// They are plain strings here rather than the domain types because this package
+// sits below the domain and must not import it: it is a leaf, embedded in the
+// binary and used by the store's own error messages.
+type Formats struct {
+	// Clock is "24h", "12h", or empty for the language's own convention.
+	Clock string
+	// Date is "iso", "dmy", "mdy", or empty for the language's own convention.
+	Date string
+}
+
+// WithFormats returns a printer that writes clocks and dates as asked.
+//
+// A copy rather than a mutation: printers are built per request and handed to a
+// template, and a shared printer whose formats could change under it would be a
+// data race waiting for the first concurrent render.
+func (p *Printer) WithFormats(f Formats) *Printer {
+	clone := *p
+	clone.formats = f
+	return &clone
 }
 
 // NewPrinter returns a printer for a language code, falling back to the default

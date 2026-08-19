@@ -29,6 +29,21 @@ type SettingsInput struct {
 	MaxTimerHours   int64
 	ShowClock       bool
 	ShowTimeAndDate bool
+
+	// Presentation.
+	NavPosition  string
+	ClockFormat  string
+	DateFormat   string
+	DayStartHour int
+	DayEndHour   int
+	DayOverflow  string
+
+	// BackupPassword is write-only from the form's point of view: it is never
+	// rendered back, so an empty field means "leave it as it is" rather than
+	// "clear it". ClearBackupPassword is how it is actually removed, because
+	// otherwise there would be no way to turn encryption off again.
+	BackupPassword      string
+	ClearBackupPassword bool
 }
 
 // UpdateSettings saves the instance-wide settings.
@@ -82,6 +97,24 @@ func (s *Service) UpdateSettings(ctx context.Context, in SettingsInput) error {
 			ErrValidation)
 	}
 
+	// Presentation choices degrade to a known value rather than being refused.
+	// A rate that will not parse is worth stopping the form for; a navigation
+	// position nobody recognises is not worth making somebody re-enter their
+	// currency over, and leaving it unvalidated would put a mystery string in
+	// a class attribute.
+	window := domain.NormaliseDayWindow(in.DayStartHour, in.DayEndHour)
+
+	// The backup password: absent means unchanged, because the form never shows
+	// it back and an empty field would otherwise silently disable encryption
+	// the first time somebody saved an unrelated setting.
+	backupPassword := existing.BackupPassword
+	switch {
+	case in.ClearBackupPassword:
+		backupPassword = ""
+	case in.BackupPassword != "":
+		backupPassword = in.BackupPassword
+	}
+
 	updated := store.Settings{
 		DefaultCurrency:  currency,
 		DefaultRounding:  rounding,
@@ -90,18 +123,30 @@ func (s *Service) UpdateSettings(ctx context.Context, in SettingsInput) error {
 		MaxTimerSeconds:  maxTimer,
 		ShowClock:        in.ShowClock,
 		ShowTimeAndDate:  in.ShowTimeAndDate,
+		NavPosition:      string(domain.NavPosition(in.NavPosition).OrDefault()),
+		ClockFormat:      string(domain.ClockFormat(in.ClockFormat).OrDefault()),
+		DateFormat:       string(domain.DateFormat(in.DateFormat).OrDefault()),
+		DayStartHour:     window.StartHour,
+		DayEndHour:       window.EndHour,
+		DayOverflow:      string(domain.DayOverflow(in.DayOverflow).OrDefault()),
+		BackupPassword:   backupPassword,
 	}
 	if err := s.db.UpdateSettings(ctx, updated); err != nil {
 		return err
 	}
 
 	// Audited: a rounding or rate default changes what future work is worth, so
-	// a later question about a figure needs to find when it changed.
+	// a later question about a figure needs to find when it changed. The entry
+	// records *that* the backup password changed, never what it became - an
+	// audit log is read by more people than the settings form is.
 	return s.recordAudit(ctx, "settings.update", "settings", 1, map[string]any{
 		"default_currency": map[string]any{"from": existing.DefaultCurrency, "to": currency},
 		"default_rounding": map[string]any{"from": existing.DefaultRounding, "to": rounding},
 		"default_rate":     map[string]any{"from": existing.DefaultRateMinor, "to": rate.Minor},
 		"week_start":       map[string]any{"from": existing.WeekStart, "to": weekStart},
+		"backup_encrypted": map[string]any{
+			"from": existing.BackupPassword != "", "to": backupPassword != "",
+		},
 	})
 }
 
@@ -127,3 +172,20 @@ func RoundingPresets() []struct{ Key, MessageKey string } {
 	}
 	return presets
 }
+
+// The choices the settings form offers. Re-exported from the domain so the
+// template ranges over the same lists the validator accepts, and so the web
+// layer does not have to reach past the service to reach them
+// (docs/adr/0012-layered-package-structure.md).
+
+// NavPositions are top and left.
+func NavPositions() []domain.NavPosition { return domain.NavPositions }
+
+// ClockFormats are automatic, 24-hour and 12-hour.
+func ClockFormats() []domain.ClockFormat { return domain.ClockFormats }
+
+// DateFormats are automatic, ISO, day-first and month-first.
+func DateFormats() []domain.DateFormat { return domain.DateFormats }
+
+// DayOverflows are expand and arrows.
+func DayOverflows() []domain.DayOverflow { return domain.DayOverflows }

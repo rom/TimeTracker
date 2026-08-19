@@ -50,5 +50,12 @@
 
   <p class="field-help">{{.T "entry.edit.audit"}}</p>
 
+  {{/* The files on this entry. This screen is where an entry is looked at
+       closely, which is where a screenshot or a receipt attached to it belongs -
+       the row it came from has room for a count and nothing more. */}}
+  {{template "attachments" (dict
+      "Page" . "OwnerType" "time_entry" "OwnerID" $entry.ID
+      "Attachments" .Attachments)}}
+
 </section>
 {{end}}

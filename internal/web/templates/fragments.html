@@ -91,6 +91,9 @@
 {{define "entry-row"}}
 {{- $e := .Entry -}}
 {{- $page := .Page -}}
+{{- /* The date is shown wherever a row could be from any day. On the day
+       screen it would repeat the heading forty times and say nothing. */ -}}
+{{- $showDate := .ShowDate -}}
   {{/* The row accepts a pasted image, which attaches it to this entry. It posts
        to the same endpoint a file input does, so there is no second, laxer path
        into the blob store. */}}
@@ -105,6 +108,17 @@
         {{if $e.Icon}}{{$e.Icon}}{{else}}●{{end}}
       </span>
     </td>
+    {{if $showDate}}
+      {{/* A <time> with a machine-readable datetime, and the weekday beside the
+           date: "was that a Saturday?" is the question a timesheet reader asks
+           most often, and answering it here saves reaching for a calendar. */}}
+      <td class="cell-date">
+        <time datetime="{{date $e.LocalDay}}">
+          <span class="entry-date">{{$page.Printer.FormatDate $e.LocalDay}}</span>
+          <span class="entry-weekday">{{$page.Printer.FormatWeekday $e.LocalDay}}</span>
+        </time>
+      </td>
+    {{end}}
     <td class="cell-what">
       <span class="entry-assignment">{{$e.AssignmentName}}</span>
       <span class="entry-path">{{$e.CustomerName}} · {{$e.ProjectName}}</span>
@@ -417,6 +431,17 @@
   <section class="timeline-wrap" aria-labelledby="timeline-heading">
     <h2 class="section-heading" id="timeline-heading">{{.T "timeline.title"}}</h2>
 
+    {{/* Time outside the visible window, when the pane is set to keep a fixed
+         one. Stated as a count and a total rather than a bare arrow: "there is
+         something up there" is not enough to decide whether to go and look. */}}
+    {{if $day.Earlier.Any}}
+      <p class="timeline-outside timeline-outside-earlier">
+        <span aria-hidden="true">↑</span>
+        {{$page.T "timeline.earlier" $day.Earlier.Count ($page.Printer.FormatDuration $day.Earlier.Seconds)}}
+        {{$page.T "timeline.outside.from" ($page.Printer.FormatHour $day.Earlier.FirstHour)}}
+      </p>
+    {{end}}
+
     <div class="timeline" data-timeline data-slots="{{$day.Slots}}"
          data-date="{{date $day.Date}}"
          data-start-hour="{{$day.StartHour}}" data-end-hour="{{$day.EndHour}}">
@@ -424,7 +449,7 @@
            with the slot it names. */}}
       <div class="timeline-hours" aria-hidden="true">
         {{range $day.Hours}}
-          <div class="timeline-hour slot-{{.Slot}}">{{.Label}}</div>
+          <div class="timeline-hour slot-{{.Slot}}">{{$page.Printer.FormatHour .Hour}}</div>
         {{end}}
       </div>
 
@@ -441,8 +466,12 @@
               data-duration="{{$entry.DurationSeconds}}">
             <a class="timeline-link" href="/entries/{{$entry.ID}}/edit">
               <span class="timeline-name">{{$entry.AssignmentName}}</span>
+              {{/* Displayed through the printer, so it follows the configured
+                   clock. The form below keeps `clock`, because the value of an
+                   <input type="time"> is 24-hour by specification whatever the
+                   browser chooses to show. */}}
               <span class="timeline-time">
-                {{clock $entry.StartedAt $day.Location}}
+                {{$page.Printer.FormatTime $entry.StartedAt $day.Location}}
                 · {{$page.Printer.FormatDuration $entry.DurationSeconds}}
               </span>
               {{if $entry.Note}}<span class="timeline-note">{{$entry.Note}}</span>{{end}}
@@ -472,11 +501,141 @@
             <span class="timeline-grip" data-grip aria-hidden="true"></span>
           </li>
         {{else}}
-          <li class="timeline-empty">{{$page.T "timeline.empty"}}</li>
+          {{/* "Nothing recorded" is only true when nothing was recorded. With a
+               fixed window it is perfectly possible for a day to be full and
+               for none of it to fall inside, and saying the day is empty then
+               is the kind of small lie that makes somebody re-enter work they
+               had already done. */}}
+          <li class="timeline-empty">
+            {{if or $day.Earlier.Any $day.Later.Any}}
+              {{$page.T "timeline.alloutside"}}
+            {{else}}
+              {{$page.T "timeline.empty"}}
+            {{end}}
+          </li>
         {{end}}
       </ol>
     </div>
 
+    {{if $day.Later.Any}}
+      <p class="timeline-outside timeline-outside-later">
+        <span aria-hidden="true">↓</span>
+        {{$page.T "timeline.later" $day.Later.Count ($page.Printer.FormatDuration $day.Later.Seconds)}}
+        {{$page.T "timeline.outside.from" ($page.Printer.FormatHour $day.Later.FirstHour)}}
+      </p>
+    {{end}}
+
     <p class="field-help">{{.T "timeline.help"}}</p>
   </section>
+{{end}}
+
+{{/* ------------------------------------------------------------ attachments */}}
+{{/*
+  The files on a record, with a preview where one can be shown.
+
+  Every preview is a separate request to /attachments/{id}/preview, which serves
+  the bytes inline behind a response policy that forbids scripts and every
+  subresource. That is what makes it safe to show an SVG at all - see
+  docs/adr/0031-attachment-previews.md - and it is why an SVG goes in an <img>
+  like any other image rather than in an <object>: inside an <img> no browser
+  runs script, whatever the file contains.
+
+  Called with a dict of Page, OwnerType, OwnerID and Attachments.
+*/}}
+{{define "attachments"}}
+{{- $page := .Page -}}
+{{- $ownerType := .OwnerType -}}
+{{- $ownerID := .OwnerID -}}
+<section class="attachments" aria-labelledby="attachments-{{$ownerType}}-{{$ownerID}}">
+  <h2 class="section-heading" id="attachments-{{$ownerType}}-{{$ownerID}}">
+    {{$page.T "attachments.title"}}
+  </h2>
+
+  {{template "attachment-previews" (dict "Page" $page "Attachments" .Attachments)}}
+
+  {{/* A file input posts multipart, which is the one place the application
+       accepts it. The same endpoint a pasted image posts to, so there is no
+       second, laxer path into the blob store. */}}
+  <form class="entry-form" method="post" action="/attachments/{{$ownerType}}/{{$ownerID}}"
+        enctype="multipart/form-data">
+    {{template "csrf" $page.CSRFToken}}
+    <input type="file" name="file" class="file-input"
+           aria-label="{{$page.T "attachments.add"}}">
+    <button type="submit" class="btn">{{$page.T "action.upload"}}</button>
+  </form>
+  <p class="field-help">{{$page.T "attachments.help"}}</p>
+</section>
+{{end}}
+
+{{/* The list on its own, so a screen that already has an upload control - or no
+     room for one - can show the files without repeating it. */}}
+{{define "attachment-previews"}}
+{{- $page := .Page -}}
+  {{if .Attachments}}
+    <ul class="attachment-list">
+      {{range .Attachments}}
+        <li class="attachment" data-kind="{{previewKind .}}">
+          {{$kind := previewKind .}}
+
+          {{/* The preview itself. Images and SVG share an element on purpose. */}}
+          {{if or (eq $kind "image") (eq $kind "svg")}}
+            <a class="attachment-figure" href="/attachments/{{.ID}}"
+               title="{{$page.T "attachments.download"}}">
+              {{/* No dimensions are known without decoding the file, so the
+                   stylesheet bounds it instead. alt is the filename: a receipt
+                   has no caption anybody wrote, and inventing one would be
+                   worse than naming the file. */}}
+              <img src="/attachments/{{.ID}}/preview" alt="{{.Filename}}" loading="lazy">
+            </a>
+          {{else if eq $kind "pdf"}}
+            {{/* <object> hands it to the browser's own viewer, and falls back to
+                 its own content when there is none - on a phone, usually. */}}
+            <object class="attachment-pdf" data="/attachments/{{.ID}}/preview"
+                    type="application/pdf" aria-label="{{.Filename}}">
+              <p class="field-help">
+                {{$page.T "attachments.nopdfviewer"}}
+                <a href="/attachments/{{.ID}}">{{$page.T "attachments.download"}}</a>
+              </p>
+            </object>
+          {{else if eq $kind "text"}}
+            {{$text := index $page.AttachmentText .ID}}
+            {{if $text.Text}}
+              {{/* Escaped like any other string by the template package. A
+                   document's text is somebody else's content and is never
+                   treated as markup. */}}
+              <pre class="attachment-text">{{$text.Text}}</pre>
+              {{if $text.Truncated}}
+                <p class="field-help">{{$page.T "attachments.truncated"}}</p>
+              {{end}}
+              {{if $text.Converted}}
+                <p class="field-help">{{$page.T "attachments.extract"}}</p>
+              {{end}}
+            {{end}}
+          {{end}}
+
+          <div class="attachment-meta">
+            <a class="attachment-name" href="/attachments/{{.ID}}">{{.Filename}}</a>
+            <span class="attachment-detail">
+              {{.MIME}} · {{humanBytes .SizeBytes}}
+              {{/* The short hash, so two files with the same name can be told
+                   apart and so an integrity question has something to check. */}}
+              <code class="attachment-hash" title="{{.SHA256}}">{{.ShortHash}}</code>
+            </span>
+            <form method="post" action="/attachments/{{.ID}}/delete"
+                  hx-post="/attachments/{{.ID}}/delete"
+                  hx-confirm="{{$page.T "attachments.delete.confirm"}}">
+              {{template "csrf" $page.CSRFToken}}
+              <button type="submit" class="btn btn-small btn-quiet"
+                      title="{{$page.T "action.delete"}}">
+                <span aria-hidden="true">×</span>
+                <span class="visually-hidden">{{$page.T "action.delete"}}</span>
+              </button>
+            </form>
+          </div>
+        </li>
+      {{end}}
+    </ul>
+  {{else}}
+    <p class="empty">{{$page.T "attachments.none"}}</p>
+  {{end}}
 {{end}}

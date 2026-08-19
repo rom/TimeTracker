@@ -81,6 +81,9 @@ func (s *Server) routes() {
 	// URL-encoded bodies so both submission paths parse identically.
 	mux.HandleFunc("POST /attachments/{owner}/{id}", s.handleUpload)
 	mux.HandleFunc("GET /attachments/{id}", s.handleDownloadAttachment)
+	// The one route that serves stored bytes inline. Its response headers are
+	// what make that safe; see handlePreviewAttachment.
+	mux.HandleFunc("GET /attachments/{id}/preview", s.handlePreviewAttachment)
 	mux.HandleFunc("POST /attachments/{id}/delete", s.handleDeleteAttachment)
 
 	// The proxy inbox: time and costs awaiting the acting user's decision.

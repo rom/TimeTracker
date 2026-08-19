@@ -1,11 +1,16 @@
 package web
 
 import (
+	"bytes"
+	"fmt"
 	"net/http"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rom/timetracker/internal/domain"
+	"github.com/rom/timetracker/internal/preview"
 	"github.com/rom/timetracker/internal/service"
 )
 
@@ -38,6 +43,30 @@ func (s *Server) handleExpenses(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		data.NeedsReceipt[expense.ID] = needs
+	}
+
+	// The receipts themselves, so a row can show what is attached to it rather
+	// than only how many. Loaded per expense that has any, which is the same
+	// number of queries the count badge already implies and none for a listing
+	// with no receipts on it at all.
+	data.AttachmentsByOwner = map[int64][]domain.Attachment{}
+	for _, expense := range data.Expenses {
+		if expense.AttachmentCount == 0 {
+			continue
+		}
+		attachments, listErr := s.svc.Attachments(r.Context(),
+			domain.AttachmentOwnerExpense, expense.ID)
+		if listErr != nil {
+			s.fail(w, r, listErr)
+			return
+		}
+		data.AttachmentsByOwner[expense.ID] = attachments
+		for id, text := range s.svc.TextPreviews(r.Context(), attachments) {
+			if data.AttachmentText == nil {
+				data.AttachmentText = map[int64]service.TextPreview{}
+			}
+			data.AttachmentText[id] = text
+		}
 	}
 
 	if data.Projects, err = s.svc.Projects(r.Context(), 0, false); err != nil {
@@ -221,6 +250,64 @@ func (s *Server) handleDownloadAttachment(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Cache-Control", "private, max-age=86400")
 
 	http.ServeContent(w, r, attachment.Filename, attachment.CreatedAt, reader)
+}
+
+// handlePreviewAttachment serves an attachment for display rather than download.
+//
+// This is the only route in the application that serves stored bytes inline,
+// and every header on the response is doing a job:
+//
+//   - Content-Security-Policy is the whole safety argument for SVG. "sandbox"
+//     with no tokens puts the response in a unique origin with scripts, forms,
+//     popups and plugins disabled; "default-src 'none'" stops it fetching
+//     anything. So even a hostile SVG opened directly at this URL - not through
+//     the <img> the page uses, where script never runs anyway - can do nothing.
+//     Both are belt and braces on purpose: this replaced a blanket refusal to
+//     store SVG at all, and replacing a refusal deserves more than one lock.
+//   - X-Content-Type-Options stops a browser sniffing its way to a different
+//     type from the one we determined.
+//   - Content-Disposition: inline is the only difference in intent from the
+//     download route, and it is why the rest of this list exists.
+//
+// See docs/adr/0031-attachment-previews.md.
+func (s *Server) handlePreviewAttachment(w http.ResponseWriter, r *http.Request) {
+	attachment, result, err := s.svc.PreviewAttachment(r.Context(), int64Param(r.PathValue("id")))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if result.Kind == preview.KindText {
+		// Text is rendered into the page, escaped like any other string, rather
+		// than fetched as a resource. There is nothing to serve here.
+		http.Error(w, "This file is shown as text on the page it belongs to.",
+			http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Security-Policy",
+		"default-src 'none'; style-src 'unsafe-inline'; sandbox")
+	w.Header().Set("Content-Type", result.ContentType)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Disposition",
+		fmt.Sprintf("inline; filename=%q", previewFilename(attachment, result)))
+	// Immutable: the path is derived from an id whose content is addressed by
+	// hash. Private, because these are somebody's receipts.
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+
+	http.ServeContent(w, r, previewFilename(attachment, result),
+		attachment.CreatedAt, bytes.NewReader(result.Body))
+}
+
+// previewFilename names the served preview.
+//
+// A converted TIFF is a PNG and must be called one, or a browser told to save
+// it writes a .tiff containing PNG bytes.
+func previewFilename(attachment domain.Attachment, result preview.Result) string {
+	name := attachment.Filename
+	if result.Converted && result.ContentType == "image/png" {
+		name = strings.TrimSuffix(name, filepath.Ext(name)) + ".png"
+	}
+	return name
 }
 
 // handleDeleteAttachment removes an attachment.

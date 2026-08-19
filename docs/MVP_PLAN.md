@@ -121,9 +121,16 @@ Expenses with categories, billable/reimbursable flags, markup and receipts, incl
 in reports and exports.
 
 **Done when:** a screenshot pasted into an entry survives a backup/restore cycle and
-is not retrievable by a user who cannot see the owning record. **Done**, with one
-honest gap: a backup file carries attachment *metadata* but not the bytes, which
-must be copied separately. See [ADR-0021](adr/0021-json-backups-that-merge.md).
+is not retrievable by a user who cannot see the owning record. **Done** - and the
+gap recorded here for two layers, that a backup carried attachment *metadata* but
+not the bytes, is closed: a backup is a zip carrying the files themselves
+([ADR-0030](adr/0030-encrypted-backup-archives.md)).
+
+Attachments are also **previewable** in place since
+[ADR-0031](adr/0031-attachment-previews.md), which is what finally gave them a
+screen: the download and delete routes had existed with nothing rendering a link
+to either. The "hostile-SVG handling" above was a blanket refusal at upload; it is
+now acceptance plus a preview route that serves it inert.
 
 ## Layer 4 — Proxy entries and approvals ✅
 
@@ -144,8 +151,13 @@ disabling it fails create, update, delete, start, stop and move.
 
 Pure-Go PDF with page breaks, repeating table headers, grouping by customer and
 project, and per-group subtotals; an OOXML DOCX writer built on `archive/zip`
-and `encoding/xml`. All four formats render from one `Report` value, so they
-cannot disagree about the numbers - asserted by a test.
+and `encoding/xml`. Every format renders from one `Report` value, so they cannot
+disagree about the numbers - asserted by a test.
+
+Both writers were finished here and neither reached a user until much later: the
+Entries screen went on offering CSV and JSON under a hint saying PDF and DOCX
+arrived in a later layer. A Markdown writer joined them then, and the offered list
+and the writer dispatch now come from one slice so the two cannot drift again.
 
 The PDF writer is written here rather than taken from a library, because no
 library was reachable and the requirement to generate documents in-process is
