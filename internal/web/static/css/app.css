@@ -42,7 +42,21 @@
   --entity-teal:   #0d7490;
   --entity-slate:  #55606e;
 
-  /* Non-colour tokens: shared so themes cannot drift structurally. */
+  /* The logotype's two halves, mapped onto the entity palette rather than given
+     values of their own. Every theme already defines a red and a blue that work
+     on its own background, so the brand picks up each theme's character for
+     free - the terminal theme gets its phosphor pair, the high-contrast theme
+     its heavy ones - and there is no second set of sixteen values to keep in
+     step. Both are held to AA against the header's surface by test, in every
+     theme; the narrowest is autumn at 4.67:1. */
+  --brand-time:    var(--entity-red);
+  --brand-tracker: var(--entity-blue);
+
+  /* Non-colour tokens: shared so themes cannot drift structurally.
+     A theme may still override one deliberately - terminal takes the monospace
+     face, squares the radius and drops the shadow, because there its structure
+     *is* its character. The point of the default is that drift has to be a
+     decision written in a theme block, not something that happens. */
   --radius:      6px;
   --radius-pill: 999px;
   --gap:         12px;
@@ -112,7 +126,7 @@
   --border-strong:  #b8a988;
   --text:           #2e2820;
   --text-muted:     #6b6152;
-  --accent:         #a75d3b;
+  --accent:         #985231;
   --accent-text:    #fffaf2;
   --accent-soft:    #efdccf;
   --danger:         #a83a2c;
@@ -137,7 +151,7 @@
   --border-strong:  #a3c79b;
   --text:           #16241a;
   --text-muted:     #4f6b55;
-  --accent:         #2f8f4e;
+  --accent:         #26743f;
   --accent-text:    #ffffff;
   --accent-soft:    #d5edd9;
   --danger:         #b8352c;
@@ -182,6 +196,106 @@
    Held to WCAG 2.1 AA (4.5:1 body text, 3:1 large text and UI borders) by the
    automated contrast test described in docs/TEST.md, so a future token edit
    cannot silently break it. */
+/* terminal - a green phosphor CRT.
+   ---------------------------------------------------------------------------
+   The one theme that changes the typeface as well as the colours, because on a
+   terminal the typeface *is* the theme: green-on-black in a proportional face
+   is a dark theme with an unusual accent, not a terminal. The radius goes to
+   zero and the shadow to none for the same reason - a character cell had no
+   rounded corners.
+
+   The colours are chosen against the contrast maths rather than by eye, and
+   TestEntityTintsKeepTextReadable holds them to it like every other theme. The
+   entity palette stays a palette: a phosphor tube could not show seven colours,
+   but a timesheet that cannot tell Acme from Globex is a worse anachronism than
+   a colour CRT. */
+[data-theme="terminal"] {
+  --surface:        #050705;
+  --surface-raised: #0b100b;
+  --surface-sunken: #121a12;
+  --border:         #3a7d3a;
+  --border-strong:  #5aa85a;
+  --text:           #33ff66;
+  --text-muted:     #5fbf7a;
+  --accent:         #33ff66;
+  --accent-text:    #04140a;
+  --accent-soft:    #0f2e18;
+  --danger:         #ff6b6b;
+  --success:        #5fff87;
+  --warning:        #ffd75f;
+
+  --entity-blue:   #5fafff;
+  --entity-green:  #5fff87;
+  --entity-amber:  #ffd75f;
+  --entity-red:    #ff6b6b;
+  --entity-purple: #d78fff;
+  --entity-teal:   #5fffd7;
+  --entity-slate:  #a8c0a8;
+
+  --font:   var(--font-mono);
+  --radius: 0;
+  --shadow: none;
+}
+
+/* The phosphor glow. Small enough to read as bloom rather than as blur - a
+   heavier one makes small text mushy, which is the failure mode of every CRT
+   pastiche. */
+[data-theme="terminal"] body {
+  text-shadow: 0 0 2px rgba(51, 255, 102, 0.28);
+}
+/* Coloured text keeps its own glow rather than a green one, or every entity
+   colour would drift towards the phosphor. */
+[data-theme="terminal"] .chip,
+[data-theme="terminal"] .badge,
+[data-theme="terminal"] .status-mark { text-shadow: none; }
+
+/* Scan lines, laid over the page as a fixed overlay so they do not scroll with
+   the content - a CRT's lines belong to the screen, not to the document.
+   pointer-events: none because it covers everything and must intercept
+   nothing. */
+[data-theme="terminal"] body::after {
+  content: ""; position: fixed; inset: 0; z-index: 9999;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.16) 0px,
+    rgba(0, 0, 0, 0.16) 1px,
+    transparent 1px,
+    transparent 3px);
+}
+
+/* Anyone who has asked for more contrast, or for less transparency, gets the
+   theme without the decoration. Both the glow and the scan lines cost
+   legibility, and neither is what somebody who set those preferences is asking
+   for. */
+@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+  [data-theme="terminal"] body { text-shadow: none; }
+  [data-theme="terminal"] body::after { display: none; }
+}
+
+/* Square everything the radius token does not reach, and let the borders read
+   as the box-drawing they are standing in for. */
+[data-theme="terminal"] .chip,
+[data-theme="terminal"] .badge,
+[data-theme="terminal"] .chip-button,
+[data-theme="terminal"] .btn { border-radius: 0; }
+
+/* A blinking block cursor after the running-timer clock: the one place the
+   interface is genuinely live, which is exactly where a terminal would have
+   put it. */
+[data-theme="terminal"] .live-clock::after {
+  content: "\2588";
+  margin-left: 2px;
+  animation: terminal-blink 1.06s step-end infinite;
+}
+@keyframes terminal-blink {
+  50% { opacity: 0; }
+}
+/* A blinking cursor is exactly what prefers-reduced-motion is for. */
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="terminal"] .live-clock::after { animation: none; }
+}
+
 [data-theme="contrast"] {
   --surface:        #ffffff;
   --surface-raised: #ffffff;
@@ -267,7 +381,30 @@ a { color: var(--accent); }
   display: flex; align-items: center; gap: var(--gap-sm);
   font-weight: 650; color: var(--text); text-decoration: none;
 }
-.brand-mark { color: var(--accent); font-size: 1.2em; }
+
+/* The clock mark. Large enough to read as a mark rather than as a character
+   that wandered into the text, and given a fixed line-height so growing it does
+   not grow the header with it. */
+.brand-mark {
+  /* The same blue as the second half of the name and as the favicon's ring, so
+     the tab, the home screen and the header are recognisably one mark. Not the
+     accent: that is a theme's own signature colour, and following it would make
+     the clock terracotta on sand and green on terminal while the name beside it
+     stayed red and blue. */
+  color: var(--brand-tracker);
+  font-size: 1.9em;
+  line-height: 1;
+  /* The glyph sits high in its em box, so it needs nudging down to sit level
+     with the name beside it rather than with the name's ascenders. */
+  transform: translateY(0.06em);
+}
+
+/* The name in two colours. The halves are separate elements with no whitespace
+   between them in the markup, so this is purely colour: the word is still one
+   word to a reader and to a screen reader. */
+.brand-name { letter-spacing: -0.01em; }
+.brand-time { color: var(--brand-time); }
+.brand-tracker { color: var(--brand-tracker); }
 
 .mainnav { display: flex; gap: 4px; flex: 1; }
 .mainnav a {
@@ -490,6 +627,16 @@ input[type="text"], input[type="date"], input[type="time"], select {
 
 .cell-chip { width: 2em; }
 .cell-time { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* The date column. Tabular figures so the dates form a straight edge down the
+   list rather than shifting by a fraction on every 1, and nowrap because
+   "2026-08-19" broken across two lines is unreadable. */
+.cell-date { white-space: nowrap; vertical-align: top; width: 1%; }
+.entry-date { display: block; font-variant-numeric: tabular-nums; }
+.entry-weekday {
+  display: block; color: var(--text-muted); font-size: 0.82em;
+  text-transform: lowercase;
+}
 .cell-actions { text-align: right; white-space: nowrap; }
 .cell-actions form { display: inline; }
 
@@ -1193,6 +1340,200 @@ kbd {
 
 /* Inline forms inside a table cell, used on the user administration screen. */
 .inline-form { display: flex; gap: var(--gap-sm); align-items: center; flex-wrap: wrap; }
+
+/* -------------------------------------------------- navigation position --- */
+
+/*
+  The left-hand rail. Chosen in the settings, applied as one attribute on <html>
+  and no markup change at all: the same elements in the same source order, laid
+  out differently. That is what keeps the reading order a screen reader follows
+  and the tab order a keyboard follows identical in both arrangements - a layout
+  that reordered the DOM would quietly make one of them worse.
+
+  Everything below is guarded on [data-nav="left"], so the default and any
+  unrecognised value both leave the top bar exactly as it was.
+*/
+[data-nav="left"] {
+  /* One definition, used by both the grid column and the painted background
+     below. Two numbers that had to agree would eventually stop agreeing. */
+  --rail-width: 15rem;
+}
+
+[data-nav="left"] body {
+  display: grid;
+  grid-template-columns: var(--rail-width) minmax(0, 1fr);
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas:
+    "rail running"
+    "rail main"
+    "rail footer";
+  min-height: 100vh;
+
+  /* The rail's colour and its edge are painted on the body rather than left to
+     the bar itself. The bar is sticky and therefore only as tall as its own
+     content, so its background would stop halfway down a long page and leave
+     the column looking unfinished. This paints the full height of whatever the
+     page turns out to be, and the sticky bar keeps its own background on top so
+     content never shows through as it scrolls beneath. */
+  background-image: linear-gradient(to right,
+    var(--surface-raised) 0, var(--surface-raised) var(--rail-width),
+    var(--border) var(--rail-width), var(--border) calc(var(--rail-width) + 1px),
+    transparent calc(var(--rail-width) + 1px));
+  background-repeat: no-repeat;
+}
+
+[data-nav="left"] .topbar {
+  grid-area: rail;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--gap);
+  /* Sticky rather than fixed, so the rail scrolls its own overflow when the
+     navigation is longer than the viewport instead of losing the last items
+     off the bottom. */
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: 100vh;
+  overflow-y: auto;
+  border-bottom: none;
+  /* No border of its own: the body's gradient draws the full-height edge, and a
+     second one here would stop where the bar does. */
+  border-right: none;
+}
+
+[data-nav="left"] .mainnav { flex-direction: column; flex: 0 0 auto; gap: 2px; }
+[data-nav="left"] .topbar-right {
+  flex-wrap: wrap;
+  /* Pushed to the foot of the rail: the pickers and the sign-out button are
+     what somebody reaches for least, and putting them under the navigation
+     keeps the item they came for at a predictable height. */
+  margin-top: auto;
+}
+[data-nav="left"] .topbar-right .picker,
+[data-nav="left"] .topbar-right form { width: 100%; }
+[data-nav="left"] .topbar-right select { width: 100%; }
+
+[data-nav="left"] #running-bar { grid-area: running; }
+[data-nav="left"] main { grid-area: main; }
+[data-nav="left"] .footer { grid-area: footer; }
+/* The skip link and the help panel are taken out of flow already; naming their
+   areas stops the grid auto-placing them into a column of their own. */
+[data-nav="left"] .skip-link,
+[data-nav="left"] .help-panel { grid-area: main; }
+
+/* Below the breakpoint there is no room for a rail, so it becomes the top bar
+   again. The setting still applies on the desktop it was chosen for. */
+@media (max-width: 900px) {
+  [data-nav="left"] body { display: block; background-image: none; }
+  [data-nav="left"] .topbar {
+    flex-direction: row;
+    max-height: none;
+    overflow-y: visible;
+    border-bottom: 1px solid var(--border);
+  }
+  [data-nav="left"] .mainnav { flex-direction: row; flex: 1; }
+  [data-nav="left"] .topbar-right { margin-top: 0; }
+  [data-nav="left"] .topbar-right .picker,
+  [data-nav="left"] .topbar-right form,
+  [data-nav="left"] .topbar-right select { width: auto; }
+}
+
+/* --------------------------------------------- time outside the day pane -- */
+
+/*
+  Shown only when the pane is set to keep a fixed window. It reports a count and
+  a total rather than being a bare arrow, because "there is something up there"
+  is not enough to decide whether it is worth going to look at.
+*/
+.timeline-outside {
+  display: flex; align-items: baseline; gap: var(--gap-sm);
+  margin: 0; padding: 6px 10px;
+  color: var(--text-muted); font-size: 0.88em;
+  background: var(--surface-sunken);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+.timeline-outside-earlier { margin-bottom: 4px; }
+.timeline-outside-later { margin-top: 4px; }
+
+/* Radio choices that each carry their own explanation. The help text sits under
+   the label rather than beside it, so a long explanation does not push the two
+   options apart until they stop reading as a pair. */
+.radio-group { border: none; padding: 0; margin: var(--gap) 0 0; }
+.radio-group > legend { font-size: 0.9em; font-weight: 600; padding: 0; }
+.radio-group .inline-check { display: grid; grid-template-columns: auto 1fr; gap: 0 var(--gap-sm); align-items: start; }
+.radio-group .inline-check .field-help { grid-column: 2; margin: 2px 0 var(--gap-sm); }
+
+/* -------------------------------------------------- attachment previews --- */
+
+.attachments { margin-top: var(--gap-lg); }
+
+.attachment-list {
+  display: grid;
+  /* Wide enough for a receipt to be legible, and as many across as fit. */
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--gap);
+  list-style: none; margin: 0 0 var(--gap); padding: 0;
+}
+
+.attachment {
+  display: flex; flex-direction: column; gap: var(--gap-sm);
+  padding: var(--gap-sm);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.attachment-figure {
+  display: block;
+  /* A chequerboard, so a transparent PNG or SVG is visible as transparent
+     rather than as whatever the theme's background happens to be. Drawn with
+     gradients rather than an image so it needs no asset and costs no request. */
+  background-color: var(--surface-sunken);
+  background-image:
+    linear-gradient(45deg, var(--border) 25%, transparent 25%, transparent 75%, var(--border) 75%),
+    linear-gradient(45deg, var(--border) 25%, transparent 25%, transparent 75%, var(--border) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.attachment-figure img {
+  display: block; width: 100%; height: auto;
+  /* Bounded, because nothing here knows a file's dimensions without decoding
+     it: a 6000-pixel scan must not push the page out of shape. */
+  max-height: 18rem; object-fit: contain;
+}
+
+.attachment-pdf {
+  width: 100%; height: 22rem;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface-sunken);
+}
+
+.attachment-text {
+  margin: 0; padding: var(--gap-sm);
+  max-height: 18rem; overflow: auto;
+  font-family: var(--font-mono); font-size: 0.82em; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-word;
+  background: var(--surface-sunken);
+  border-radius: var(--radius);
+}
+
+.attachment-meta {
+  display: flex; align-items: baseline; gap: var(--gap-sm); flex-wrap: wrap;
+  font-size: 0.85em;
+}
+.attachment-name { font-weight: 600; word-break: break-all; }
+.attachment-detail { color: var(--text-muted); }
+.attachment-hash { font-family: var(--font-mono); font-size: 0.9em; }
+.attachment-meta form { margin-left: auto; }
+
+/* The receipts row on the expenses listing. It belongs to the claim above it,
+   so it carries no colour bar of its own - the row above already says whose
+   it is. */
+.attachment-row > td { padding-top: 0; }
+.attachment-row summary { cursor: pointer; color: var(--text-muted); font-size: 0.88em; }
 
 /* --------------------------------------------------------- responsive ----- */
 

@@ -324,7 +324,16 @@ func TestAllThemesDefineEveryToken(t *testing.T) {
 
 // themeBlock extracts the first [data-theme="name"] { ... } block.
 func themeBlock(css, theme string) string {
+	// The default theme is declared on :root rather than in a [data-theme]
+	// block, because it has to apply before the switcher has said anything.
+	// Handled here rather than skipped by callers: a test that quietly skips
+	// the default theme is a test that does not cover the theme most people
+	// use, which is exactly what happened before this.
 	marker := `[data-theme="` + theme + `"] {`
+	if theme == defaultTheme {
+		marker = ":root {"
+	}
+
 	start := strings.Index(css, marker)
 	if start < 0 {
 		return ""

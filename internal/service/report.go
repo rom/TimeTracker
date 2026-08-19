@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/rom/timetracker/internal/auth"
@@ -30,6 +31,11 @@ type DayView struct {
 	EndHour   int
 	// Slots is how many quarter-hour rows the grid has.
 	Slots int
+	// Earlier and Later describe time that falls outside the visible window,
+	// for the arrows that say so. Both are empty when the pane was allowed to
+	// expand, because then there is nothing outside it.
+	Earlier TimelineOutside
+	Later   TimelineOutside
 }
 
 // Gap is an uncovered stretch between the first and last entry of a day.
@@ -97,7 +103,14 @@ func (s *Service) Day(ctx context.Context, date time.Time) (DayView, error) {
 	}
 	view.Totals = s.totals(entries)
 	view.Gaps = findGaps(entries, s.now())
-	buildTimeline(&view, s.now())
+
+	// The pane's window and its overflow behaviour are instance settings. A
+	// failure to read them is not worth failing the whole day screen over, so
+	// the zero value falls through to the built-in default.
+	settings, _ := s.db.GetSettings(ctx)
+	buildTimeline(&view,
+		domain.NormaliseDayWindow(settings.DayStartHour, settings.DayEndHour),
+		domain.DayOverflow(settings.DayOverflow), s.now())
 	return view, nil
 }
 
@@ -220,6 +233,12 @@ type EntryFilter struct {
 	UseRegexp bool
 	// Kinds limits to work, overtime or travel.
 	Kinds []domain.EntryKind
+	// WithExpenses narrows to entries recorded on the same project and the same
+	// calendar day as an expense - the day somebody drove to the customer, or
+	// took them to lunch. Expenses hang off a project and a date rather than off
+	// an entry, so this is the closest true statement to "time that had costs
+	// attached to it", and the screen says as much next to the control.
+	WithExpenses bool
 }
 
 // Entries lists entries matching a filter, for the Entries screen and as the
@@ -288,7 +307,7 @@ func (s *Service) SearchEntries(ctx context.Context, filter EntryFilter) ([]doma
 
 // searchEntries is the shared query, after the permission questions are settled.
 func (s *Service) searchEntries(ctx context.Context, subjectID int64, scope store.Scope, filter EntryFilter) ([]domain.TimeEntry, store.SearchMode, error) {
-	return s.db.SearchEntries(ctx, store.EntryFilter{
+	entries, mode, err := s.db.SearchEntries(ctx, store.EntryFilter{
 		UserID:       subjectID,
 		Scope:        scope,
 		From:         filter.From,
@@ -303,6 +322,56 @@ func (s *Service) searchEntries(ctx context.Context, subjectID int64, scope stor
 		Kinds:        filter.Kinds,
 		Limit:        filter.Limit,
 	})
+	if err != nil || !filter.WithExpenses {
+		return entries, mode, err
+	}
+	kept, err := s.keepEntriesWithExpenses(ctx, entries, filter)
+	// The mode is the one the query used. Narrowing the result afterwards does
+	// not change which mechanism answered, and reporting SearchNone here would
+	// make the screen stop explaining a regexp search the moment somebody also
+	// ticked this box.
+	return kept, mode, err
+}
+
+// keepEntriesWithExpenses drops entries with no expense on the same project and
+// day.
+//
+// Deliberately not a SQL condition. An entry's calendar day comes from the zone
+// it was recorded in, which is a column, and SQLite cannot convert an instant to
+// a named zone's local date - date(started_at) would give the UTC day and put
+// an evening entry in Stockholm on the wrong side of midnight. The comparison
+// therefore happens here, where domain.LocalDay already gets it right, over a
+// result set the screen has already capped.
+func (s *Service) keepEntriesWithExpenses(ctx context.Context, entries []domain.TimeEntry, filter EntryFilter) ([]domain.TimeEntry, error) {
+	if len(entries) == 0 {
+		return entries, nil
+	}
+
+	expenses, err := s.Expenses(ctx, ExpenseFilter{
+		From: filter.From, To: filter.To,
+		CustomerID: filter.CustomerID, ProjectID: filter.ProjectID,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	spent := make(map[string]bool, len(expenses))
+	for _, expense := range expenses {
+		spent[projectDayKey(expense.ProjectID, expense.SpentOn)] = true
+	}
+
+	kept := entries[:0:0]
+	for _, entry := range entries {
+		if spent[projectDayKey(entry.ProjectID, entry.LocalDay().Format("2006-01-02"))] {
+			kept = append(kept, entry)
+		}
+	}
+	return kept, nil
+}
+
+// projectDayKey identifies one project on one calendar day.
+func projectDayKey(projectID int64, day string) string {
+	return strconv.FormatInt(projectID, 10) + "\x00" + day
 }
 
 // Totals computes the summed and elapsed figures for a set of entries.

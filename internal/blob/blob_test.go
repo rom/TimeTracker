@@ -105,20 +105,126 @@ func TestSizeLimit(t *testing.T) {
 	}
 }
 
-// TestUnacceptableTypesAreRefused. SVG is the one that matters: it is
-// script-capable, and a stored SVG served inline is a stored XSS vector.
+// TestUnacceptableTypesAreRefused checks the allow-list still holds.
 func TestUnacceptableTypesAreRefused(t *testing.T) {
 	store := newStore(t)
 
-	svg := []byte(`<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg">` +
-		`<script>alert(1)</script></svg>`)
-	if _, _, _, err := store.Put(bytes.NewReader(svg)); err == nil {
-		t.Error("an SVG was accepted; it is script-capable and must not be stored")
+	// An executable, which no sniff should ever call acceptable.
+	elf := append([]byte{0x7f, 'E', 'L', 'F', 2, 1, 1}, make([]byte, 200)...)
+	if _, _, _, err := store.Put(bytes.NewReader(elf)); !errors.Is(err, ErrUnacceptableType) {
+		t.Errorf("an executable was accepted: %v", err)
 	}
 
 	// An empty file is not a file.
 	if _, _, _, err := store.Put(bytes.NewReader(nil)); err == nil {
 		t.Error("an empty upload was accepted")
+	}
+}
+
+// TestSVGIsStoredAsAnImageAndLabelledAsOne.
+//
+// SVG was refused outright until previews arrived, on the grounds that it is
+// script-capable. It is stored now, and the reasoning that replaced the refusal
+// is in docs/adr/0031-attachment-previews.md: an SVG is never served as a
+// document. The preview route puts it inside an <img>, where no browser runs
+// script, behind a response policy that forbids scripts and every subresource
+// anyway, and the download route keeps Content-Disposition: attachment.
+//
+// What this test guards is the half that lives here: the store must label the
+// file image/svg+xml rather than the text/xml or text/plain that Go's sniffer
+// would return. Every downstream decision keys on that type, and a hostile SVG
+// stored as "text/plain" would slip past all of them.
+func TestSVGIsStoredAsAnImageAndLabelledAsOne(t *testing.T) {
+	store := newStore(t)
+
+	hostile := []byte(`<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg">` +
+		`<script>alert(1)</script></svg>`)
+	_, _, mime, err := store.PutNamed(bytes.NewReader(hostile), "diagram.svg")
+	if err != nil {
+		t.Fatalf("an SVG should be storable now: %v", err)
+	}
+	if mime != "image/svg+xml" {
+		t.Errorf("mime = %q, want image/svg+xml; every later decision keys on this", mime)
+	}
+
+	// Without a declaration, and with leading whitespace and a comment.
+	bare := []byte("\n  <!-- a drawing -->\n<svg xmlns=\"http://www.w3.org/2000/svg\"/>")
+	if _, _, mime, err = store.PutNamed(bytes.NewReader(bare), "bare.svg"); err != nil {
+		t.Fatalf("a bare SVG should be storable: %v", err)
+	}
+	if mime != "image/svg+xml" {
+		t.Errorf("mime = %q for an SVG with no XML declaration, want image/svg+xml", mime)
+	}
+}
+
+// TestFormatsTheStandardSnifferMisses.
+//
+// http.DetectContentType implements the WHATWG list, which is aimed at what a
+// browser will render. Three accepted types are not on it, and every one was
+// unreachable until this sniff existed: the file came back as
+// application/octet-stream, which the allow-list explicitly refuses. A list
+// that accepts a type nothing can produce is a list that lies.
+func TestFormatsTheStandardSnifferMisses(t *testing.T) {
+	store := newStore(t)
+
+	// A classic TIFF header, both byte orders. The rest is padding: the sniff
+	// looks at the signature and the store does not decode anything.
+	littleEndian := append([]byte("II\x2a\x00"), make([]byte, 200)...)
+	bigEndian := append([]byte("MM\x00\x2a"), make([]byte, 200)...)
+	for name, content := range map[string][]byte{
+		"scan.tiff": littleEndian,
+		"scan.tif":  bigEndian,
+	} {
+		_, _, mime, err := store.PutNamed(bytes.NewReader(content), name)
+		if err != nil {
+			t.Errorf("%s was refused: %v", name, err)
+			continue
+		}
+		if mime != "image/tiff" {
+			t.Errorf("%s stored as %q, want image/tiff", name, mime)
+		}
+	}
+
+	// BigTIFF is deliberately not matched: nothing here can decode one, and
+	// accepting it would store a file whose preview could only ever fail.
+	bigTIFF := append([]byte("II\x2b\x00"), make([]byte, 200)...)
+	if _, _, _, err := store.PutNamed(bytes.NewReader(bigTIFF), "huge.tif"); err == nil {
+		t.Error("BigTIFF was accepted, but nothing in this application can read one")
+	}
+
+	// A pre-2007 Word document: an OLE compound file.
+	ole := append([]byte("\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"), make([]byte, 200)...)
+	_, _, mime, err := store.PutNamed(bytes.NewReader(ole), "old.doc")
+	if err != nil {
+		t.Errorf("a .doc was refused: %v", err)
+	} else if mime != "application/x-ole-storage" {
+		t.Errorf(".doc stored as %q", mime)
+	}
+}
+
+// TestSVGDetectionIsNarrow: the sniff must not promote a text file to an image
+// because it happens to mention an SVG tag.
+func TestSVGDetectionIsNarrow(t *testing.T) {
+	for _, content := range []string{
+		"a note that mentions <svg> in passing",
+		"<html><body><svg></svg></body></html>",
+		"<svgx foo=\"bar\">",
+		"<?xml version=\"1.0\"?><rss><item>&lt;svg&gt;</item></rss>",
+		"",
+	} {
+		if isSVG([]byte(content)) {
+			t.Errorf("%q was taken for an SVG document", content)
+		}
+	}
+	for _, content := range []string{
+		`<svg xmlns="http://www.w3.org/2000/svg"/>`,
+		`<?xml version="1.0"?><svg/>`,
+		"<svg>",
+		"  \n<!DOCTYPE svg><svg width=\"10\">",
+	} {
+		if !isSVG([]byte(content)) {
+			t.Errorf("%q is an SVG document and was not recognised", content)
+		}
 	}
 }
 

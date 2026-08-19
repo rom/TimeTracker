@@ -89,7 +89,7 @@ type Customer struct {
 	Code     string // short identifier used in exports and on invoices
 	Currency string
 	// ColourKey names a palette entry rather than holding a hex value, so the
-	// colour stays legible in all seven themes.
+	// colour stays legible in all eight themes.
 	// See docs/adr/0011-theming-via-css-custom-properties.md.
 	ColourKey string
 	Icon      string

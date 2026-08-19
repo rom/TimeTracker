@@ -196,15 +196,117 @@ func TestHighContrastThemeMeetsWCAG(t *testing.T) {
 	}
 }
 
+// TestEveryThemeMeetsWCAGForText holds *all* the themes to AA on text, not only
+// the one named for contrast.
+//
+// The high-contrast theme exists for people who need more than AA. AA itself is
+// the floor for the other seven, and until this test was written two of them
+// were below it: the sand accent was 4.29:1 as link text, and the spring accent
+// was 3.77:1 as link text and 4.07:1 under the white text of a primary button.
+// Both were fixed by darkening one token each. Nobody had noticed, because
+// looking at a colour is not a way of measuring it - which is the whole argument
+// for computing this rather than reviewing it.
+//
+// Deliberately text pairs only. WCAG 1.4.11 asks 3:1 of *meaningful* graphical
+// objects and the boundaries of controls; the --border token is also used for
+// hairlines between table rows, which are decoration. Holding every theme to
+// 3:1 there would force seven palettes to change appearance in exchange for a
+// criterion those particular lines do not attract, so the border check stays on
+// the high-contrast theme, where the point is to exceed the floor everywhere.
+func TestEveryThemeMeetsWCAGForText(t *testing.T) {
+	css, err := staticFS.ReadFile("static/css/app.css")
+	if err != nil {
+		t.Fatalf("read stylesheet: %v", err)
+	}
+	stylesheet := string(css)
+
+	pairs := []struct {
+		foreground, background string
+		what                   string
+	}{
+		{"--text", "--surface", "body text on the page"},
+		{"--text", "--surface-raised", "body text on a card"},
+		{"--text-muted", "--surface", "muted text on the page"},
+		{"--text-muted", "--surface-raised", "muted text on a card"},
+		{"--accent-text", "--accent", "text on a primary button"},
+		{"--accent", "--surface", "links on the page"},
+		{"--danger", "--surface", "error text"},
+		// The logotype. It sits on the header, which is a raised surface, and
+		// it is the first text on every page - so a theme whose red or blue is
+		// too light for text would fail in the most visible place available.
+		{"--brand-time", "--surface-raised", "the red half of the logotype"},
+		{"--brand-tracker", "--surface-raised", "the blue half of the logotype"},
+	}
+
+	// :root carries the tokens every theme shares, including the brand aliases.
+	root := parseTokens(themeBlock(stylesheet, defaultTheme))
+
+	for _, theme := range availableThemes {
+		block := themeBlock(stylesheet, theme)
+		if block == "" {
+			// themeBlock knows about :root, so an empty result means the theme
+			// is offered in the switcher and defined nowhere.
+			t.Errorf("theme %q is offered but has no token block", theme)
+			continue
+		}
+		tokens := parseTokens(block)
+
+		for _, pair := range pairs {
+			fg, okFG := colourOf(tokens, root, pair.foreground)
+			bg, okBG := colourOf(tokens, root, pair.background)
+			if !okFG || !okBG {
+				t.Errorf("theme %s does not define %s or %s",
+					theme, pair.foreground, pair.background)
+				continue
+			}
+			if ratio := contrastRatio(fg, bg); ratio < 4.5 {
+				t.Errorf("theme %s, %s: %.2f:1 between %s (%s) and %s (%s), need 4.5:1",
+					theme, pair.what, ratio, pair.foreground, fg, pair.background, bg)
+			}
+		}
+	}
+}
+
 // parseTokens pulls "--name: #rrggbb;" declarations out of a CSS block.
 func parseTokens(block string) map[string]string {
 	tokens := map[string]string{}
-	pattern := regexp.MustCompile(`(--[a-z-]+)\s*:\s*(#[0-9a-fA-F]{6})`)
+	// Both a literal colour and a reference to another token. The second form
+	// is how the logotype's two halves are defined - as aliases of the entity
+	// palette, so that each theme's own red and blue carry the brand without a
+	// second set of values to keep in step. A parser that saw only hex would
+	// report those tokens as undefined.
+	pattern := regexp.MustCompile(`(--[a-z-]+)\s*:\s*(#[0-9a-fA-F]{6}|var\(\s*--[a-z-]+\s*\))`)
 	for _, match := range pattern.FindAllStringSubmatch(block, -1) {
-		tokens[match[1]] = match[2]
+		tokens[match[1]] = strings.TrimSpace(match[2])
 	}
 	return tokens
 }
+
+// colourOf resolves a token to a hex value the way the cascade would.
+//
+// A theme block overrides what :root declares, and a token may be an alias for
+// another - so an alias declared once on :root picks up the *theme's* value for
+// what it points at, because both live on the same element. One level of
+// indirection is all this stylesheet uses, and resolving exactly one keeps the
+// helper honest about that rather than pretending to be a CSS engine.
+func colourOf(theme, root map[string]string, name string) (string, bool) {
+	value, ok := theme[name]
+	if !ok {
+		value, ok = root[name]
+	}
+	if !ok {
+		return "", false
+	}
+	if reference := varReference.FindStringSubmatch(value); reference != nil {
+		return colourOf(theme, root, reference[1])
+	}
+	if !strings.HasPrefix(value, "#") {
+		return "", false
+	}
+	return value, true
+}
+
+var varReference = regexp.MustCompile(`^var\(\s*(--[a-z-]+)\s*\)$`)
 
 // contrastRatio computes the WCAG contrast ratio between two hex colours.
 func contrastRatio(a, b string) float64 {
@@ -358,17 +460,18 @@ func TestEntityTintsKeepTextReadable(t *testing.T) {
 	for _, theme := range availableThemes {
 		block := themeBlock(stylesheet, theme)
 		if block == "" {
-			// The default theme is declared on :root rather than in a themed
-			// block, and is covered by the light entry below.
+			t.Errorf("theme %q is offered but has no token block", theme)
 			continue
 		}
 		tokens := parseTokens(block)
 		surface, ok := tokens["--surface-raised"]
 		if !ok {
+			t.Errorf("theme %q does not define --surface-raised", theme)
 			continue
 		}
 		text, ok := tokens["--text"]
 		if !ok {
+			t.Errorf("theme %q does not define --text", theme)
 			continue
 		}
 

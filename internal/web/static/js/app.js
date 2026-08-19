@@ -204,13 +204,18 @@
     if (!clock) return;
 
     var zone = clock.getAttribute("data-zone");
+    /* The clock format is the administrator's choice, and the server has
+       already rendered the first tick in it. Reading it back off the element
+       rather than assuming 24-hour is what stops the clock from flipping
+       format the moment this script runs. */
+    var hour12 = clock.getAttribute("data-hour12") === "1";
     var formatter = null;
     try {
-      formatter = new Intl.DateTimeFormat("en-GB", {
-        hour: "2-digit",
+      formatter = new Intl.DateTimeFormat(hour12 ? "en-US" : "en-GB", {
+        hour: hour12 ? "numeric" : "2-digit",
         minute: "2-digit",
         second: "2-digit",
-        hour12: false,
+        hour12: hour12,
         timeZone: zone || undefined,
       });
     } catch (err) {
@@ -225,14 +230,21 @@
       if (formatter) {
         var text = formatter.format(now);
         /* Some engines render midnight as "24:00:00" under hour12:false. */
-        if (text.indexOf("24:") === 0) text = "00:" + text.slice(3);
+        if (!hour12 && text.indexOf("24:") === 0) text = "00:" + text.slice(3);
         clock.textContent = text;
         return;
       }
+      var hours = now.getHours();
+      var suffix = "";
+      if (hour12) {
+        suffix = hours >= 12 ? " PM" : " AM";
+        hours = hours % 12;
+        if (hours === 0) hours = 12;
+      }
       clock.textContent =
-        String(now.getHours()).padStart(2, "0") + ":" +
+        (hour12 ? String(hours) : String(hours).padStart(2, "0")) + ":" +
         String(now.getMinutes()).padStart(2, "0") + ":" +
-        String(now.getSeconds()).padStart(2, "0");
+        String(now.getSeconds()).padStart(2, "0") + suffix;
     }
 
     tick();

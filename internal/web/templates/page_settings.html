@@ -55,6 +55,107 @@
       </label>
     </fieldset>
 
+    {{/* ------------------------------------------------------ presentation */}}
+    <fieldset>
+      <legend>{{.T "settings.presentation"}}</legend>
+
+      {{/* Where the navigation sits. Instance-wide rather than per user because
+           it changes the shape of every screenshot in the guide and every
+           instruction somebody gives a colleague over their shoulder. */}}
+      <label>
+        {{.T "settings.navposition"}}
+        {{$nav := .Settings.NavPosition}}
+        <select name="nav_position">
+          {{range navPositions}}
+            <option value="{{.}}" {{if eq (printf "%s" .) $nav}}selected{{end}}>
+              {{$.T .MessageKey}}
+            </option>
+          {{end}}
+        </select>
+      </label>
+
+      <label>
+        {{.T "settings.clockformat"}}
+        {{$clock := .Settings.ClockFormat}}
+        <select name="clock_format">
+          {{range clockFormats}}
+            <option value="{{.}}" {{if eq (printf "%s" .) $clock}}selected{{end}}>
+              {{$.T .MessageKey}}
+            </option>
+          {{end}}
+        </select>
+      </label>
+
+      <label>
+        {{.T "settings.dateformat"}}
+        {{$date := .Settings.DateFormat}}
+        <select name="date_format">
+          {{range dateFormats}}
+            <option value="{{.}}" {{if eq (printf "%s" .) $date}}selected{{end}}>
+              {{$.T .MessageKey}}
+            </option>
+          {{end}}
+        </select>
+      </label>
+      <p class="field-help">{{.T "settings.formats.help"}}</p>
+    </fieldset>
+
+    {{/* --------------------------------------------------------- day pane */}}
+    <fieldset>
+      <legend>{{.T "settings.daypane"}}</legend>
+      <p class="field-help">{{.T "settings.daypane.help"}}</p>
+
+      <label>
+        {{.T "settings.daystart"}}
+        <input type="number" name="day_start_hour" min="0" max="24"
+               value="{{.Settings.DayStartHour}}">
+      </label>
+
+      <label>
+        {{.T "settings.dayend"}}
+        <input type="number" name="day_end_hour" min="0" max="24"
+               value="{{.Settings.DayEndHour}}">
+      </label>
+
+      {{/* What to do with time outside that window. Radio buttons rather than a
+           select: there are two of them, they need explaining, and a choice
+           whose consequences differ this much should have both answers visible
+           at once rather than one hidden behind a click. */}}
+      <fieldset class="radio-group">
+        <legend>{{.T "settings.dayoverflow"}}</legend>
+        {{$overflow := .Settings.DayOverflow}}
+        {{range dayOverflows}}
+          <label class="inline-check">
+            <input type="radio" name="day_overflow" value="{{.}}"
+                   {{if eq (printf "%s" .) $overflow}}checked{{end}}>
+            {{$.T .MessageKey}}
+            <span class="field-help">{{$.T (printf "%s.help" .MessageKey)}}</span>
+          </label>
+        {{end}}
+      </fieldset>
+    </fieldset>
+
+    {{/* ---------------------------------------------------------- backups */}}
+    <fieldset>
+      <legend>{{.T "settings.backup"}}</legend>
+      <p class="field-help">{{.T "settings.backuppassword.help"}}</p>
+
+      {{/* Never rendered back, so an empty field means "leave it alone". The
+           checkbox is the only way to remove it, because without one there
+           would be no way to turn encryption off again. */}}
+      <label>
+        {{.T "settings.backuppassword"}}
+        <input type="password" name="backup_password" autocomplete="new-password"
+               placeholder="{{if .BackupEncrypted}}{{.T "settings.backuppassword.set"}}{{else}}{{.T "settings.backuppassword.unset"}}{{end}}">
+      </label>
+      {{if .BackupEncrypted}}
+        <label class="inline-check">
+          <input type="checkbox" name="clear_backup_password" value="1">
+          {{.T "settings.backuppassword.clear"}}
+        </label>
+      {{end}}
+    </fieldset>
+
     <fieldset>
       <legend>{{.T "week.title" ""}}</legend>
 

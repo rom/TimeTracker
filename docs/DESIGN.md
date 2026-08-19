@@ -119,6 +119,14 @@ see §4a.
 * Pasting into the note field accepts plain text; pasting an **image** (screenshot,
   photographed receipt) creates an attachment inline without leaving the page.
 * Files can be dropped onto an entry or expense.
+* Attachments are **previewed in place** — PNG, JPEG, GIF, WEBP, BMP, SVG, TIFF,
+  PDF, and the text of a Word document
+  ([ADR-0031](adr/0031-attachment-previews.md)). The question being asked of a
+  receipt is almost always "is this the right one", and downloading it is a poor
+  way to answer that. TIFF is transcoded to PNG because no browser but Safari
+  renders one and office scanners still produce them; a DOCX yields its text, and
+  is labelled an extract rather than a preview, because its layout and tables are
+  not shown. Everything else is stored and downloadable.
 * A copied entry can be pasted to duplicate it onto another day; a row of durations
   copied from a spreadsheet pastes into the week grid.
 * "Duplicate yesterday" and per-user **favourite assignments** cover the repetitive
@@ -240,10 +248,10 @@ to the company. Receipts attach directly.
 
 | Screen | Purpose |
 |---|---|
-| **Today** | the default. Running timers, today's entries as a timeline, quick add, running totals (summed and elapsed), unaccounted-time gaps. |
+| **Today** | the default. Running timers, today's entries as a timeline over configurable hours, quick add, running totals (summed and elapsed), unaccounted-time gaps. |
 | **Week** | grid of assignments × days, weekly totals per assignment and per day, and the week's approval state with the submit or withdraw control. |
 | **Correct entry** | one entry, opened from any row: assignment, day, start, duration, note, billable. See §3. |
-| **Entries** | filterable list across any range: customer, project, assignment, tag, person, billable, status. The basis of every export. |
+| **Entries** | filterable list across any range: customer, project, assignment, kind, tag, person, billable, status, free text, and time recorded on a day a project also had an expense. Every row carries its date and weekday. The basis of every export. |
 | **Inbox** | proxy proposals awaiting your decision. |
 | **Approvals** | weeks awaiting your decision, weeks you have approved (with the way to reopen one), and your own submitted weeks. Server mode only. |
 | **Approval status** | a grid of people against weeks. Answers the question the queue cannot — who has *not* submitted — because an absent submission is an absent row. Weeks nobody worked stay blank so the outstanding cells are not buried. |
@@ -263,6 +271,17 @@ post to the same endpoint as the plain time-and-length form each block carries,
 so the whole view works with no JavaScript. Positions are CSS grid classes
 rather than inline styles, because the content security policy forbids those and
 weakening it for geometry would weaken it for everything.
+
+**Which hours the pane shows** is configurable, and so is what happens to time
+recorded outside them. Both answers are defensible and neither is right for
+everyone, which is exactly why it is a setting: *expand* grows the pane until
+everything fits, which suits somebody who works late once a month; *arrows*
+keeps the window fixed and reports what fell outside it above and below the
+pane, so that an hour is always the same height for somebody whose evenings are
+routinely busy. The report is a count and a total — "1 later, 2h 00m from 7pm" —
+because a bare arrow is not enough to decide whether to go and look. With a fixed
+window a day can be full and have nothing inside it, and the pane says so rather
+than claiming nothing was recorded.
 
 **Colour is the whole line, not a dot.** A row is scanned rather than read - the
 eye is looking for "the Acme rows" among forty - and a dot at the start of each
@@ -288,10 +307,47 @@ rather than alarming.
 * Colour is never the only carrier of meaning — status has a label or icon as well
   as a hue, which also matters for the colour-blind reader.
 
+## 7a. Identity
+
+The logotype is a clock mark and the name in two colours: **Time** in red,
+**Tracker** in blue. The two halves are separate catalogue entries rather than a
+substring taken at a fixed offset — a name is not obliged to split at the fourth
+character in every language, and slicing a translated string by index is how one
+ends up with half a grapheme. There is no whitespace between them in the markup,
+so it is one word to a reader and one word to a screen reader.
+
+Neither colour has a value of its own. `--brand-time` and `--brand-tracker` are
+aliases for the entity palette's red and blue, so each theme's own pair carries
+the brand: the terminal theme gets its phosphor colours, the high-contrast theme
+its heavy ones, and there is no second set of sixteen values to keep in step.
+Both are held to WCAG AA against the header's surface **in every theme** by the
+same test that covers body text; the narrowest is autumn at 4.67:1.
+
+**Icons** are generated, not exported. `internal/web/icongen` draws the mark at
+every size from the geometry in `favicon.svg`'s viewBox, so changing the mark
+means changing one shape and running `go generate ./internal/web/...` rather than
+re-exporting eight files by hand — the same reasoning that puts PDF generation in
+Go ([ADR-0007](adr/0007-pure-go-document-generation.md)): the build must not
+depend on tooling nobody has. Coverage is computed by supersampling a distance
+function, which for a ring and two round-capped segments is less code than a path
+rasteriser and needs no dependency.
+
+The set covers the three things that ask for different files:
+
+* **tabs** — an SVG first, with 16, 32 and 48 pixel PNGs and a multi-size `.ico`
+  behind it for what cannot read one.
+* **iOS home screens** — a 180-pixel `apple-touch-icon`, opaque, because iOS
+  composites onto black and a transparent icon arrives looking like a hole.
+* **Android and desktop installs** — 192 and 512 in the manifest, plus *maskable*
+  variants whose mark sits inside the middle 80%, since an adaptive icon is
+  cropped to whatever silhouette the platform prefers.
+
+Each of those rules is a test rather than a note, because every one of them is
+invisible until somebody installs the application.
+
 ## 8. Themes
 
-Seven themes — light, dark, gold, sand, spring, autumn, high contrast — implemented
-purely as redefinitions of one semantic token set
+Eight themes, implemented purely as redefinitions of one semantic token set
 ([ADR-0011](adr/0011-theming-via-css-custom-properties.md)).
 
 | Theme | Character |
@@ -302,15 +358,48 @@ purely as redefinitions of one semantic token set
 | sand | warm off-white paper tones, muted terracotta accent |
 | spring | fresh greens, light and high-key |
 | autumn | ochre, rust and deep brown |
+| terminal | green phosphor on near-black, monospace, square corners |
 | high contrast | near-black on near-white, heavy borders, WCAG AA verified by test |
+
+**terminal** is the one theme that changes the typeface as well as the colours,
+and deliberately: green-on-black in a proportional face is a dark theme with an
+unusual accent, not a terminal. It squares the corners, drops the shadow, adds a
+faint phosphor glow and static scan lines, and puts a blinking block cursor on
+the running-timer clock — the one genuinely live thing on the screen, which is
+where a terminal would have put it. The glow and scan lines are removed under
+`prefers-contrast: more` and `prefers-reduced-transparency`, and the cursor stops
+blinking under `prefers-reduced-motion`: all three cost legibility, and none is
+what somebody who set those preferences is asking for.
 
 The choice persists per user, defaults to `prefers-color-scheme`, and is applied
 before first paint so there is no flash of the wrong theme.
 
+**Where the navigation sits** is an instance setting rather than a personal one:
+it changes the shape of every screenshot in the guide and of every instruction
+somebody gives a colleague over their shoulder. Like the theme it is one
+attribute on `<html>` and no markup change — the same elements in the same source
+order, laid out differently — so the reading order a screen reader follows and
+the tab order a keyboard follows are identical either way. Below 900px the rail
+becomes the top bar again, because there is no room for it.
+
+**Clock and date formats** are instance settings too, defaulting to whatever the
+interface language uses. Both supported languages write dates as `2026-08-19`,
+which is the one order that cannot be misread: `03/04` means different days on
+either side of the Atlantic. An administrator can still override it, because
+"unambiguous" is not the same as "what the accounting department will accept",
+and being told the tool is right is no help to somebody retyping every date by
+hand.
+
 **Entity colours** (assignments, projects) are chosen from a palette by *key*, and
 each theme maps keys to values that work on its own background — "Acme is blue"
-stays legible in all seven. Icons are a curated inline-SVG set drawn in
-`currentColor`, plus optional emoji.
+stays legible in all eight. The terminal theme keeps the full palette rather than
+going monochrome: a phosphor tube could not have shown seven colours, but a
+timesheet that cannot tell one customer from another is a worse anachronism than
+a colour CRT. Icons are a curated inline-SVG set drawn in `currentColor`, plus
+optional emoji.
+
+**Every theme is held to WCAG AA on text by test**, not only the one named for
+contrast — see TEST.md §3. Two themes were below it until that test was written.
 
 ## 9. Semi-automatic assistance
 
@@ -336,20 +425,53 @@ rather than a new mechanism.
 
 ## 10. Exports
 
-Every report renders from one in-memory value into four formats, so they cannot
+Every report renders from one in-memory value into five formats, so they cannot
 disagree ([ADR-0007](adr/0007-pure-go-document-generation.md)):
 
 * **PDF** — client-presentable: title block, period, grouped entries with repeating
   table headers, totals, page numbers.
-* **CSV** — one row per entry, UTF-8 with BOM for Excel, raw and billable durations,
-  rate, amount, currency.
 * **DOCX** — the same content as an editable document for firms that put timesheets
   into their own letterhead.
+* **Markdown** — for the case none of the others cover: pasting a week into a
+  ticket, a wiki, a pull request or an email. Its tables are padded so the output
+  is legible as source too, because half the places it gets pasted will never
+  render it.
+* **CSV** — one row per entry, UTF-8 with BOM for Excel, raw and billable durations,
+  rate, amount, currency.
 * **JSON** — documented, versioned schema for feeding an invoicing system.
+
+The list is one slice in the export package. The Entries screen ranges over it
+and the router validates against it, so a format cannot be offered that cannot be
+produced — which is what went wrong before: PDF and DOCX were written and tested
+in layer 5 and the screen went on saying they arrived later.
+
+Every download carries the whole filter the screen was showing, including the
+search query. An export that quietly covers more than what was on screen is a
+wrong invoice.
 
 Exports respect authorisation: a `client` user's export contains only their
 customer's confirmed entries, with internal notes and cost data removed before the
 data leaves the service layer.
+
+## 10a. Backups
+
+A backup is a **zip archive**: the JSON document, a readme, and every attachment
+in its original bytes, named by content hash
+([ADR-0030](adr/0030-encrypted-backup-archives.md)). A backup with a timesheet
+and no receipts is not a backup — the evidence behind a billed expense has to
+travel with it.
+
+Setting a backup password in Settings encrypts every entry with **AES-256 in the
+WinZip AE-2 scheme**, which 7-Zip, WinZip, Keka and most desktop archive managers
+already read. That interoperability is the point: an archive only this binary can
+open is not a backup. The password defends an archive that has left the machine,
+not the database it came from — anybody who can read the stored password already
+has every row it was made from.
+
+Restore accepts an encrypted zip, a plain zip, or a bare JSON document from
+before archives existed, sniffed from the first bytes rather than the file name.
+It still merges: a record already present is skipped, so restoring twice is
+harmless.
 
 ## 11. Deliberate non-goals
 

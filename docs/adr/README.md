@@ -55,6 +55,8 @@ Statuses: `proposed` → `accepted` → `superseded by ADR-NNNN` | `deprecated`.
 | [0027](0027-routines-are-offered-not-fired.md) | Recurring entries are offered, never created on a schedule | accepted | 2026-08-18 | ASR-023 |
 | [0028](0028-calendar-import-is-a-conversation.md) | A calendar is not a timesheet, so importing one is a conversation | accepted | 2026-08-18 | ASR-024 |
 | [0029](0029-searching-with-trigram-and-regexp.md) | Trigram full text, with a scan fallback and optional regexp | accepted | 2026-08-18 | ASR-025 |
+| [0030](0030-encrypted-backup-archives.md) | A backup is a zip archive, optionally AES-encrypted with a stored password | accepted | 2026-08-19 | ASR-013, ASR-019 |
+| [0031](0031-attachment-previews.md) | Attachments are previewed inline, and SVG is made safe rather than refused | accepted | 2026-08-19 | ASR-013 |
 
 ## Writing a new one
 

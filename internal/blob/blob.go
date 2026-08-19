@@ -10,6 +10,7 @@
 package blob
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -133,6 +134,9 @@ func (s *Store) PutNamed(r io.Reader, filename string) (hash string, size int64,
 	// a renamed executable would otherwise be served back with whatever type its
 	// uploader asserted.
 	mime = http.DetectContentType(head)
+	if extra := sniffBeyondStandardLibrary(head); extra != "" {
+		mime = extra
+	}
 	if !Acceptable(mime) {
 		return "", 0, "", fmt.Errorf("%w: %s", ErrUnacceptableType, mime)
 	}
@@ -283,12 +287,14 @@ var acceptedTypes = map[string]bool{
 	"image/webp":                true,
 	"image/bmp":                 true,
 	"image/tiff":                true,
+	"image/svg+xml":             true,
 	"application/pdf":           true,
 	"text/plain; charset=utf-8": true,
 	"text/csv; charset=utf-8":   true,
 	"application/zip":           true, // covers .docx, .xlsx and .odt
-	"application/msword":        true,
-	"application/vnd.ms-excel":  true,
+	// A pre-2007 Word or Excel file. One type for both, because the container
+	// is identical and this is a store rather than a parser.
+	"application/x-ole-storage": true,
 	"application/octet-stream":  false, // explicitly refused: unknown is not accepted
 }
 
@@ -306,6 +312,7 @@ var extensionTypes = map[string][]string{
 	".bmp":  {"image/bmp"},
 	".tif":  {"image/tiff"},
 	".tiff": {"image/tiff"},
+	".svg":  {"image/svg+xml"},
 	".pdf":  {"application/pdf"},
 	// The OOXML and ODF formats are all zip containers, which is what the
 	// sniffer sees.
@@ -315,6 +322,8 @@ var extensionTypes = map[string][]string{
 	".odt":  {"application/zip"},
 	".ods":  {"application/zip"},
 	".zip":  {"application/zip"},
+	".doc":  {"application/x-ole-storage"},
+	".xls":  {"application/x-ole-storage"},
 	".txt":  {"text/plain"},
 	".csv":  {"text/plain", "text/csv"},
 	".md":   {"text/plain"},
@@ -366,3 +375,89 @@ const staleUploadAge = 6 * time.Hour
 
 // timeSince is time.Since, named so the sweep reads clearly.
 func timeSince(t time.Time) time.Duration { return time.Since(t) }
+
+// sniffBeyondStandardLibrary detects the types http.DetectContentType misses.
+//
+// Its table is the WHATWG sniffing list, which is aimed at what a browser will
+// render and therefore does not cover several formats an office produces. Three
+// of them are on the accepted list here, and every one was consequently
+// unreachable: a file of that type sniffed as application/octet-stream, which
+// the list explicitly refuses. The accepted list said one thing and the code
+// did another.
+//
+// Returning "" means the standard library's answer stands.
+func sniffBeyondStandardLibrary(head []byte) string {
+	switch {
+	case isSVG(head):
+		// No rule for SVG at all; it comes back as text/xml or text/plain
+		// depending on whether there is a declaration. Either would store the
+		// file under a type that says nothing about what it is, and the
+		// difference matters: an SVG is the one image format that can carry
+		// script, so everything downstream needs to know when it has one.
+		return "image/svg+xml"
+
+	case bytes.HasPrefix(head, []byte("II\x2a\x00")),
+		bytes.HasPrefix(head, []byte("MM\x00\x2a")):
+		// Classic TIFF, little- and big-endian. BigTIFF - "II+\x00" and
+		// "MM\x00+" - is deliberately not matched: nothing here can decode one,
+		// and accepting it would produce a stored file whose preview always
+		// fails.
+		return "image/tiff"
+
+	case bytes.HasPrefix(head, []byte("\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")):
+		// An OLE compound file: a pre-2007 .doc or .xls. The container is the
+		// same for both and the distinguishing stream is buried in its internal
+		// directory, so the extension decides which of the two it is claimed to
+		// be. That is weaker than the rest of this - which is why neither type
+		// is previewed, only stored and handed back on download.
+		return "application/x-ole-storage"
+	}
+	return ""
+}
+
+// isSVG reports whether the leading bytes are an SVG document.
+//
+// Go's content sniffer has no rule for SVG, so this is the rule. It is
+// deliberately narrow: the root element has to actually be <svg, optionally
+// after an XML declaration, a doctype, comments or processing instructions.
+// Anything looser would let a file that merely mentions "<svg" somewhere be
+// stored as an image.
+func isSVG(head []byte) bool {
+	rest := bytes.TrimLeft(head, " \t\r\n")
+	for {
+		switch {
+		case bytes.HasPrefix(rest, []byte("<?")):
+			rest = skipPast(rest, "?>")
+		case bytes.HasPrefix(rest, []byte("<!--")):
+			rest = skipPast(rest, "-->")
+		case bytes.HasPrefix(rest, []byte("<!")):
+			rest = skipPast(rest, ">")
+		default:
+			// The next character after "<svg" must end the name, or this is
+			// some other element whose name merely begins the same way.
+			if !bytes.HasPrefix(rest, []byte("<svg")) {
+				return false
+			}
+			if len(rest) == 4 {
+				return false
+			}
+			next := rest[4]
+			return next == ' ' || next == '\t' || next == '\r' || next == '\n' ||
+				next == '>' || next == '/'
+		}
+		if rest == nil {
+			return false
+		}
+		rest = bytes.TrimLeft(rest, " \t\r\n")
+	}
+}
+
+// skipPast returns what follows the first occurrence of a delimiter, or nil if
+// it does not appear within the bytes examined.
+func skipPast(data []byte, delimiter string) []byte {
+	index := bytes.Index(data, []byte(delimiter))
+	if index < 0 {
+		return nil
+	}
+	return data[index+len(delimiter):]
+}

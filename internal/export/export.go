@@ -12,6 +12,10 @@
 package export
 
 import (
+	"errors"
+	"fmt"
+	"io"
+	"strings"
 	"time"
 
 	"github.com/rom/timetracker/internal/domain"
@@ -23,9 +27,81 @@ type Format string
 const (
 	FormatCSV  Format = "csv"
 	FormatJSON Format = "json"
-	FormatPDF  Format = "pdf"  // planned: layer 5
-	FormatDOCX Format = "docx" // planned: layer 5
+	FormatPDF  Format = "pdf"
+	FormatDOCX Format = "docx"
+	FormatMD   Format = "md"
 )
+
+// Formats lists every encoding, in the order they are offered.
+//
+// The order is by what somebody reaches for: the two a client receives, then
+// the one that goes into a ticket or an email, then the two a machine consumes.
+// It is a single list so that adding a format cannot leave the interface
+// offering four of them and the router accepting five.
+var Formats = []Format{FormatPDF, FormatDOCX, FormatMD, FormatCSV, FormatJSON}
+
+// ContentType returns the MIME type a format is served as.
+func (f Format) ContentType() string {
+	switch f {
+	case FormatCSV:
+		return "text/csv; charset=utf-8"
+	case FormatJSON:
+		return "application/json; charset=utf-8"
+	case FormatPDF:
+		return "application/pdf"
+	case FormatDOCX:
+		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	case FormatMD:
+		return "text/markdown; charset=utf-8"
+	default:
+		return "application/octet-stream"
+	}
+}
+
+// Write renders a report in this format.
+//
+// Dispatching here rather than in the HTTP handler is what keeps the two lists
+// in step: a format in Formats with no case below fails its own test rather
+// than reaching a user as an empty download.
+func (f Format) Write(w io.Writer, report Report) error {
+	switch f {
+	case FormatCSV:
+		return WriteCSV(w, report)
+	case FormatJSON:
+		return WriteJSON(w, report)
+	case FormatPDF:
+		return WritePDF(w, report)
+	case FormatDOCX:
+		return WriteDOCX(w, report)
+	case FormatMD:
+		return WriteMarkdown(w, report)
+	default:
+		return fmt.Errorf("%w: %q", ErrUnknownFormat, f)
+	}
+}
+
+// ErrUnknownFormat is returned for an encoding this package does not produce.
+var ErrUnknownFormat = errors.New("unknown export format")
+
+// Known reports whether this is a format the package can write.
+func (f Format) Known() bool {
+	for _, known := range Formats {
+		if f == known {
+			return true
+		}
+	}
+	return false
+}
+
+// Label is the name shown on a download button.
+func (f Format) Label() string {
+	switch f {
+	case FormatMD:
+		return "Markdown"
+	default:
+		return strings.ToUpper(string(f))
+	}
+}
 
 // Report is the single in-memory representation every writer renders.
 type Report struct {

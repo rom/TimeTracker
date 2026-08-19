@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/rom/timetracker/internal/auth"
+	"github.com/rom/timetracker/internal/export"
 	"github.com/rom/timetracker/internal/service"
 )
 
@@ -449,5 +450,89 @@ func TestRegressionExpensesScreenRendersWithRows(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "Taxi") {
 		t.Error("the expenses screen rendered but shows no expense")
+	}
+}
+
+// PDF and DOCX were absent from the Entries screen for a whole layer.
+//
+// The writers were finished and tested in layer 5. The template listed CSV and
+// JSON, under a hint that said the other two arrived later - so the feature was
+// complete, tested, routed, and invisible. The lesson is the test: an export
+// format is not shipped until a user can click it.
+func TestRegressionEveryExportFormatIsOfferedAndWorks(t *testing.T) {
+	srv, _ := newTestServer(t)
+	post(t, srv, "/customers", url.Values{"name": {"Acme"}, "currency": {"SEK"}})
+	post(t, srv, "/projects", url.Values{"customer_id": {"1"}, "name": {"P"}, "billable": {"on"}})
+	post(t, srv, "/assignments", url.Values{"project_id": {"1"}, "name": {"A"}, "billable": {"on"}})
+	post(t, srv, "/entries", url.Values{
+		"assignment_id": {"1"}, "duration": {"1h"}, "billable": {"on"}})
+
+	body := get(t, srv, "/entries").Body.String()
+	for _, format := range export.Formats {
+		if !strings.Contains(body, "/export/"+string(format)) {
+			t.Errorf("the Entries screen does not offer %s", format)
+		}
+		rec := get(t, srv, "/export/"+string(format)+"?from=2020-01-01&to=2030-01-01")
+		if rec.Code != http.StatusOK {
+			t.Errorf("GET /export/%s = %d, want 200", format, rec.Code)
+			continue
+		}
+		if rec.Body.Len() == 0 {
+			t.Errorf("/export/%s returned an empty file", format)
+		}
+	}
+}
+
+// A downloaded export could cover more than the screen it was taken from.
+//
+// The links were assembled by hand once per format. They carried the date range
+// and the customer, and silently dropped the tags, the kind and the search
+// query - so a filtered screen produced an unfiltered invoice. They are built
+// once now, from the struct the screen was rendered with.
+func TestRegressionExportLinksCarryTheWholeFilter(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	body := get(t, srv, "/entries?from=2026-01-01&to=2026-12-31&customer=1&project=2"+
+		"&assignment=3&kind=overtime&tags=incident&q=deploy&regexp=1&billable=1&expenses=1").Body.String()
+
+	// Template escaping turns & into &amp; in an href, so the check is on each
+	// parameter rather than on the assembled string.
+	for _, want := range []string{
+		"from=2026-01-01", "to=2026-12-31", "customer=1", "project=2", "assignment=3",
+		"kind=overtime", "tags=incident", "q=deploy", "regexp=1", "billable=1", "expenses=1",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the export links do not carry %q", want)
+		}
+	}
+}
+
+// The day pane could claim a full day was empty.
+//
+// With the hours fixed and every entry outside them, the pane rendered its
+// "nothing recorded yet" message - which is the kind of small lie that makes
+// somebody re-enter work they had already done.
+func TestRegressionDayPaneDoesNotCallAFullDayEmpty(t *testing.T) {
+	srv, _ := newTestServer(t)
+	post(t, srv, "/customers", url.Values{"name": {"Acme"}, "currency": {"SEK"}})
+	post(t, srv, "/projects", url.Values{"customer_id": {"1"}, "name": {"P"}, "billable": {"on"}})
+	post(t, srv, "/assignments", url.Values{"project_id": {"1"}, "name": {"A"}, "billable": {"on"}})
+
+	// A fixed window of 09:00-17:00, and an entry at 21:00.
+	post(t, srv, "/settings", url.Values{
+		"default_currency": {"SEK"}, "default_rounding": {"none"}, "default_rate": {"0"},
+		"week_start": {"1"}, "max_timer_hours": {"12"},
+		"day_start_hour": {"9"}, "day_end_hour": {"17"}, "day_overflow": {"arrows"},
+	})
+	post(t, srv, "/entries", url.Values{
+		"assignment_id": {"1"}, "date": {"2026-08-19"}, "start": {"21:00"},
+		"duration": {"2h"}, "billable": {"on"}})
+
+	body := get(t, srv, "/today?date=2026-08-19").Body.String()
+	if strings.Contains(body, "Nothing recorded yet") {
+		t.Error("the pane called a day empty when two hours were recorded outside its window")
+	}
+	if !strings.Contains(body, "timeline-outside") {
+		t.Error("time outside the window must be reported, not silently dropped")
 	}
 }

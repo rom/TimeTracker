@@ -1,7 +1,6 @@
 package service
 
 import (
-	"fmt"
 	"sort"
 	"time"
 
@@ -43,10 +42,29 @@ type TimelineBlock struct {
 
 // TimelineHour is one labelled rule.
 type TimelineHour struct {
-	Label string
+	// Hour is the hour of the day this rule marks, 0-23. The label is left to
+	// the interface, because whether it reads "14:00" or "2pm" is an
+	// administrator's choice and this package does not know about printers.
+	Hour int
 	// Slot is the quarter-hour row the label sits on.
 	Slot int
 }
+
+// TimelineOutside counts entries that fall beyond the visible window, for the
+// arrows that say so.
+//
+// Both a count and a total: "3 entries, 2h 30m" answers "is it worth looking?"
+// where a bare arrow only says "something is there".
+type TimelineOutside struct {
+	Count   int
+	Seconds int64
+	// FirstHour is the hour the nearest one starts at, so the arrow can link
+	// straight to it rather than making somebody hunt.
+	FirstHour int
+}
+
+// Any reports whether there is anything out there at all.
+func (o TimelineOutside) Any() bool { return o.Count > 0 }
 
 // slotMinutes is the granularity of the timeline grid.
 //
@@ -56,14 +74,23 @@ const slotMinutes = 15
 
 // buildTimeline places a day's entries on the grid.
 //
-// The visible range is the working day widened to cover whatever is actually
-// recorded: somebody who worked until midnight sees it, and somebody with a
-// normal day does not get sixteen empty hours of scrolling.
-func buildTimeline(view *DayView, now time.Time) {
+// The visible range starts from the window an administrator configured. What
+// happens to time recorded outside it is their choice too, and both answers are
+// defensible:
+//
+//   - expand, the original behaviour, grows the pane until everything fits.
+//     Right for somebody who works late once a month.
+//   - arrows keeps the window fixed and reports what fell outside it. Right for
+//     somebody whose evenings are routinely busy, whose ordinary working day
+//     would otherwise be squeezed into the top third of the pane every day.
+//
+// Neither is correct for everyone, which is exactly why it is a setting rather
+// than a decision made here.
+func buildTimeline(view *DayView, window domain.DayWindow, overflow domain.DayOverflow, now time.Time) {
 	loc := view.Location
-	startHour, endHour := 8, 18
+	startHour, endHour := window.StartHour, window.EndHour
 
-	if len(view.Entries) > 0 {
+	if len(view.Entries) > 0 && overflow.OrDefault() == domain.DayOverflowExpand {
 		first := view.Entries[0].StartedAt.In(loc)
 		last := first
 		for _, entry := range view.Entries {
@@ -113,8 +140,8 @@ func buildTimeline(view *DayView, now time.Time) {
 	view.Hours = nil
 	for hour := startHour; hour < endHour; hour++ {
 		view.Hours = append(view.Hours, TimelineHour{
-			Label: fmt.Sprintf("%02d:00", hour%24),
-			Slot:  (hour-startHour)*(60/slotMinutes) + 1,
+			Hour: hour % 24,
+			Slot: (hour-startHour)*(60/slotMinutes) + 1,
 		})
 	}
 	if len(view.Entries) == 0 {
@@ -157,14 +184,41 @@ func buildTimeline(view *DayView, now time.Time) {
 		if span < 1 {
 			span = 1
 		}
+		// Outside the window. With arrows chosen the block is not drawn at all
+		// and is counted instead; the alternative - a sliver clamped to the top
+		// edge - claims a start time the entry does not have, which is worse
+		// than an honest "there is more up there".
+		if slot+span <= 0 || slot >= view.Slots {
+			outside := &view.Later
+			if slot < 0 {
+				outside = &view.Earlier
+			}
+			outside.Count++
+			outside.Seconds += seconds
+			if hour := start.Hour(); outside.Count == 1 || hour < outside.FirstHour {
+				outside.FirstHour = hour
+			}
+			continue
+		}
 		if slot < 0 {
+			// Straddling the top edge: the visible part is drawn, and the hour
+			// it really began is still reported, because a block that appears
+			// to start at eight when it started at six is a lie the pane would
+			// be telling every morning.
+			view.Earlier.Count++
+			view.Earlier.Seconds += int64(-slot) * int64(slotMinutes) * 60
+			if hour := start.Hour(); view.Earlier.Count == 1 || hour < view.Earlier.FirstHour {
+				view.Earlier.FirstHour = hour
+			}
 			span += slot
 			slot = 0
 		}
-		if slot >= view.Slots {
-			continue
-		}
 		if slot+span > view.Slots {
+			view.Later.Count++
+			view.Later.Seconds += int64(slot+span-view.Slots) * int64(slotMinutes) * 60
+			// The overflow begins where the window ends, by definition; there is
+			// nothing nearer to point at.
+			view.Later.FirstHour = endHour % 24
 			span = view.Slots - slot
 		}
 		if span < 1 {

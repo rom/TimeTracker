@@ -6,11 +6,23 @@
   </header>
 
   <p class="hint">{{.T "backup.intro"}}</p>
+  {{/* Whether archives are encrypted is decided in Settings, but it belongs on
+       screen here too: this is where somebody downloads one and has to decide
+       where it is safe to put it. */}}
+  <p class="hint">
+    {{if .BackupEncrypted}}
+      {{.T "backup.encrypted"}}
+    {{else}}
+      {{.T "backup.notencrypted"}}
+      <a href="/settings">{{.T "settings.title"}}</a>
+    {{end}}
+  </p>
 
   {{with .RestoreResult}}
     <div class="banner" role="status">
       {{$.T "backup.restored" .Total}}
-      {{if gt .Skipped 0}} ({{.Skipped}} already present){{end}}
+      {{if gt .Attachments 0}} {{$.T "backup.restored.attachments" .Attachments}}{{end}}
+      {{if gt .Skipped 0}} {{$.T "backup.restored.skipped" .Skipped}}{{end}}
       {{range .Problems}}<div class="entry-note">{{.}}</div>{{end}}
     </div>
   {{end}}
@@ -52,7 +64,7 @@
 
   <form class="entry-form" method="post" action="/backup/restore" enctype="multipart/form-data">
     {{template "csrf" $.CSRFToken}}
-    <input type="file" name="file" accept=".json,application/json" required
+    <input type="file" name="file" accept=".zip,.json,application/zip,application/json" required
            aria-label="{{.T "backup.restore.file"}}">
     <button type="submit" class="btn btn-primary">{{.T "action.restore"}}</button>
   </form>

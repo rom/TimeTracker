@@ -173,17 +173,20 @@ handlers.
 ---
 
 ### ASR-007
-**Exports to PDF, CSV, DOCX and JSON.**
+**Exports to PDF, DOCX, Markdown, CSV and JSON.**
 
 *Quality attribute:* Interoperability
 
-*Requirement:* Any report must be exportable in all four formats without external
-tooling.
+*Requirement:* Any report must be exportable in all five formats without external
+tooling, and each must be reachable from the screen it is generated from.
 
 *Fit criterion:* Each format is produced by pure Go code with no subprocess and no
 headless browser. Generated files open without warnings in Excel/LibreOffice Calc
 (CSV), Word/LibreOffice Writer (DOCX) and a standards-compliant PDF viewer. JSON
-validates against a documented schema.
+validates against a documented schema. Markdown renders as a table and remains
+aligned as plain source. The offered list and the writer dispatch come from one
+slice, and a test walks it: a format that can be clicked and not produced is the
+failure this criterion exists to catch, and it happened.
 
 *Rationale:* Invoicing and client reporting is the point of the exercise. Requiring
 LaTeX, wkhtmltopdf or headless Chrome would violate ASR-003.
@@ -227,7 +230,7 @@ WCAG 2.1 AA contrast ratios (4.5:1 for body text, 3:1 for large text and UI bord
 verified by the contrast test in TEST.md.
 
 *Rationale:* A theme system implemented with per-theme markup or per-theme
-stylesheets becomes unmaintainable at seven themes. Requiring a single token set
+stylesheets becomes unmaintainable at eight themes. Requiring a single token set
 constrains the CSS architecture from day one.
 
 *Addressed by:* [ADR-0011](adr/0011-theming-via-css-custom-properties.md)
@@ -245,7 +248,8 @@ be able to take a backup and restore it.
 *Fit criterion:* Migrations are versioned, forward-only, applied automatically in a
 transaction at startup, and recorded in a `schema_migrations` table. A binary refuses
 to start against a database newer than it understands. Backup produces a single
-consistent archive (database + attachments) that restores into a clean install.
+consistent archive - the data *and* the attachment bytes, in one zip, optionally
+AES-encrypted - that restores into a clean install, receipts included.
 
 *Rationale:* This is the user's timesheet: losing it means losing invoiceable money.
 
@@ -302,15 +306,19 @@ cheap enough to be the response to a button press.
 attach files and photos, and record billable and reimbursable expenses with receipts.
 
 *Fit criterion:* An image on the clipboard can be pasted into a time entry or expense
-and is stored as an attachment without leaving the page. Attachments are retrievable
-only by users authorised to see the owning record. Billable and reimbursable expenses
-are distinguishable in every report and export.
+and is stored as an attachment without leaving the page. Attachments are listed,
+previewable in place and removable from the record they belong to. They are
+retrievable only by users authorised to see the owning record; the preview route
+serves inline and is authorised identically, behind a response policy that forbids
+scripts and every subresource. Billable and reimbursable expenses are
+distinguishable in every report and export.
 
 *Rationale:* Binary data changes the storage story: the database is no longer the
 only durable store, so backup, authorisation and deduplication all have to account
 for a blob store.
 
-*Addressed by:* [ADR-0013](adr/0013-attachment-storage.md)
+*Addressed by:* [ADR-0013](adr/0013-attachment-storage.md),
+[ADR-0031](adr/0031-attachment-previews.md)
 
 ---
 

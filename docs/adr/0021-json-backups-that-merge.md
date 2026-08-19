@@ -4,6 +4,11 @@
 * **Date:** 2026-08-18
 * **Addresses:** ASR-010, ASR-018
 
+> **Amended by [ADR-0030](0030-encrypted-backup-archives.md).** The document is
+> still JSON and restoring still merges; it now travels inside a zip archive
+> alongside the attachments, optionally encrypted. Bare JSON files written
+> before that change are still accepted by restore.
+
 ## Context
 
 Someone reaching for a backup is already having a bad day. Whatever the restore

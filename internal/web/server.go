@@ -9,12 +9,14 @@
 package web
 
 import (
+	"bytes"
 	"embed"
 	"fmt"
 	"html/template"
 	"io"
 	"io/fs"
 	"log/slog"
+	"mime"
 	"net/http"
 	"strings"
 	"time"
@@ -22,6 +24,7 @@ import (
 	"github.com/rom/timetracker/internal/auth"
 	"github.com/rom/timetracker/internal/config"
 	"github.com/rom/timetracker/internal/domain"
+	"github.com/rom/timetracker/internal/export"
 	"github.com/rom/timetracker/internal/service"
 )
 
@@ -32,6 +35,11 @@ import (
 //go:embed templates/*.html
 var templateFS embed.FS
 
+// The icons under static/icons are drawn by internal/web/icongen, which reads
+// its geometry from favicon.svg's viewBox. Regenerate them after changing the
+// mark rather than exporting eight files by hand.
+//
+//go:generate go run ./icongen -dir ./static/icons
 //go:embed static
 var staticFS embed.FS
 
@@ -190,6 +198,42 @@ func isHTMX(r *http.Request) bool {
 	return r.Header.Get("HX-Request") == "true"
 }
 
+// init registers the media types Go's table does not carry.
+//
+// http.ServeContent picks a type from the file extension, and the standard
+// table has no entry for .webmanifest - so a manifest goes out as text/plain,
+// which Chrome accepts with a warning and stricter clients refuse outright.
+// Registering it once here covers both the /static/ file server and the
+// root-path alias, rather than setting a header in two places that could drift.
+func init() {
+	// The type is the one the W3C specifies for a web app manifest.
+	if err := mime.AddExtensionType(".webmanifest", "application/manifest+json"); err != nil {
+		// Only reachable with a malformed extension, which is a literal here.
+		panic("register the manifest media type: " + err.Error())
+	}
+}
+
+// staticAsset serves one embedded file at a fixed path.
+//
+// Used for the root-path icons a browser asks for without being told. The name
+// is a constant from the routing table and never comes from the request, so
+// there is nothing here to traverse with.
+func (s *Server) staticAsset(name string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, err := staticFS.ReadFile("static/" + name)
+		if err != nil {
+			// Only reachable if the routing table names a file the embed
+			// directive did not include, which is a build-time mistake. The
+			// test in server_test.go turns it into a failing build.
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(data))
+	})
+}
+
 // staticHandler serves the embedded CSS, JavaScript and icons.
 func (s *Server) staticHandler() http.Handler {
 	sub, err := fs.Sub(staticFS, "static")
@@ -228,15 +272,6 @@ func templateFuncs() template.FuncMap {
 				loc = time.UTC
 			}
 			return t.In(loc).Format("15:04")
-		},
-		// clockSeconds renders an instant as "09:30:15", for the header clock.
-		// Rendered on the server so the clock shows the right time before any
-		// script runs, and still shows it if none ever does.
-		"clockSeconds": func(t time.Time, loc *time.Location) string {
-			if loc == nil {
-				loc = time.UTC
-			}
-			return t.In(loc).Format("15:04:05")
 		},
 		"date":     func(t time.Time) string { return t.Format("2006-01-02") },
 		"dateLong": func(t time.Time) string { return t.Format("Monday 2 January 2006") },
@@ -301,8 +336,24 @@ func templateFuncs() template.FuncMap {
 		"reportStatuses": service.ApprovalStatuses,
 		// entryKinds are work, overtime and travel.
 		"entryKinds": domain.EntryKinds,
+		// exportFormats are every encoding the export package can write, so the
+		// buttons on the Entries screen cannot drift out of step with what the
+		// router accepts.
+		"exportFormats": func() []export.Format { return export.Formats },
+		// The presentation choices, from the same lists the validator accepts,
+		// so a form cannot offer an option that would be silently discarded.
+		"navPositions": service.NavPositions,
+		"clockFormats": service.ClockFormats,
+		"dateFormats":  service.DateFormats,
+		"dayOverflows": service.DayOverflows,
 		// humanBytes renders a file size the way a person reads one.
 		"humanBytes": humanBytes,
+		// previewKind says how an attachment can be shown, decided from its
+		// recorded type and name. It reads nothing, so a page listing twenty
+		// receipts does not open twenty files to lay itself out.
+		"previewKind": func(a domain.Attachment) string {
+			return string(service.Previewable(a))
+		},
 		// colours are the palette keys an entity may carry. Stored as keys
 		// rather than values so each theme maps them to something legible on
 		// its own background (docs/adr/0011-theming-via-css-custom-properties.md).

@@ -12,6 +12,19 @@ func (s *Server) routes() {
 	// Static assets.
 	mux.Handle("GET /static/", s.staticHandler())
 
+	// Root-path aliases. A browser requests /favicon.ico whether or not a page
+	// links to one, and several tools and scrapers probe /apple-touch-icon.png
+	// the same way. Serving them from the embedded set costs three lines and
+	// keeps a 404 off every log for something that is right there.
+	for path, asset := range map[string]string{
+		"GET /favicon.ico":                      "icons/favicon.ico",
+		"GET /apple-touch-icon.png":             "icons/apple-touch-icon.png",
+		"GET /apple-touch-icon-precomposed.png": "icons/apple-touch-icon.png",
+		"GET /site.webmanifest":                 "icons/site.webmanifest",
+	} {
+		mux.Handle(path, s.staticAsset(asset))
+	}
+
 	// Health, for a reverse proxy or a monitoring check.
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 
@@ -81,6 +94,9 @@ func (s *Server) routes() {
 	// URL-encoded bodies so both submission paths parse identically.
 	mux.HandleFunc("POST /attachments/{owner}/{id}", s.handleUpload)
 	mux.HandleFunc("GET /attachments/{id}", s.handleDownloadAttachment)
+	// The one route that serves stored bytes inline. Its response headers are
+	// what make that safe; see handlePreviewAttachment.
+	mux.HandleFunc("GET /attachments/{id}/preview", s.handlePreviewAttachment)
 	mux.HandleFunc("POST /attachments/{id}/delete", s.handleDeleteAttachment)
 
 	// The proxy inbox: time and costs awaiting the acting user's decision.

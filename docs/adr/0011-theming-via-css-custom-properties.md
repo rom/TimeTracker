@@ -6,8 +6,12 @@
 
 ## Context
 
-Seven themes are required: light, dark, gold, sand, spring, autumn and high
-contrast. Seven is the number at which the naive approaches collapse — per-theme
+Seven themes were required at the outset: light, dark, gold, sand, spring,
+autumn and high contrast. An eighth (terminal) was added later, which is itself
+part of the argument: the decision below is what made adding one a matter of
+listing thirteen colours rather than touching every component.
+
+Seven is the number at which the naive approaches collapse — per-theme
 stylesheets means seven files to keep in sync every time a component changes, and
 conditional classes in templates means every component knows about every theme.
 
@@ -31,7 +35,7 @@ Rules:
 * Components reference **semantic** tokens (`--surface-raised`, `--text-muted`,
   `--accent`), never literal colours and never palette-named tokens like
   `--gold-400`. A component that says `color: var(--text-muted)` is automatically
-  correct in all seven themes.
+  correct in all eight themes.
 * Switching theme sets `data-theme` on `<html>` and changes nothing else — no class
   churn, no re-render, no second stylesheet request.
 * Preference is stored per user (server mode) or in local storage (local mode), and
@@ -54,6 +58,13 @@ Rules:
 **Positive**
 
 * Adding an eighth theme is one block of token definitions, no component changes.
+  This was later put to the test by the terminal theme, and held with one
+  qualification worth recording: a theme whose character is partly *structural*
+  - monospace, square corners, no shadow - also overrides the non-colour tokens,
+  which the original decision described as "shared so themes cannot drift
+  structurally". That sharing is still right as a default; the escape hatch is a
+  theme deliberately declining it in its own block, which is visible in one
+  place rather than spread through the components.
 * No flash of unstyled or wrongly-themed content.
 * Accessibility is verified by a test rather than asserted in a README.
 * Works with JavaScript disabled apart from the toggle itself (server mode persists

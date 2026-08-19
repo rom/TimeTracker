@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	golang.org/x/crypto v0.55.0
+	golang.org/x/image v0.45.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.56.0
 )

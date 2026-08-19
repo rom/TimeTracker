@@ -7,7 +7,7 @@
 ## Context
 
 The UI needs live-updating timers, inline editing of timesheet rows, drag-free quick
-entry, clipboard paste of images, and seven themes. That is genuinely interactive —
+entry, clipboard paste of images, and eight themes. That is genuinely interactive —
 enough that a single-page application is a defensible choice.
 
 Against that: ASR-003 requires a single self-contained binary with no Node.js
