@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"iter"
 	"strings"
 	"time"
 
@@ -445,6 +446,94 @@ func (f EntryFilter) buildSearch() (string, []any, SearchMode, error) {
 	}
 	return query, args, mode, err
 }
+
+// EachEntry streams the entries matching a filter.
+//
+// The iterator exists for exports. SearchEntries collects everything into a
+// slice, which is right for a screen showing fifty rows and wrong for a download
+// covering a decade: a multi-year export held every entry in memory, and then a
+// second copy of every entry as report lines, before writing a single byte.
+//
+// Rows are yielded in *ascending* order of start, unlike the listing, which is
+// newest-first. Two reasons, and the second is not negotiable: a report reads
+// chronologically, and the elapsed-time total is computed in one pass by
+// domain.UnionAccumulator, which can only be correct for intervals arriving in
+// ascending order (its type comment explains why).
+//
+// Tags are loaded a chunk at a time rather than per row. One query per entry
+// would be an N+1 over a hundred thousand rows; one query for all of them is
+// what the paged listing does and cannot work without the whole set in hand.
+// A chunk is the compromise, and it is what bounds the memory this uses.
+func (db *DB) EachEntry(ctx context.Context, f EntryFilter) iter.Seq2[domain.TimeEntry, error] {
+	return func(yield func(domain.TimeEntry, error) bool) {
+		where, args, _, err := f.buildConditions()
+		if err != nil {
+			yield(domain.TimeEntry{}, err)
+			return
+		}
+
+		query := entrySelect + where + ` ORDER BY e.started_at, e.id`
+		if f.Limit > 0 {
+			query += ` LIMIT ?`
+			args = append(args, f.Limit)
+		}
+
+		rows, err := db.read.QueryContext(ctx, query, args...)
+		if err != nil {
+			yield(domain.TimeEntry{}, fmt.Errorf("stream entries: %w", err))
+			return
+		}
+		defer func() { _ = rows.Close() }()
+
+		chunk := make([]domain.TimeEntry, 0, streamChunkSize)
+		flush := func() bool {
+			if len(chunk) == 0 {
+				return true
+			}
+			ids := make([]int64, len(chunk))
+			for i := range chunk {
+				ids[i] = chunk[i].ID
+			}
+			byEntry, err := db.TagsForEntries(ctx, ids)
+			if err != nil {
+				yield(domain.TimeEntry{}, err)
+				return false
+			}
+			for i := range chunk {
+				chunk[i].Tags = byEntry[chunk[i].ID]
+				if !yield(chunk[i], nil) {
+					return false
+				}
+			}
+			chunk = chunk[:0]
+			return true
+		}
+
+		for rows.Next() {
+			entry, err := scanEntry(rows)
+			if err != nil {
+				yield(domain.TimeEntry{}, err)
+				return
+			}
+			chunk = append(chunk, entry)
+			if len(chunk) == streamChunkSize && !flush() {
+				return
+			}
+		}
+		if err := rows.Err(); err != nil {
+			yield(domain.TimeEntry{}, fmt.Errorf("stream entries: %w", err))
+			return
+		}
+		flush()
+	}
+}
+
+// streamChunkSize is how many entries are held at once while streaming.
+//
+// Five hundred: enough that the tag lookup is one query per five hundred rows
+// rather than one per row, and small enough that the memory this uses does not
+// depend on how much time somebody is exporting - which is the whole point.
+const streamChunkSize = 500
 
 // CountEntries returns how many entries match a filter, ignoring its window.
 //

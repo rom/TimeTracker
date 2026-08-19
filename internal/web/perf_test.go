@@ -29,9 +29,11 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -110,6 +112,34 @@ func TestPerfBudgets(t *testing.T) {
 		})
 	})
 
+	t.Run("multi-year export streams", func(t *testing.T) {
+		// The whole dataset - three years, a hundred thousand entries - in the
+		// two formats that stream. What is being measured is not the clock but
+		// the heap: a collected export holds every entry and then every report
+		// line, so its peak grows with the range. A streamed one should not.
+		from := fixture.earliest.Format("2006-01-02")
+		to := fixture.latest.AddDate(0, 0, 1).Format("2006-01-02")
+
+		for _, format := range []string{"csv", "json"} {
+			peak, bytes, elapsed := measureExport(t, srv,
+				"/export/"+format+"?from="+from+"&to="+to)
+
+			t.Logf("%-32s %s of output in %s, peak heap %s",
+				"GET /export/"+format+" (3 years)",
+				humanBytes(bytes), elapsed.Round(time.Millisecond), humanBytes(int64(peak)))
+
+			if bytes == 0 {
+				t.Fatalf("%s produced nothing", format)
+			}
+			if peak > maxStreamHeap {
+				t.Errorf("%s: peak heap grew to %s exporting %d entries.\n"+
+					"A streamed export should not hold the range it is exporting; "+
+					"the budget is %s.",
+					format, humanBytes(int64(peak)), perfEntries, humanBytes(int64(maxStreamHeap)))
+			}
+		}
+	})
+
 	t.Run("one-year report", func(t *testing.T) {
 		from := fixture.middle.AddDate(-1, 0, 0).Format("2006-01-02")
 		to := fixture.middle.Format("2006-01-02")
@@ -157,6 +187,87 @@ func measure(t *testing.T, what string, budget time.Duration, iterations int, ru
 	}
 }
 
+// maxStreamHeap is what a streamed export may add to the heap.
+//
+// Sixty-four megabytes. A hundred thousand entries collected into a slice, and
+// then into report lines, is several hundred - so this is not a tight budget,
+// it is a bright line between "bounded" and "proportional to the export". It is
+// stated in those terms deliberately: a tighter number would fail on a garbage
+// collector's whim and teach everyone to raise it.
+const maxStreamHeap = 64 << 20
+
+// measureExport runs one export and reports the peak heap it added.
+//
+// Sampled from another goroutine rather than read before and after, because the
+// interesting number is the high-water mark during the response and a reading
+// taken afterwards has already had the garbage collected out of it.
+func measureExport(t *testing.T, srv *Server, path string) (peak uint64, written int64, elapsed time.Duration) {
+	t.Helper()
+
+	runtime.GC()
+	var baseline runtime.MemStats
+	runtime.ReadMemStats(&baseline)
+
+	// Two channels, not one: stop is closed by the caller to ask the sampler to
+	// finish, and stopped is closed by the sampler to say it has. Sharing one
+	// meant closing an already-closed channel, which panics.
+	stop := make(chan struct{})
+	stopped := make(chan struct{})
+	var highest atomic.Uint64
+	go func() {
+		defer close(stopped)
+		var stats runtime.MemStats
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			runtime.ReadMemStats(&stats)
+			if stats.HeapAlloc > baseline.HeapAlloc {
+				if grown := stats.HeapAlloc - baseline.HeapAlloc; grown > highest.Load() {
+					highest.Store(grown)
+				}
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}()
+
+	started := time.Now()
+	// The body is counted and discarded rather than recorded: keeping a
+	// multi-megabyte response would be the test doing the buffering it is
+	// checking for.
+	recorder := &countingWriter{header: http.Header{}}
+	srv.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+	elapsed = time.Since(started)
+
+	close(stop)
+	<-stopped
+
+	if recorder.status != 0 && recorder.status != http.StatusOK {
+		t.Fatalf("GET %s = %d", path, recorder.status)
+	}
+	return highest.Load(), recorder.written, elapsed
+}
+
+// countingWriter is an http.ResponseWriter that counts and drops the body.
+type countingWriter struct {
+	header  http.Header
+	status  int
+	written int64
+}
+
+func (c *countingWriter) Header() http.Header { return c.header }
+func (c *countingWriter) WriteHeader(status int) {
+	if c.status == 0 {
+		c.status = status
+	}
+}
+func (c *countingWriter) Write(p []byte) (int, error) {
+	c.written += int64(len(p))
+	return len(p), nil
+}
+
 // percentile returns the value at a fraction through a sorted slice.
 func percentile(sorted []time.Duration, fraction float64) time.Duration {
 	if len(sorted) == 0 {
@@ -185,6 +296,8 @@ type perfFixture struct {
 	// the handlers, for measurements that call it directly.
 	actor context.Context
 	svc   *service.Service
+	// earliest and latest bound the seeded range, for the whole-dataset export.
+	earliest, latest time.Time
 }
 
 // newPerfServer builds a server over a database holding perfEntries entries.
@@ -254,6 +367,8 @@ func newPerfServer(t *testing.T) (*Server, perfFixture) {
 		middle:       start.AddDate(0, 0, int(end.Sub(start).Hours()/24/2)),
 		actor:        actor,
 		svc:          svc,
+		earliest:     start,
+		latest:       end,
 	}
 }
 

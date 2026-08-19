@@ -12,6 +12,22 @@ the decision.
 
 ### Added
 
+* **Exports stream instead of being assembled.** CSV and JSON are now written
+  row by row from a database cursor, so the memory a download costs is the size
+  of a row rather than the size of the file. A three-year export of the
+  100,000-entry performance dataset produces 17.3 MB of CSV and 39.9 MB of JSON
+  at a peak heap of about 9 MB; the same two exports built in memory peaked at
+  208 MB and 294 MB, and were slower. The peak is asserted in the performance
+  suite, because a memory bound nobody measures is a memory bound that comes
+  back. PDF, DOCX and Markdown cannot stream — each needs the whole report to
+  paginate, size a table or compute a total — so instead of failing at whatever
+  size the machine happens to run out at, they count the rows first and refuse
+  above 50,000 with a message naming the two formats that have no limit.
+  A streamed response cannot change its mind about its status code once the
+  first byte is out, so the first row is pulled before any header is set: a
+  malformed regular expression is now a 400 saying what to fix, where it had
+  been a 200 CSV containing its header row and nothing else.
+
 * **The Entries list is paged**, fifty rows at a time, with the total beside it
   ("Showing 51–100 of 137 entries") and a pager that carries the whole filter on
   every link. Plain links, so it works with no script; the current page is marked

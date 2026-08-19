@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"iter"
 	"sort"
 	"strconv"
 	"time"
@@ -313,6 +314,57 @@ func (s *Service) entryAudience(ctx context.Context, filter EntryFilter) (int64,
 	}
 	return subjectID, scope, nil
 }
+
+// EachEntry streams the entries matching a filter, for an export.
+//
+// The same authorisation as Entries - it goes through entryAudience like every
+// other entry query - and the same filter. What differs is that nothing is
+// collected: rows are handed on as they arrive, so the memory an export uses
+// does not grow with the range being exported.
+//
+// The with-expenses filter is deliberately absent from this path. Its condition
+// is applied outside SQL, which means holding rows back to test them, and a
+// filter that has to buffer is not one that can be streamed. The handler falls
+// back to the collected path when it is set; that filter narrows to days
+// somebody spent money on, so the result is small by construction.
+func (s *Service) EachEntry(ctx context.Context, filter EntryFilter) iter.Seq2[domain.TimeEntry, error] {
+	return func(yield func(domain.TimeEntry, error) bool) {
+		subjectID, scope, err := s.entryAudience(ctx, filter)
+		if err != nil {
+			yield(domain.TimeEntry{}, err)
+			return
+		}
+		for entry, err := range s.db.EachEntry(ctx, storeFilter(subjectID, scope, filter)) {
+			if !yield(entry, err) {
+				return
+			}
+		}
+	}
+}
+
+// CountEntries returns how many entries a filter matches.
+//
+// Used before collecting a report that cannot be streamed, so an export too
+// large to render is refused with a number rather than attempted.
+func (s *Service) CountEntries(ctx context.Context, filter EntryFilter) (int, error) {
+	subjectID, scope, err := s.entryAudience(ctx, filter)
+	if err != nil {
+		return 0, err
+	}
+	if filter.WithExpenses {
+		// The condition is applied outside SQL, so the database cannot count it.
+		// The narrowed set is small by construction - only days somebody spent
+		// money on - and this is a guard against enormous ranges, so counting
+		// the rows behind it is the safe over-estimate.
+		filter.WithExpenses = false
+	}
+	windowless := filter
+	windowless.Limit, windowless.Offset = 0, 0
+	return s.db.CountEntries(ctx, storeFilter(subjectID, scope, windowless))
+}
+
+// Streamable reports whether a filter can be answered without collecting it.
+func (f EntryFilter) Streamable() bool { return !f.WithExpenses }
 
 // SearchEntries is Entries with the search mechanism reported back, so the
 // screen can say whether it matched an index, a scan or a regular expression.

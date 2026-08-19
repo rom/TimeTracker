@@ -622,5 +622,6 @@
   "entries.showing.none": "No entries on this page.",
   "entries.pagination": "Pages of entries",
   "entries.page.past": "There is nothing on this page. The filter may have narrowed since the link was made.",
-  "entries.page.first": "Back to the first page"
+  "entries.page.first": "Back to the first page",
+  "export.toolarge": "This range holds %d entries, and PDF, Word and Markdown are built whole before they can be written — the limit is %d. Narrow the range, or export as CSV or JSON, which stream and have no limit."
 }

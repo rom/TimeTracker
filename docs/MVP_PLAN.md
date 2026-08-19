@@ -190,6 +190,13 @@ whole entry table. `make test-perf` had been running `-run TestPerf` against no
 such test and passing in silence for as long as the target had existed. See
 [ADR-0032](adr/0032-measured-before-tuned.md).
 
+The same suite is what bounds memory rather than only latency. Exporting a
+multi-year range used to build the whole document in memory - 294 MB of heap for
+40 MB of JSON, on a machine that might be serving several people at once. CSV
+and JSON now stream from a cursor and peak at about 9 MB, and the peak is
+asserted, so the ASR's "rules out loading whole tables into memory" is measured
+rather than intended.
+
 ---
 
 ## Layer 8 — Bulk import, backup and configuration ✅

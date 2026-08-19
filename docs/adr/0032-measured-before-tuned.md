@@ -79,15 +79,22 @@ production — as the inbox result showed within one run.
 
 **Positive**
 
-* Every ASR-012 budget is met: day view 34 ms, week 33 ms, timer start/stop
-  30 ms, entries list 16 ms, one-year report 1.0 s against a 2 s budget.
+* Every ASR-012 budget is met: day view 19 ms, week 24 ms, timer start/stop
+  18 ms, entries list 10 ms, one-year report 746 ms against a 2 s budget.
 
   The report figure deserves its context. It read 29 ms before pagination, and
   that number was false: the export was truncated at a thousand rows, so it was
   timing a thousandth of the work. A real one-year export of this dataset is
-  about 33,000 entries, and 1.0 s is what that costs. The budget is met with
-  half of it to spare, but a multi-year export would not meet it - and would not
-  be covered by the criterion either, which names one year.
+  about 33,000 entries. That cost 1.0 s when the report was assembled in memory
+  and 746 ms once it streamed, which is the part of it that was never the
+  database.
+
+  The caveat this entry used to carry - that a multi-year export would not meet
+  the budget - has been removed rather than restated, because the shape of the
+  cost changed. A three-year export is no longer a bigger version of the same
+  risk: it runs in about 2 s at a peak heap of 9 MB, where assembling it needed
+  294 MB. The criterion still names one year; what a longer range does is now
+  bounded rather than unknown.
 * The suite exists, so the next regression of this kind is caught by a build
   rather than by a user.
 * The queries no longer depend on the planner being clever, so behaviour does not
@@ -101,7 +108,7 @@ production — as the inbox result showed within one run.
   future query for "not confirmed" will not use the "pending" index. That is the
   trade for predictability, and the suite will show it.
 * The entries list was 147 ms, rendering up to a thousand rows. It is paged at
-  fifty now, which took it to 16 ms - and removing that cap turned up two things
+  fifty now, which took it to 10 ms - and removing that cap turned up two things
   it had been hiding. It was part of the filter, and the filter was what every
   export was built from, so exports had been truncated at a thousand rows the
   whole time; and once they were not, the tag lookup exceeded SQLite's
@@ -110,6 +117,14 @@ production — as the inbox result showed within one run.
   for two others.
 * The suite takes about a minute and is excluded from `make check`, so it is only
   as useful as the habit of running it. `make test-perf` exists for that.
+* Streaming is a constraint on the formats, not a free improvement. The JSON
+  schema can stream only because its totals follow its entries; the elapsed
+  total can be folded in one pass only if the rows arrive in ascending order, so
+  the export query orders opposite to the screen's listing and the accumulator
+  refuses input that is not sorted. And PDF, DOCX and Markdown genuinely cannot
+  stream, so they are bounded at 50,000 rows and say so - a limit where there
+  had been none, which is the honest form of a limit that was previously just
+  the machine's memory.
 
 ## Alternatives considered
 

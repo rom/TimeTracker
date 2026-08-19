@@ -9,6 +9,7 @@ import (
 
 	"github.com/rom/timetracker/internal/auth"
 	"github.com/rom/timetracker/internal/export"
+	"github.com/rom/timetracker/internal/service"
 )
 
 // handleExport renders the current entry selection in the requested format.
@@ -33,33 +34,103 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	// reasoning the backup writer states.
 	filter.Limit, filter.Offset = 0, 0
 
-	entries, err := s.svc.Entries(r.Context(), filter)
+	user, _ := auth.UserFrom(r.Context())
+	meta := export.Meta{
+		Title:       fmt.Sprintf("Time report %s to %s", form.From, form.To),
+		GeneratedAt: s.svc.Now().UTC(),
+		From:        filter.From,
+		To:          filter.To,
+		TimeZone:    user.TimeZone,
+		User:        user.DisplayName,
+	}
+
+	// The document formats group by customer and project, which means the last
+	// row read can belong to the first block written - so they have to hold the
+	// whole report. Refused above a stated size rather than attempted: a PDF of
+	// two hundred thousand lines is not a document anybody wants, and running
+	// out of memory is a worse way to find that out than being told.
+	if !format.Streams() || !filter.Streamable() {
+		s.writeCollectedExport(w, r, format, filter, meta, form)
+		return
+	}
+
+	// The first row is pulled before a single header is set, so a query that
+	// fails - a malformed regular expression is the everyday case - is answered
+	// with the message that says how to fix it rather than with a one-line CSV
+	// carrying a 200.
+	lines, err := export.Primed(export.LinesOf(s.svc.EachEntry(r.Context(), filter), s.svc.Now()))
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 
-	user, _ := auth.UserFrom(r.Context())
-	report := export.NewReport(
-		fmt.Sprintf("Time report %s to %s", form.From, form.To),
-		filter.From, filter.To, user.TimeZone, user.DisplayName,
-		entries, s.svc.Now())
-
-	filename := fmt.Sprintf("timetracker-%s-%s.%s", form.From, form.To, format)
-
+	filename := exportFilename(form, format)
 	// Content-Disposition: attachment, so a browser saves the file rather than
 	// trying to display it.
 	w.Header().Set("Content-Type", format.ContentType())
 	w.Header().Set("Content-Disposition", contentDisposition(filename))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 
+	stream := export.Stream{Meta: meta, Now: s.svc.Now(), Lines: lines}
+	if err := format.WriteStream(w, stream); err != nil {
+		// The status line went out with the first row, so the download is
+		// already truncated. Logging is all that remains - and it is the price
+		// of streaming, paid deliberately: the alternative is holding the whole
+		// report in memory to be able to fail cleanly, which is the thing this
+		// path exists to avoid.
+		s.log.ErrorContext(r.Context(), "streamed export failed midway",
+			"format", string(format), "error", err.Error())
+	}
+}
+
+// writeCollectedExport renders a format that cannot be streamed.
+//
+// PDF, DOCX and Markdown group their rows and print a subtotal per group, so
+// none of them can write anything until every row has been read. They are
+// bounded instead, and the bound is reported as a refusal with a way forward
+// rather than as whatever the machine does when it runs out of memory.
+func (s *Server) writeCollectedExport(w http.ResponseWriter, r *http.Request,
+	format export.Format, filter service.EntryFilter, meta export.Meta, form entryFilterForm) {
+
+	count, err := s.svc.CountEntries(r.Context(), filter)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if count > maxCollectedExportRows {
+		http.Error(w, s.tr(r).T("export.toolarge", count, maxCollectedExportRows), http.StatusRequestEntityTooLarge)
+		return
+	}
+
+	entries, err := s.svc.Entries(r.Context(), filter)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	report := export.NewReport(meta.Title, meta.From, meta.To,
+		meta.TimeZone, meta.User, entries, s.svc.Now())
+
+	w.Header().Set("Content-Type", format.ContentType())
+	w.Header().Set("Content-Disposition", contentDisposition(exportFilename(form, format)))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+
 	if err := format.Write(w, report); err != nil {
-		// The status line is already sent by this point, so the download will be
-		// truncated. Logging is all that remains; the alternative is buffering an
-		// unbounded report in memory to be able to fail cleanly.
 		s.log.ErrorContext(r.Context(), "export failed midway",
 			"format", string(format), "error", err.Error())
 	}
+}
+
+// maxCollectedExportRows bounds the formats that cannot stream.
+//
+// Fifty thousand lines is already far past a document anybody reads; it is here
+// so that asking for a decade of a busy team in PDF fails with a sentence rather
+// than by exhausting the machine. CSV and JSON have no such limit, and the
+// message says so.
+var maxCollectedExportRows = 50_000
+
+// exportFilename names the download.
+func exportFilename(form entryFilterForm, format export.Format) string {
+	return fmt.Sprintf("timetracker-%s-%s.%s", form.From, form.To, format)
 }
 
 // ExportURL is the download link for one format, carrying the whole filter.
