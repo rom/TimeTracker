@@ -140,6 +140,21 @@
     <span class="hint">{{.T "entries.export.hint"}}</span>
   </div>
 
+  {{/* What is on screen, out of what the filter matched. Stated whether or not
+       there is more than one page: "37 entries" is worth knowing, and a count
+       that only appears sometimes is a count people stop trusting.
+
+       Only when there are rows to count, though: a page past the end has a
+       first and last that are nonsense ("151-137 of 137"), and the branch below
+       explains the real situation instead. */}}
+  <p class="result-count" role="status">
+    {{if .Entries}}
+      {{.T "entries.showing" .Filter.FirstShown .Filter.LastShown .Filter.Total}}
+    {{else}}
+      {{.T "entries.showing.none"}}
+    {{end}}
+  </p>
+
   {{if .Entries}}
     <table class="entries">
       <thead>
@@ -156,8 +171,17 @@
         {{range .Entries}}{{template "entry-row" (dict "Entry" . "Page" $ "ShowDate" true)}}{{end}}
       </tbody>
     </table>
+    {{template "pager" (dict "Page" $ "Filter" .Filter)}}
   {{else}}
-    <p class="empty">{{.T "entries.empty"}}</p>
+    {{/* A page past the end is a stale bookmark or a filter that narrowed under
+         somebody. Saying which, and offering the way back, beats an empty table
+         that looks like "you have never recorded anything". */}}
+    {{if gt .Filter.Page 1}}
+      <p class="empty">{{.T "entries.page.past"}}</p>
+      <p><a class="btn btn-quiet" href="{{.Filter.PageURL 1}}">{{.T "entries.page.first"}}</a></p>
+    {{else}}
+      <p class="empty">{{.T "entries.empty"}}</p>
+    {{end}}
   {{end}}
 
 </section>

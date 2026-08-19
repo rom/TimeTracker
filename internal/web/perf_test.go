@@ -48,18 +48,11 @@ const (
 	perfInteractive = 100 * time.Millisecond
 	perfReport      = 2 * time.Second
 
-	// perfListing is this project's budget rather than the ASR's.
-	//
-	// ASR-012 names three interactive operations and a report; the entries list
-	// is neither. It renders up to a thousand rows, each with its tags, badges
-	// and colour, which is bulk work closer to a report than to a button press -
-	// so holding it to 100 ms would be inventing a requirement, and holding it
-	// to the report's two seconds would assert nothing at all.
-	//
-	// A quarter of a second, stated here so that a regression is still caught.
-	// If this needs raising, the honest fix is almost certainly to stop
-	// rendering a thousand rows at once rather than to move the number.
-	perfListing = 250 * time.Millisecond
+	// perfListing was this project's own budget, set at 250 ms when the entries
+	// screen rendered up to a thousand rows at once. It is paged at fifty now,
+	// which is an interactive screen by any reading, so it is held to the same
+	// budget as the others.
+	perfListing = perfInteractive
 
 	// Spread over three years, which is the "realistic multi-year dataset" the
 	// requirement names. At five assignments a day it is about what a busy
@@ -89,10 +82,8 @@ func TestPerfBudgets(t *testing.T) {
 	})
 
 	t.Run("entries list", func(t *testing.T) {
-		// Not named in the fit criterion, and held to perfListing rather than to
-		// the interactive budget for the reason given there. It is measured at
-		// all because it is the screen every export is taken from and the one
-		// most likely to degrade as the table grows.
+		// Not named in the fit criterion, but it is the screen every export is
+		// taken from and the one most likely to degrade as the table grows.
 		from := fixture.middle.AddDate(0, -1, 0).Format("2006-01-02")
 		to := fixture.middle.Format("2006-01-02")
 		measure(t, "GET /entries (one month)", perfListing, 100, func() {

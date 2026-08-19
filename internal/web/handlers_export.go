@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+	"strconv"
 
 	"github.com/rom/timetracker/internal/auth"
 	"github.com/rom/timetracker/internal/export"
@@ -22,6 +23,15 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filter, form := s.entryFilter(r)
+
+	// An export covers the filter, never the page. The screen shows fifty rows
+	// at a time and the download shows all of them - and until this line existed
+	// it did neither: the screen's row cap travelled into the export with the
+	// rest of the filter, so any range with more entries than the cap was
+	// silently truncated, oldest first, in a file somebody was about to invoice
+	// from. A truncated export is worse than a slow one, which is the same
+	// reasoning the backup writer states.
+	filter.Limit, filter.Offset = 0, 0
 
 	entries, err := s.svc.Entries(r.Context(), filter)
 	if err != nil {
@@ -68,6 +78,80 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 // user text reaches this unescaped.
 func (f entryFilterForm) ExportURL(format export.Format) template.URL {
 	return template.URL("/export/" + string(format) + "?" + f.exportQuery())
+}
+
+// PageURL is the link to another page of the same filter.
+//
+// Built from the same query as the export links, plus the page. That sharing is
+// the point: a pager that dropped the search box would send somebody who
+// clicked "next" to page two of a different result.
+func (f entryFilterForm) PageURL(page int) template.URL {
+	query := f.exportQuery()
+	if page > 1 {
+		query += "&page=" + strconv.Itoa(page)
+	}
+	return template.URL("/entries?" + query)
+}
+
+// Pages is how many pages the filter's results fill.
+func (f entryFilterForm) Pages() int {
+	if f.Total <= 0 {
+		return 1
+	}
+	return (f.Total + EntriesPerPage - 1) / EntriesPerPage
+}
+
+// HasPages reports whether there is more than one, so a pager is worth drawing.
+func (f entryFilterForm) HasPages() bool { return f.Pages() > 1 }
+
+// FirstShown and LastShown bound the page in the result, for "51-100 of 237".
+//
+// A count somebody can check against the rows in front of them: a pager that
+// says only "page 2" leaves them to work out what they are looking at.
+func (f entryFilterForm) FirstShown() int {
+	if f.Total == 0 {
+		return 0
+	}
+	return (f.Page-1)*EntriesPerPage + 1
+}
+
+func (f entryFilterForm) LastShown() int {
+	last := f.Page * EntriesPerPage
+	if last > f.Total {
+		last = f.Total
+	}
+	return last
+}
+
+// PageNumbers is the window of page links to draw.
+//
+// The first and last page always, the current one and its neighbours, and a gap
+// where pages were left out - which is what stops a filter matching ten thousand
+// entries from rendering two hundred links. A zero marks the gap.
+func (f entryFilterForm) PageNumbers() []int {
+	pages := f.Pages()
+	const window = 2
+
+	wanted := map[int]bool{1: true, pages: true}
+	for page := f.Page - window; page <= f.Page+window; page++ {
+		if page >= 1 && page <= pages {
+			wanted[page] = true
+		}
+	}
+
+	numbers := make([]int, 0, len(wanted)+2)
+	previous := 0
+	for page := 1; page <= pages; page++ {
+		if !wanted[page] {
+			continue
+		}
+		if previous != 0 && page != previous+1 {
+			numbers = append(numbers, 0)
+		}
+		numbers = append(numbers, page)
+		previous = page
+	}
+	return numbers
 }
 
 // Narrowed reports whether the filter is anything other than the default view,

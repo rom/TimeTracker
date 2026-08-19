@@ -213,6 +213,13 @@ func init() {
 	}
 }
 
+// EntriesPerPage is how many entries the Entries screen shows at once.
+//
+// Fifty: a screenful somebody can scan, and small enough that the page renders
+// in a few milliseconds against a database with years in it. It was a thousand,
+// which took 135 ms to render and produced a page nobody read to the end of.
+const EntriesPerPage = 50
+
 // staticAsset serves one embedded file at a fixed path.
 //
 // Used for the root-path icons a browser asks for without being told. The name
@@ -301,6 +308,12 @@ func templateFuncs() template.FuncMap {
 			return domain.NewMoney(minor, currency).String()
 		},
 		"dict": dict,
+		// add and sub are for the pager's neighbouring page numbers. A template
+		// cannot do arithmetic, and the alternative - precomputing "previous"
+		// and "next" onto the form - puts view logic in a struct to avoid two
+		// three-line functions.
+		"add": func(a, b int) int { return a + b },
+		"sub": func(a, b int) int { return a - b },
 		// divide is integer division, for showing a stored seconds value as
 		// hours in a form field.
 		"divide": func(value int64, by int64) int64 {

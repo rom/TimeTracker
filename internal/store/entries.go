@@ -288,6 +288,9 @@ type EntryFilter struct {
 	Kinds []domain.EntryKind
 	// Limit caps the number of rows; 0 means unlimited.
 	Limit int
+	// Offset skips rows before the page being shown. It only applies with a
+	// Limit, because an offset into an unbounded query means nothing.
+	Offset int
 }
 
 // ListEntries returns entries matching a filter, newest first.
@@ -332,7 +335,7 @@ func (db *DB) SearchEntries(ctx context.Context, f EntryFilter) ([]domain.TimeEn
 	return entries, mode, nil
 }
 
-// build turns a filter into a WHERE clause and its bound arguments.
+// buildConditions turns a filter into a WHERE clause and its bound arguments.
 //
 // Every user-supplied value becomes a placeholder argument; nothing is
 // interpolated into the SQL text. The conditions themselves are literals written
@@ -340,7 +343,7 @@ func (db *DB) SearchEntries(ctx context.Context, f EntryFilter) ([]domain.TimeEn
 // It reports which search mechanism the free-text condition chose, so the
 // interface can say - a search that quietly used a different one from the one
 // asked for produces results nobody can explain.
-func (f EntryFilter) buildSearch() (string, []any, SearchMode, error) {
+func (f EntryFilter) buildConditions() (string, []any, SearchMode, error) {
 	var conditions []string
 	var args []any
 
@@ -413,12 +416,64 @@ func (f EntryFilter) buildSearch() (string, []any, SearchMode, error) {
 		mode = searchMode
 	}
 
-	query := whereClause(conditions) + ` ORDER BY e.started_at DESC, e.id DESC`
+	return whereClause(conditions), args, mode, err
+}
+
+// buildSearch turns a filter into the clause that selects and orders rows.
+//
+// It is the WHERE from buildConditions plus the ordering and the page window.
+// The two are separate so that counting and listing cannot disagree about which
+// rows match: a count built from its own copy of the conditions is a count that
+// drifts, and a total that does not match the rows underneath it is worse than
+// no total at all.
+func (f EntryFilter) buildSearch() (string, []any, SearchMode, error) {
+	where, args, mode, err := f.buildConditions()
+	if err != nil {
+		return "", nil, SearchNone, err
+	}
+
+	query := where + ` ORDER BY e.started_at DESC, e.id DESC`
 	if f.Limit > 0 {
 		query += ` LIMIT ?`
 		args = append(args, f.Limit)
+		// OFFSET without LIMIT is not valid SQLite, and an offset into an
+		// unbounded query is meaningless anyway.
+		if f.Offset > 0 {
+			query += ` OFFSET ?`
+			args = append(args, f.Offset)
+		}
 	}
 	return query, args, mode, err
+}
+
+// CountEntries returns how many entries match a filter, ignoring its window.
+//
+// The same conditions the listing uses, so the total and the rows can never
+// disagree. Deliberately not a count of the returned slice: the point is to know
+// how many there are *beyond* the page being shown.
+func (db *DB) CountEntries(ctx context.Context, f EntryFilter) (int, error) {
+	where, args, _, err := f.buildConditions()
+	if err != nil {
+		return 0, err
+	}
+
+	// The same joins as entrySelect, because the conditions refer to a, p and
+	// the tag subquery. The columns are not needed and the attachment subquery
+	// certainly is not - counting rows should not count attachments.
+	query := `
+		SELECT COUNT(*)
+		FROM time_entries e
+		JOIN assignments a  ON a.id  = e.assignment_id
+		JOIN projects    p  ON p.id  = a.project_id
+		JOIN customers   c  ON c.id  = p.customer_id
+		JOIN users       u  ON u.id  = e.user_id
+		JOIN users       eb ON eb.id = e.entered_by` + where
+
+	var count int
+	if err := db.read.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count entries: %w", err)
+	}
+	return count, nil
 }
 
 // CountPending returns how many entries and expenses await a user's decision.

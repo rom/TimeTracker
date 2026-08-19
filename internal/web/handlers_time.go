@@ -402,6 +402,10 @@ type entryFilterForm struct {
 	// WithExpenses narrows to time recorded on the same project and day as an
 	// expense.
 	WithExpenses bool
+	// Page is 1-based, and Total is how many entries the filter matches across
+	// every page. Both drive the pager; neither reaches an export.
+	Page  int
+	Total int
 	// SearchMode is which mechanism answered, so the screen can say. A search
 	// that quietly used a different one from the one asked for produces results
 	// nobody can explain.
@@ -420,14 +424,19 @@ func (s *Server) handleEntries(w http.ResponseWriter, r *http.Request) {
 	filter, form := s.entryFilter(r)
 	data.Filter = form
 
-	entries, mode, err := s.svc.SearchEntries(r.Context(), filter)
+	page, err := s.svc.SearchEntriesPage(r.Context(), filter)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	data.Entries = entries
-	form.SearchMode = string(mode)
+	data.Entries = page.Entries
+	form.SearchMode = string(page.Mode)
+	form.Total = page.Total
 	data.Filter = form
+
+	// The totals above the table are the page's, and the table says as much.
+	// Totalling the whole filter here would put a figure on screen that no
+	// visible row adds up to, which on a timesheet is worse than no figure.
 	data.Totals = s.svc.Totals(data.Entries)
 
 	// The tags that exist, for the filter's suggestions.
@@ -483,6 +492,15 @@ func (s *Server) entryFilter(r *http.Request) (service.EntryFilter, entryFilterF
 	form.Kind = r.URL.Query().Get("kind")
 	form.WithExpenses = r.URL.Query().Get("expenses") == "1"
 
+	// A page below one is a typed or truncated URL rather than a request for
+	// anything in particular, so it means the first page. There is no upper
+	// clamp here because the total is not known yet; the screen handles a page
+	// past the end by saying so.
+	form.Page = int(int64Param(r.URL.Query().Get("page")))
+	if form.Page < 1 {
+		form.Page = 1
+	}
+
 	var kinds []domain.EntryKind
 	if kind := domain.EntryKind(form.Kind); kind.Valid() {
 		kinds = []domain.EntryKind{kind}
@@ -502,7 +520,8 @@ func (s *Server) entryFilter(r *http.Request) (service.EntryFilter, entryFilterF
 		UseRegexp:    form.UseRegexp,
 		Kinds:        kinds,
 		WithExpenses: form.WithExpenses,
-		Limit:        1000,
+		Limit:        EntriesPerPage,
+		Offset:       (form.Page - 1) * EntriesPerPage,
 	}, form
 }
 

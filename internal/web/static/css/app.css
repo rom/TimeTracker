@@ -1464,6 +1464,43 @@ kbd {
 .radio-group .inline-check { display: grid; grid-template-columns: auto 1fr; gap: 0 var(--gap-sm); align-items: start; }
 .radio-group .inline-check .field-help { grid-column: 2; margin: 2px 0 var(--gap-sm); }
 
+/* ---------------------------------------------------------------- pager --- */
+
+/* How much of the result is on screen. Sits above the table because it is the
+   answer to "did my filter work", which is asked before the rows are read. */
+.result-count { color: var(--text-muted); font-size: 0.9em; margin: 0 0 var(--gap-sm); }
+
+.pager {
+  display: flex; align-items: center; justify-content: center;
+  gap: var(--gap); flex-wrap: wrap;
+  margin: var(--gap-lg) 0;
+}
+.pager-pages {
+  display: flex; align-items: center; gap: 4px;
+  list-style: none; margin: 0; padding: 0;
+}
+.pager-page, .pager-step {
+  display: inline-block; padding: 6px 12px;
+  border-radius: var(--radius);
+  color: var(--text-muted); text-decoration: none;
+  font-variant-numeric: tabular-nums;
+}
+.pager-page:hover, .pager-step:hover { background: var(--surface-sunken); color: var(--text); }
+.pager-page.is-current {
+  background: var(--accent-soft); color: var(--text); font-weight: 600;
+}
+/* The step at each end of the range stays in place rather than disappearing, so
+   the row does not shift under the pointer between the first page and the
+   second. Muted enough to read as unavailable. */
+.pager-step.is-disabled { color: var(--border-strong); }
+.pager-gap { padding: 6px 2px; color: var(--text-muted); }
+
+@media (max-width: 700px) {
+  /* On a narrow screen the numbers are the first thing to go: previous and next
+     are what a thumb reaches for. */
+  .pager-pages { display: none; }
+}
+
 /* -------------------------------------------------- attachment previews --- */
 
 .attachments { margin-top: var(--gap-lg); }

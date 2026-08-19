@@ -251,7 +251,7 @@ to the company. Receipts attach directly.
 | **Today** | the default. Running timers, today's entries as a timeline over configurable hours, quick add, running totals (summed and elapsed), unaccounted-time gaps. |
 | **Week** | grid of assignments × days, weekly totals per assignment and per day, and the week's approval state with the submit or withdraw control. |
 | **Correct entry** | one entry, opened from any row: assignment, day, start, duration, note, billable. See §3. |
-| **Entries** | filterable list across any range: customer, project, assignment, kind, tag, person, billable, status, free text, and time recorded on a day a project also had an expense. Every row carries its date and weekday. The basis of every export. |
+| **Entries** | filterable list across any range: customer, project, assignment, kind, tag, person, billable, status, free text, and time recorded on a day a project also had an expense. Every row carries its date and weekday. Paged, fifty at a time, with the total beside it. The basis of every export. |
 | **Inbox** | proxy proposals awaiting your decision. |
 | **Approvals** | weeks awaiting your decision, weeks you have approved (with the way to reopen one), and your own submitted weeks. Server mode only. |
 | **Approval status** | a grid of people against weeks. Answers the question the queue cannot — who has *not* submitted — because an absent submission is an absent row. Weeks nobody worked stay blank so the outstanding cells are not buried. |
@@ -446,8 +446,16 @@ produced — which is what went wrong before: PDF and DOCX were written and test
 in layer 5 and the screen went on saying they arrived later.
 
 Every download carries the whole filter the screen was showing, including the
-search query. An export that quietly covers more than what was on screen is a
-wrong invoice.
+search query — and the *whole* of it, not the page. The screen is paged at fifty
+rows; an export covers everything the filter matches.
+
+Both halves of that are load-bearing, and both were wrong. An export that quietly
+covers *more* than the filter is a wrong invoice; one that covers *less* is a
+worse one. Until pagination arrived the screen's row cap travelled into the
+export with the rest of the filter, so any range with more entries than the cap
+was truncated in place — oldest first, silently, in a file somebody was about to
+bill from, and to a *different* extent depending on which page they happened to
+be looking at.
 
 Exports respect authorisation: a `client` user's export contains only their
 customer's confirmed entries, with internal notes and cost data removed before the

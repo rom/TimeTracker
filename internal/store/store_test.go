@@ -765,3 +765,35 @@ func TestRoutineStorage(t *testing.T) {
 		t.Errorf("the inactive routine was lost: %+v", all)
 	}
 }
+
+// TestTagsForEntriesExceedingTheParameterLimit.
+//
+// Every id in the lookup is a bound parameter, and SQLite rejects a statement
+// carrying more than its ceiling - 32766 in the versions this builds against.
+// The whole statement fails, so the symptom is a 500 on an export rather than a
+// missing tag.
+//
+// It stayed hidden because the only caller was a screen capped at a thousand
+// rows: the cap on the screen was, by accident, a cap on the query. Removing it
+// from the export exposed it against a year of entries.
+//
+// The ids here need not exist. What is being exercised is the statement's shape,
+// and forty thousand rows would take far longer to create than the check is
+// worth.
+func TestTagsForEntriesExceedingTheParameterLimit(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+
+	ids := make([]int64, 40_000)
+	for i := range ids {
+		ids[i] = int64(i + 1)
+	}
+
+	tags, err := db.TagsForEntries(ctx, ids)
+	if err != nil {
+		t.Fatalf("a lookup of %d entries failed: %v", len(ids), err)
+	}
+	if len(tags) != 0 {
+		t.Errorf("no entry exists, so no tags should come back; got %d", len(tags))
+	}
+}

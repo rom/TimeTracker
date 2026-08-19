@@ -79,8 +79,15 @@ production — as the inbox result showed within one run.
 
 **Positive**
 
-* Every ASR-012 budget is met, with room: day view 27 ms, week 32 ms, timer
-  start/stop 28 ms, one-year report 29 ms.
+* Every ASR-012 budget is met: day view 34 ms, week 33 ms, timer start/stop
+  30 ms, entries list 16 ms, one-year report 1.0 s against a 2 s budget.
+
+  The report figure deserves its context. It read 29 ms before pagination, and
+  that number was false: the export was truncated at a thousand rows, so it was
+  timing a thousandth of the work. A real one-year export of this dataset is
+  about 33,000 entries, and 1.0 s is what that costs. The budget is met with
+  half of it to spare, but a multi-year export would not meet it - and would not
+  be covered by the criterion either, which names one year.
 * The suite exists, so the next regression of this kind is caught by a build
   rather than by a user.
 * The queries no longer depend on the planner being clever, so behaviour does not
@@ -93,10 +100,14 @@ production — as the inbox result showed within one run.
 * Partial indexes only serve queries that state their predicate exactly, so a
   future query for "not confirmed" will not use the "pending" index. That is the
   trade for predictability, and the suite will show it.
-* The entries list is still 147 ms. It renders up to a thousand rows and is not
-  one of the operations ASR-012 names, so it has a stated budget of its own
-  rather than being held to the interactive one or ignored. If that needs
-  raising, the honest fix is to stop rendering a thousand rows at once.
+* The entries list was 147 ms, rendering up to a thousand rows. It is paged at
+  fifty now, which took it to 16 ms - and removing that cap turned up two things
+  it had been hiding. It was part of the filter, and the filter was what every
+  export was built from, so exports had been truncated at a thousand rows the
+  whole time; and once they were not, the tag lookup exceeded SQLite's
+  bound-parameter limit, which had never been reachable while something else
+  capped the row count. A limit imposed for one reason was silently load-bearing
+  for two others.
 * The suite takes about a minute and is excluded from `make check`, so it is only
   as useful as the habit of running it. `make test-perf` exists for that.
 
