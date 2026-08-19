@@ -425,8 +425,11 @@ rather than a new mechanism.
 
 ## 10. Exports
 
-Every report renders from one in-memory value into five formats, so they cannot
-disagree ([ADR-0007](adr/0007-pure-go-document-generation.md)):
+Every report renders into five formats from one description of a line, so they
+cannot disagree ([ADR-0007](adr/0007-pure-go-document-generation.md)). Some
+formats are handed that description as a slice and some as a stream, but a line
+is built in one place either way, and the two paths are compared against each
+other by test:
 
 * **PDF** — client-presentable: title block, period, grouped entries with repeating
   table headers, totals, page numbers.
@@ -456,6 +459,40 @@ export with the rest of the filter, so any range with more entries than the cap
 was truncated in place — oldest first, silently, in a file somebody was about to
 bill from, and to a *different* extent depending on which page they happened to
 be looking at.
+
+A whole-filter export can be large, so **CSV and JSON stream**. The rows arrive
+from a database cursor and are written and released one at a time; nothing holds
+the report. The JSON schema is what makes that possible — its totals come after
+its entries, so they can be folded from the rows as they go past rather than
+computed from a document that has to exist first. Had the totals been declared
+first, this format could not stream at all.
+
+That folding is where the design has to be careful. A summed total is addition
+and does not care about order, but *elapsed* time is the union of overlapping
+intervals, and a union can only be accumulated in one pass if the intervals
+arrive in ascending order — out of order, a later interval can cover a run that
+has already been closed and counted. So the streaming query orders ascending
+(the screen's listing orders descending, which is the opposite), and the
+accumulator records whether it ever saw an interval out of order. If it did, the
+export fails rather than emitting a total that is quietly too large: a wrong
+number on an invoice is not a thing to find out about later.
+
+Streaming costs something honest: a response commits to its status code with
+its first byte, so a failure halfway through ten thousand rows is a truncated
+download and a log line, not an error page. What it does not have to cost is the
+*first* row. Most export failures — a malformed regular expression above all —
+are knowable before any byte is due, so one row is pulled before a single header
+is set, and those are answered with the message that says how to fix them
+instead of with a file containing nothing but a header row and a 200, which
+reads as "no results" rather than as "your search was wrong".
+
+**PDF, DOCX and Markdown do not stream**, and are not made to. Each genuinely
+needs the whole report — to break pages and repeat headers, to size a table, to
+put a total in a heading. Rather than let them fail at whatever size a particular
+machine runs out at, they count the matching rows first and refuse above 50,000
+with 413 and a message naming CSV and JSON, which have no such limit. A refusal
+that says what to do instead is worth more than a truncation that says nothing,
+which is what this screen used to do.
 
 Exports respect authorisation: a `client` user's export contains only their
 customer's confirmed entries, with internal notes and cost data removed before the

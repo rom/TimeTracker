@@ -294,7 +294,7 @@ hardware. Report generation over a one-year range completes in under 2 s.
 into memory. It also validates the server-rendered choice: a page render must be
 cheap enough to be the response to a button press.
 
-*Addressed by:* [ADR-0002](adr/0002-server-rendered-htmx.md), [ADR-0003](adr/0003-pure-go-sqlite.md)
+*Addressed by:* [ADR-0002](adr/0002-server-rendered-htmx.md), [ADR-0003](adr/0003-pure-go-sqlite.md), [ADR-0032](adr/0032-measured-before-tuned.md)
 
 ---
 

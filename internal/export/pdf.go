@@ -231,8 +231,9 @@ func groupLines(lines []Line) []lineGroup {
 		}
 		group.lines = append(group.lines, line)
 		// Only entries that count contribute to a subtotal, for the same reason
-		// they do not contribute to the report total.
-		if line.Status == string(domain.StatusConfirmed) {
+		// they do not contribute to the report total - and by the same rule, so
+		// the subtotals add up to it.
+		if line.Counts() {
 			group.seconds += line.Seconds
 			if line.AmountMinor != 0 && line.Currency != "" {
 				group.amounts[line.Currency] += line.AmountMinor

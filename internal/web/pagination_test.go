@@ -2,6 +2,7 @@ package web
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -315,5 +316,145 @@ func TestExportCarriesTagsBeyondOneBatch(t *testing.T) {
 	// entries beyond the first batch.
 	if got := strings.Count(body, "billed reviewed"); got != total {
 		t.Errorf("%d rows carry their tags, want %d", got, total)
+	}
+}
+
+// TestDocumentFormatsAreBoundedRatherThanAttempted.
+//
+// PDF, Word and Markdown group their rows and print a subtotal per group, so
+// none of them can write anything until every row has been read - grouping is
+// buffering. Rather than discovering that as an out-of-memory, an oversized
+// range is refused with a message that says how large it is and what to do
+// instead.
+func TestDocumentFormatsAreBoundedRatherThanAttempted(t *testing.T) {
+	srv := seedForPaging(t, 20)
+
+	// The real bound is far above anything a test should seed, so it is lowered
+	// for the duration rather than reached.
+	restore := maxCollectedExportRows
+	setMaxCollectedExportRows(10)
+	t.Cleanup(func() { setMaxCollectedExportRows(restore) })
+
+	for _, format := range []string{"pdf", "docx", "md"} {
+		rec := get(t, srv, "/export/"+format+"?"+pagingRange)
+		if rec.Code != http.StatusRequestEntityTooLarge {
+			t.Errorf("/export/%s = %d, want 413 for a range past the limit", format, rec.Code)
+			continue
+		}
+		if !strings.Contains(rec.Body.String(), "CSV") {
+			t.Errorf("/export/%s: the refusal should point at a format that streams", format)
+		}
+	}
+
+	// The streaming formats have no such limit, and that is the point of the
+	// message: they must still work at the same size.
+	for _, format := range []string{"csv", "json"} {
+		rec := get(t, srv, "/export/"+format+"?"+pagingRange)
+		if rec.Code != http.StatusOK {
+			t.Errorf("/export/%s = %d; a streaming format has no row limit", format, rec.Code)
+		}
+	}
+}
+
+// TestStreamedAndCollectedExportsAgree.
+//
+// The with-expenses filter cannot stream - its condition is applied outside SQL
+// - so it takes the collected path while everything else streams. Two paths
+// through one handler is the arrangement that drifts, so the same data is
+// exported both ways and compared.
+func TestStreamedAndCollectedExportsAgree(t *testing.T) {
+	srv := seedForPaging(t, 30)
+
+	// An expense on every seeded day, so the with-expenses filter matches
+	// everything and the two paths are exporting the same rows.
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for day := range 10 {
+		if rec := post(t, srv, "/expenses", url.Values{
+			"project_id": {"1"}, "spent_on": {start.AddDate(0, 0, day).Format("2006-01-02")},
+			"description": {"Taxi"}, "amount": {"100.00"}, "billable": {"on"},
+		}); rec.Code >= 400 {
+			t.Fatalf("create expense = %d", rec.Code)
+		}
+	}
+
+	for _, format := range []string{"csv", "json"} {
+		streamed := stableExport(get(t, srv, "/export/"+format+"?"+pagingRange).Body.String())
+		collected := stableExport(get(t, srv, "/export/"+format+"?"+pagingRange+"&expenses=1").Body.String())
+
+		if streamed != collected {
+			t.Errorf("the %s export differs between the streamed and collected paths\n%s",
+				format, firstDifference(streamed, collected))
+		}
+	}
+}
+
+// generatedAt matches the moment a report says it was produced - that field
+// alone, not every timestamp, so an entry whose start differs between the two
+// paths still shows up as a difference.
+var generatedAt = regexp.MustCompile(`"generated_at": "[^"]*"`)
+
+// stableExport blanks the one field that is expected to differ.
+//
+// The two requests are issued a moment apart, so their generated_at stamps are
+// a moment apart too. Everything else about them must be identical, and that is
+// what is being compared.
+func stableExport(document string) string {
+	return generatedAt.ReplaceAllString(document, `"generated_at": "<generated>"`)
+}
+
+// firstDifference reports where two documents diverge, because "they differ" is
+// not enough to act on when the documents are thousands of lines long.
+func firstDifference(a, b string) string {
+	left, right := strings.Split(a, "\n"), strings.Split(b, "\n")
+	for i := range max(len(left), len(right)) {
+		var l, r string
+		if i < len(left) {
+			l = left[i]
+		}
+		if i < len(right) {
+			r = right[i]
+		}
+		if l != r {
+			return fmt.Sprintf("line %d:\n  streamed:  %q\n  collected: %q", i+1, l, r)
+		}
+	}
+	return fmt.Sprintf("no differing line; %d vs %d bytes", len(a), len(b))
+}
+
+// setMaxCollectedExportRows lowers the document-format limit for a test.
+//
+// A variable rather than a constant only so this can exist; nothing in the
+// running application changes it.
+func setMaxCollectedExportRows(rows int) { maxCollectedExportRows = rows }
+
+// TestStreamedExportReportsAnEarlyFailureAsAnError.
+//
+// A streamed response commits to its status code with its first byte, so the
+// handler pulls one row before setting a single header. Without that, a query
+// SQLite or Go refuses - a malformed regular expression is the one a person
+// actually types - is answered with 200 and a file containing nothing but a
+// header row, which reads as "no results" rather than as "your search was
+// wrong".
+func TestStreamedExportReportsAnEarlyFailureAsAnError(t *testing.T) {
+	srv := seedForPaging(t, 5)
+
+	for _, format := range []string{"csv", "json"} {
+		rec := get(t, srv, "/export/"+format+"?"+pagingRange+"&q=%5B&regexp=1")
+
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("/export/%s with a broken pattern = %d, want 400; body: %.120q",
+				format, rec.Code, rec.Body.String())
+		}
+		if strings.Contains(rec.Header().Get("Content-Type"), format) {
+			t.Errorf("/export/%s: a refusal should not be typed as the download it refused (%q)",
+				format, rec.Header().Get("Content-Type"))
+		}
+	}
+
+	// The same query without the regexp flag is an ordinary literal search, and
+	// must still stream - the point is to reject what is broken, not to reject
+	// a bracket.
+	if rec := get(t, srv, "/export/csv?"+pagingRange+"&q=%5B"); rec.Code != http.StatusOK {
+		t.Errorf("/export/csv with a literal bracket = %d, want 200", rec.Code)
 	}
 }

@@ -622,5 +622,6 @@
   "entries.showing.none": "Inga poster på den här sidan.",
   "entries.pagination": "Sidor med poster",
   "entries.page.past": "Det finns inget på den här sidan. Filtret kan ha smalnat av sedan länken skapades.",
-  "entries.page.first": "Tillbaka till första sidan"
+  "entries.page.first": "Tillbaka till första sidan",
+  "export.toolarge": "Det här intervallet innehåller %d poster, och PDF, Word och Markdown byggs färdiga innan de kan skrivas — gränsen är %d. Avgränsa intervallet, eller exportera som CSV eller JSON, som strömmas och saknar gräns."
 }
