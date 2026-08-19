@@ -32,6 +32,7 @@ add it.
 | **7** | Hardening, packaging, performance | 🔨 partial: hardening shipped; the performance suite is not yet written |
 | **8** | Bulk import, backup, YAML configuration | ✅ delivered |
 | **9** | Customer contract rules, approval report, user guide | ✅ delivered |
+| **10** | Dated terms, tags, search, copy/routines/switching, calendar import, timeline | ✅ delivered |
 
 ---
 
@@ -198,12 +199,26 @@ person per week. A task-oriented user guide alongside the per-screen help
 anything, no rate reaches an entry that nobody chose to apply, and the normal
 actions are documented as procedures in every supported language. **Done.**
 
+## Layer 10 — Recording faster, and finding things ✅
+
+Dated contract terms per customer and per project
+([ADR-0026](adr/0026-dated-contract-terms.md)). Tags, and search over notes,
+assignments and tags with a trigram index, a scan fallback and optional regular
+expressions ([ADR-0029](adr/0029-searching-with-trigram-and-regexp.md)). Copying
+a day or a week; routines ([ADR-0027](adr/0027-routines-are-offered-not-fired.md));
+one-click starts ordered by favourites and frequency; "switch to". Calendar
+import ([ADR-0028](adr/0028-calendar-import-is-a-conversation.md)). A day
+timeline with drag and resize. Colour on the whole line rather than a dot.
+
+**Done when:** the ordinary day is recordable in single clicks, an entry is
+findable by any fragment of it, and nothing in the layer creates time nobody
+asked for. **Done.**
+
 ## Backlog (not yet scheduled)
 
 Calendar (ICS) import · git commit import · desktop activity agent · recurring
-entries · invoice numbering · multi-currency conversion · internal cost rates and
-margin reporting · dated contract terms (rules change on renewal; today's are
-current-only) · per-project overtime terms · fine-grained permissions · PostgreSQL backend · webhooks ·
+entries (beyond weekday routines) · invoice numbering · multi-currency conversion · internal cost rates and
+margin reporting · fine-grained permissions · PostgreSQL backend · webhooks ·
 public read-only client portal links · PWA/offline · Slack reminder integration.
 
 ## Out of scope

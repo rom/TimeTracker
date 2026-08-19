@@ -151,6 +151,9 @@ customer ──< project ──< assignment ──< time_entry >── user
 tag >──< time_entry (many-to-many)          audit_event (append-only)
 rate (customer|project|person-on-project|entry override)
 timesheet_period (one row per user per week; absent ⇒ open)
+contract_terms (dated; scope = customer|project)
+routine (a template for recurring time, owned by one user)
+entry_search (FTS5, trigram tokenizer; maintained by the application)
 schema_migrations
 ```
 
@@ -167,6 +170,9 @@ Key entities:
 | `user` | display_name, email, role, password_hash (nullable), oidc_subject (nullable), totp_secret (nullable), tz, theme, active | |
 | `project_member` | project_id, user_id, role_override | the scoping dimension of RBAC |
 | `timesheet_period` | user_id, week_start, status, submitted_at, submitted_seconds, decided_by, decided_at, note | one person's week; a missing row means open ([ADR-0023](adr/0023-week-as-the-unit-of-approval.md)) |
+| `contract_terms` | scope (`customer`\|`project`), scope_id, effective_from, the overtime/travel/reimbursement rules, note | dated; the latest revision in force on a day prices it, with a project's merged over its customer's field by field ([ADR-0026](adr/0026-dated-contract-terms.md)) |
+| `routine` | user_id, assignment_id, name, weekdays, start_time, duration_seconds, billable, kind, tags, active | a template for recurring time. Nothing fires it; the day view offers it ([ADR-0027](adr/0027-routines-are-offered-not-fired.md)) |
+| `entry_search` | note, assignment, project, customer, tags | FTS5 with the trigram tokenizer, keyed by `rowid` = entry id. Written by the application in the same transaction as the entry, because the text spans four joined tables and no trigger could keep it right ([ADR-0029](adr/0029-searching-with-trigram-and-regexp.md)) |
 | `audit_event` | actor_id, on_behalf_of, action, resource_type, resource_id, diff_json, at, ip, request_id | append-only ([ADR-0010](adr/0010-audit-log-and-rsyslog.md)) |
 
 **Indexing** is driven by ASR-012. The load-bearing ones:
@@ -294,7 +300,11 @@ What is described above is the target architecture. As of the current release:
 | Customer contract rules (overtime, travel, reimbursement) | implemented ([ADR-0024](adr/0024-customer-rate-rules.md)) |
 | Approval status report, per person per week | implemented |
 | Task-oriented user guide | implemented ([ADR-0025](adr/0025-task-oriented-guide.md)) |
-| Tags | designed, not implemented |
+| Tags, and search (trigram FTS5, scan fallback, optional regexp) | implemented ([ADR-0029](adr/0029-searching-with-trigram-and-regexp.md)) |
+| Dated contract terms, per customer and per project | implemented ([ADR-0026](adr/0026-dated-contract-terms.md)) |
+| Copying a day or a week; routines; timer switching | implemented ([ADR-0027](adr/0027-routines-are-offered-not-fired.md)) |
+| Calendar import (iCalendar) | implemented ([ADR-0028](adr/0028-calendar-import-is-a-conversation.md)) |
+| Day timeline with drag and resize | implemented; positions are CSS grid classes, because the content security policy forbids inline styles and weakening it for geometry would weaken it for everything |
 | Client-side enhancement | `static/js/app.js` implements the HTMX subset in use (`hx-post`, `hx-confirm`, `HX-Request`/`HX-Refresh`); the upstream library is a drop-in replacement requiring no template changes |
 
 See [MVP_PLAN.md](MVP_PLAN.md) for the sequence.

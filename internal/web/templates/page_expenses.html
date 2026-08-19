@@ -81,6 +81,7 @@
           {{/* data-paste-target makes the whole row accept a pasted image:
                a photographed receipt is usually already on the clipboard. */}}
           <tr class="entry-row {{if eq (printf "%s" .Status) "pending"}}pending{{end}}"
+              data-colour="{{.ColourKey}}"
               data-paste-target="/attachments/expense/{{.ID}}" tabindex="0"
               aria-label="{{$page.T "attachments.paste"}}">
             <td>{{.SpentOn}}</td>

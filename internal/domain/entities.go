@@ -97,10 +97,11 @@ type Customer struct {
 	// RateMinor is the customer-level default hourly rate in minor units, used
 	// when neither the assignment nor the project sets one. 0 means "no default".
 	RateMinor int64
-	// Rules are this customer's contract terms beyond the base rate: overtime,
-	// travel time and reimbursement. All optional; a customer with none set
-	// bills exactly as it did before they existed. See rates.go.
-	Rules RateRules
+	// HasTerms says whether any dated contract terms exist for this customer,
+	// so a listing can badge one that bills differently from the rest. The terms
+	// themselves are their own records now, because they are dated and can also
+	// attach to a project (docs/adr/0026-dated-contract-terms.md).
+	HasTerms bool
 	// ArchivedAt is set instead of deleting. Deleting a customer would orphan
 	// invoiced history, so nothing in this application removes one.
 	ArchivedAt *time.Time
@@ -120,9 +121,6 @@ func (c Customer) Validate() error {
 	}
 	if c.Currency != "" && len(c.Currency) != 3 {
 		return invalid("currency must be a three-letter ISO-4217 code, got %q", c.Currency)
-	}
-	if err := c.Rules.Validate(); err != nil {
-		return err
 	}
 	return nil
 }
@@ -265,6 +263,11 @@ type TimeEntry struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 
+	// Tags are cross-cutting labels, loaded with the entry for display and
+	// written back on save. Normalised names, not ids: the caller says what the
+	// entry is tagged with and the store resolves or creates the tags.
+	Tags []string
+
 	// Denormalised for display and for authorisation scoping.
 	AssignmentName  string
 	ProjectID       int64
@@ -383,10 +386,3 @@ func (e TimeEntry) KindOrDefault() EntryKind {
 // catch data-entry accidents such as a mistyped year, which would otherwise
 // produce a total nobody can explain.
 const maxEntrySeconds = 7 * 24 * 3600
-
-// Tag is a cross-cutting label, independent of the customer hierarchy.
-type Tag struct {
-	ID        int64
-	Name      string
-	ColourKey string
-}

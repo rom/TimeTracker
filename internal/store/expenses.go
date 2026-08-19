@@ -17,7 +17,7 @@ const expenseSelect = `
 	       e.description, e.amount_minor, e.currency, e.billable, e.reimbursable,
 	       e.markup_pct, e.billed_minor, e.quantity_milli, e.unit, e.unit_rate_minor,
 	       e.status, e.created_at, e.updated_at,
-	       p.name, c.id, c.name, u.display_name, eb.display_name,
+	       p.name, c.id, c.colour_key, c.name, u.display_name, eb.display_name,
 	       (SELECT COUNT(*) FROM attachments a
 	         WHERE a.owner_type = 'expense' AND a.owner_id = e.id)
 	FROM expenses e
@@ -172,7 +172,7 @@ func scanExpense(row rowScanner) (domain.Expense, error) {
 		&e.Description, &e.AmountMinor, &e.Currency, &billable, &reimbursable,
 		&e.MarkupPercent, &e.BilledMinor, &e.QuantityMilli, &unit, &e.UnitRateMinor,
 		&status, &createdAt, &updatedAt,
-		&e.ProjectName, &e.CustomerID, &e.CustomerName, &e.UserName, &e.EnteredByName,
+		&e.ProjectName, &e.CustomerID, &e.ColourKey, &e.CustomerName, &e.UserName, &e.EnteredByName,
 		&e.AttachmentCount)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Expense{}, ErrNotFound

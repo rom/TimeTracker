@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rom/timetracker/internal/domain"
@@ -26,7 +27,7 @@ func WriteCSV(w io.Writer, report Report) error {
 
 	header := []string{
 		"id", "date", "start", "end", "customer", "project", "assignment",
-		"note", "user", "entered_by", "billable", "kind", "status",
+		"note", "tags", "user", "entered_by", "billable", "kind", "status",
 		"duration_hours", "duration_seconds",
 		"billable_hours", "rounding_rule", "rate", "amount", "currency",
 	}
@@ -49,6 +50,9 @@ func WriteCSV(w io.Writer, report Report) error {
 			line.Project,
 			line.Assignment,
 			line.Note,
+			// Space separated, which is how they are typed into the search box
+			// and how a spreadsheet filter can match one of several.
+			strings.Join(line.Tags, " "),
 			line.User,
 			line.EnteredBy,
 			strconv.FormatBool(line.Billable),

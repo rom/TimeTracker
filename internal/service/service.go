@@ -39,7 +39,10 @@ import (
 // Re-exported so the web layer can classify failures without importing the store
 // or auth packages directly.
 var (
-	ErrNotFound     = store.ErrNotFound
+	ErrNotFound = store.ErrNotFound
+	// ErrInvalidQuery is search text the user has to fix. Mapped onto a
+	// validation failure so the screen shows the message rather than a 500.
+	ErrInvalidQuery = store.ErrInvalidQuery
 	ErrForbidden    = auth.ErrForbidden
 	ErrValidation   = domain.ErrValidation
 	ErrConflict     = errors.New("conflict")

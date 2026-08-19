@@ -21,6 +21,15 @@ type DayView struct {
 	// Gaps are stretches of the working day with no entry covering them. They
 	// are shown as prompts ("2h 15m unaccounted"), never filled in automatically.
 	Gaps []Gap
+
+	// The day drawn as blocks against a clock. Computed on the server so the
+	// timeline is right with no JavaScript at all; see timeline.go.
+	Blocks    []TimelineBlock
+	Hours     []TimelineHour
+	StartHour int
+	EndHour   int
+	// Slots is how many quarter-hour rows the grid has.
+	Slots int
 }
 
 // Gap is an uncovered stretch between the first and last entry of a day.
@@ -88,6 +97,7 @@ func (s *Service) Day(ctx context.Context, date time.Time) (DayView, error) {
 	}
 	view.Totals = s.totals(entries)
 	view.Gaps = findGaps(entries, s.now())
+	buildTimeline(&view, s.now())
 	return view, nil
 }
 
@@ -202,6 +212,14 @@ type EntryFilter struct {
 	// UserID narrows to one person. Zero means "the acting user"; a manager or
 	// administrator may name someone else, and the scope still applies on top.
 	UserID int64
+	// Tags narrows to entries carrying all of them.
+	Tags []string
+	// Query is free text over the note, the assignment, the project, the
+	// customer and the tags. UseRegexp treats it as a regular expression.
+	Query     string
+	UseRegexp bool
+	// Kinds limits to work, overtime or travel.
+	Kinds []domain.EntryKind
 }
 
 // Entries lists entries matching a filter, for the Entries screen and as the
@@ -235,7 +253,42 @@ func (s *Service) Entries(ctx context.Context, filter EntryFilter) ([]domain.Tim
 		return nil, err
 	}
 
-	return s.db.ListEntries(ctx, store.EntryFilter{
+	entries, _, err := s.searchEntries(ctx, subjectID, scope, filter)
+	return entries, err
+}
+
+// SearchEntries is Entries with the search mechanism reported back, so the
+// screen can say whether it matched an index, a scan or a regular expression.
+func (s *Service) SearchEntries(ctx context.Context, filter EntryFilter) ([]domain.TimeEntry, store.SearchMode, error) {
+	actor, err := auth.MustUser(ctx)
+	if err != nil {
+		return nil, store.SearchNone, err
+	}
+	if err := s.authz.Can(ctx, auth.ActionView, auth.Resource{
+		Type: "time_entry", OwnerID: actor.ID,
+	}); err != nil {
+		return nil, store.SearchNone, err
+	}
+	subjectID := actor.ID
+	if filter.UserID != 0 && filter.UserID != actor.ID {
+		if err := s.authz.Can(ctx, auth.ActionView, auth.Resource{
+			Type: "time_entry", OwnerID: filter.UserID, ProjectID: filter.ProjectID,
+			CustomerID: filter.CustomerID,
+		}); err != nil {
+			return nil, store.SearchNone, notFoundFor(err)
+		}
+		subjectID = filter.UserID
+	}
+	scope, err := s.effectiveScope(ctx)
+	if err != nil {
+		return nil, store.SearchNone, err
+	}
+	return s.searchEntries(ctx, subjectID, scope, filter)
+}
+
+// searchEntries is the shared query, after the permission questions are settled.
+func (s *Service) searchEntries(ctx context.Context, subjectID int64, scope store.Scope, filter EntryFilter) ([]domain.TimeEntry, store.SearchMode, error) {
+	return s.db.SearchEntries(ctx, store.EntryFilter{
 		UserID:       subjectID,
 		Scope:        scope,
 		From:         filter.From,
@@ -244,6 +297,10 @@ func (s *Service) Entries(ctx context.Context, filter EntryFilter) ([]domain.Tim
 		ProjectID:    filter.ProjectID,
 		AssignmentID: filter.AssignmentID,
 		BillableOnly: filter.BillableOnly,
+		Tags:         filter.Tags,
+		Query:        filter.Query,
+		UseRegexp:    filter.UseRegexp,
+		Kinds:        filter.Kinds,
 		Limit:        filter.Limit,
 	})
 }

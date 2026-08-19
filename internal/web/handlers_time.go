@@ -45,6 +45,11 @@ type pageData struct {
 	Themes      []string
 	Assignments []domain.Assignment
 	Recent      []domain.Assignment
+	// Routines are the recurring templates due on the day being viewed, and the
+	// one being edited on the management screen.
+	Routines    []domain.Routine
+	RoutinesDue []service.DueRoutine
+	EditRoutine *domain.Routine
 	Error       string
 
 	// Screen-specific payloads.
@@ -54,6 +59,7 @@ type pageData struct {
 	Totals    domain.Totals
 	Customers []domain.Customer
 	Projects  []domain.Project
+	Tags      []domain.Tag
 	Entry     *domain.TimeEntry
 	Filter    entryFilterForm
 	// Zone is the acting user's IANA zone, for templates that render a stored
@@ -69,6 +75,10 @@ type pageData struct {
 	Inbox        *service.Inbox
 	Proposed     []domain.TimeEntry
 	Attachments  []domain.Attachment
+
+	// Dated contract terms: one scope's history, and the revision being edited.
+	Terms     *service.TermsView
+	EditTerms *domain.ContractTerms
 
 	// Editing the catalogue. Non-nil when an edit form is being rendered.
 	EditCustomer   *domain.Customer
@@ -93,6 +103,12 @@ type pageData struct {
 	// CSV import.
 	ImportPreview       *service.ImportPreview
 	ImportCreateMissing bool
+
+	// Calendar import. CalendarFile carries the uploaded text back to the
+	// commit step so the file does not have to be found twice.
+	CalendarPreview *service.CalendarPreview
+	CalendarFile    string
+	CalendarResult  *service.CalendarImportResult
 
 	// Backup and restore.
 	Backups        []service.BackupFile
@@ -263,7 +279,19 @@ func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
 	}
 	data.PeriodView = &period
 
-	if data.Recent, err = s.svc.RecentAssignments(r.Context(), 8); err != nil {
+	// What to offer as one-click starts: favourites first, then what this person
+	// works on most. Capped at ten, because a row of thirty buttons is one
+	// nobody clicks.
+	if data.Recent, err = s.svc.QuickStart(r.Context(), 10); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	// The recurring templates due today, and whether each already looks done.
+	if data.RoutinesDue, err = s.svc.RoutinesDue(r.Context(), date); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if data.Tags, err = s.svc.Tags(r.Context()); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -327,6 +355,16 @@ type entryFilterForm struct {
 	ProjectID    int64
 	AssignmentID int64
 	BillableOnly bool
+	// Tags and Query drive the search box; UseRegexp switches it from substring
+	// to regular expression. Kind narrows to work, overtime or travel.
+	Tags      string
+	Query     string
+	UseRegexp bool
+	Kind      string
+	// SearchMode is which mechanism answered, so the screen can say. A search
+	// that quietly used a different one from the one asked for produces results
+	// nobody can explain.
+	SearchMode string
 }
 
 // handleEntries renders the filterable entry list, which is also what every
@@ -341,11 +379,21 @@ func (s *Server) handleEntries(w http.ResponseWriter, r *http.Request) {
 	filter, form := s.entryFilter(r)
 	data.Filter = form
 
-	if data.Entries, err = s.svc.Entries(r.Context(), filter); err != nil {
+	entries, mode, err := s.svc.SearchEntries(r.Context(), filter)
+	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
+	data.Entries = entries
+	form.SearchMode = string(mode)
+	data.Filter = form
 	data.Totals = s.svc.Totals(data.Entries)
+
+	// The tags that exist, for the filter's suggestions.
+	if data.Tags, err = s.svc.Tags(r.Context()); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 
 	if data.Customers, err = s.svc.Customers(r.Context(), false); err != nil {
 		s.fail(w, r, err)
@@ -384,6 +432,15 @@ func (s *Server) entryFilter(r *http.Request) (service.EntryFilter, entryFilterF
 	form.ProjectID = int64Param(r.URL.Query().Get("project"))
 	form.AssignmentID = int64Param(r.URL.Query().Get("assignment"))
 	form.BillableOnly = r.URL.Query().Get("billable") == "1"
+	form.Tags = r.URL.Query().Get("tags")
+	form.Query = r.URL.Query().Get("q")
+	form.UseRegexp = r.URL.Query().Get("regexp") == "1"
+	form.Kind = r.URL.Query().Get("kind")
+
+	var kinds []domain.EntryKind
+	if kind := domain.EntryKind(form.Kind); kind.Valid() {
+		kinds = []domain.EntryKind{kind}
+	}
 
 	return service.EntryFilter{
 		// The end of the range is exclusive, so "to" is inclusive of that whole
@@ -394,6 +451,10 @@ func (s *Server) entryFilter(r *http.Request) (service.EntryFilter, entryFilterF
 		ProjectID:    form.ProjectID,
 		AssignmentID: form.AssignmentID,
 		BillableOnly: form.BillableOnly,
+		Tags:         domain.ParseTagList(form.Tags),
+		Query:        form.Query,
+		UseRegexp:    form.UseRegexp,
+		Kinds:        kinds,
 		Limit:        1000,
 	}, form
 }
@@ -500,6 +561,10 @@ func (s *Server) handleEditEntryForm(w http.ResponseWriter, r *http.Request) {
 	}
 	data.Title = data.Printer.T("entry.edit.title")
 	data.Entry = &entry
+	if data.Tags, err = s.svc.Tags(r.Context()); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	if data.Assignments, err = s.svc.Assignments(r.Context(), 0, false); err != nil {
 		s.fail(w, r, err)
 		return
@@ -569,6 +634,7 @@ func (s *Server) entryInputFromForm(r *http.Request) (service.EntryInput, error)
 		Note:         r.FormValue("note"),
 		Billable:     r.FormValue("billable") != "",
 		Kind:         kind,
+		Tags:         domain.ParseTagList(r.FormValue("tags")),
 		OnBehalfOf:   int64Param(r.FormValue("on_behalf_of")),
 	}
 
@@ -690,4 +756,66 @@ func int64Param(raw string) int64 {
 		return 0
 	}
 	return value
+}
+
+// timeParseIn reads a YYYY-MM-DD date in a location.
+func timeParseIn(raw string, loc *time.Location) (time.Time, error) {
+	return time.ParseInLocation("2006-01-02", raw, loc)
+}
+
+// handleMoveEntryBlock adjusts one entry's start and length.
+//
+// The endpoint the timeline's drag and resize post to, and also what its
+// keyboard controls use. It takes a start time and a length rather than a
+// pixel offset: the browser converts, so the server never has to know how tall
+// an hour is on somebody's screen, and the same request can be made by a form.
+func (s *Server) handleMoveEntryBlock(w http.ResponseWriter, r *http.Request) {
+	if err := parseForm(r); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	entry, err := s.svc.Entry(r.Context(), int64Param(r.PathValue("id")))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	loc := userLocation(r)
+
+	// The day comes from the entry unless the drag moved it to another one.
+	day := entry.StartedAt.In(loc).Format("2006-01-02")
+	if raw := r.FormValue("date"); raw != "" {
+		day = raw
+	}
+	started, err := time.ParseInLocation("2006-01-02 15:04", day+" "+r.FormValue("start"), loc)
+	if err != nil {
+		s.fail(w, r, domainValidation("could not read the new start time: "+err.Error()))
+		return
+	}
+
+	seconds := entry.DurationSeconds
+	if raw := r.FormValue("duration"); raw != "" {
+		if seconds, err = domain.ParseDuration(raw); err != nil {
+			s.fail(w, r, domainValidation("could not read the new length: "+err.Error()))
+			return
+		}
+	}
+
+	// Everything else about the entry is left alone. A drag moves time; it does
+	// not silently change what the time was for, and reusing the full edit
+	// input here would let a stale form field do exactly that.
+	_, err = s.svc.UpdateEntry(r.Context(), entry.ID, service.EntryInput{
+		AssignmentID:    entry.AssignmentID,
+		StartedAt:       started,
+		DurationSeconds: seconds,
+		Note:            entry.Note,
+		Billable:        entry.Billable,
+		Kind:            entry.KindOrDefault(),
+		Tags:            entry.Tags,
+	})
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.refreshOrRedirect(w, r)
 }

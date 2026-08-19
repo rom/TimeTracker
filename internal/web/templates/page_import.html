@@ -5,6 +5,11 @@
     <div class="screen-title"><h1>{{.T "import.title"}}</h1></div>
   </header>
 
+  {{/* The other way in. A calendar and a spreadsheet are both "hours recorded
+       somewhere else", and somebody who found this screen may have wanted the
+       other one. */}}
+  <p><a class="btn btn-quiet btn-small" href="/calendar">{{.T "calendar.title"}}</a></p>
+
   <p class="hint">{{.T "import.intro"}}</p>
 
   {{/* Two passes. The first parses and matches everything and writes nothing;

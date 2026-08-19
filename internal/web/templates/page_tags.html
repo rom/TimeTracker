@@ -1,0 +1,80 @@
+{{/*
+  Tag management.
+
+  A tag is created by using it - typing #incident into quick-add is the whole
+  setup - so this screen is not where tags are defined. It is where they are
+  renamed after a typo, given a colour, and removed once they have served their
+  purpose. The entry count is what makes that possible to judge: a tag on
+  nothing is either a mistake or finished.
+*/}}
+{{define "content"}}
+<section class="tags">
+
+  <header class="screen-header">
+    <div class="screen-title"><h1>{{.T "tags.title"}}</h1></div>
+  </header>
+
+  <p class="screen-intro">{{.T "tags.intro"}}</p>
+
+  {{if .Tags}}
+    <table class="entries">
+      <thead>
+        <tr>
+          <th scope="col">{{.T "tags.name"}}</th>
+          <th scope="col">{{.T "tags.entries"}}</th>
+          <th scope="col"><span class="visually-hidden">{{.T "action.save"}}</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{$csrf := .CSRFToken}}
+        {{$page := .}}
+        {{range .Tags}}
+          <tr class="entry-row" data-colour="{{.ColourKey}}">
+            <td>
+              <form method="post" action="/tags/{{.ID}}" class="inline">
+                {{template "csrf" $csrf}}
+                <input type="text" name="name" value="{{.Name}}" size="20"
+                       aria-label="{{$page.T "tags.name"}}">
+                {{$colour := .ColourKey}}
+                <select name="colour_key" aria-label="{{$page.T "entry.colour"}}">
+                  {{range $c := colours}}
+                    <option value="{{$c}}" {{if eq $c $colour}}selected{{end}}>{{$c}}</option>
+                  {{end}}
+                </select>
+                <button type="submit" class="btn btn-small">{{$page.T "action.save"}}</button>
+              </form>
+            </td>
+            <td class="cell-time">
+              {{/* Linked, because "what is on this tag" is the next question. */}}
+              <a href="/entries?tags={{.Name}}">{{.EntryCount}}</a>
+            </td>
+            <td class="cell-actions">
+              <form method="post" action="/tags/{{.ID}}/delete"
+                    hx-post="/tags/{{.ID}}/delete"
+                    hx-confirm="{{$page.T "tags.delete.confirm"}}">
+                {{template "csrf" $csrf}}
+                <button type="submit" class="btn btn-small btn-quiet">
+                  <span aria-hidden="true">×</span>
+                  <span class="visually-hidden">{{$page.T "action.delete"}}</span>
+                </button>
+              </form>
+            </td>
+          </tr>
+        {{end}}
+      </tbody>
+    </table>
+  {{else}}
+    <p class="empty">{{.T "tags.empty"}}</p>
+  {{end}}
+
+  {{/* The repair for an index that has drifted - after a restore, mainly, which
+       writes entries without going through the path that maintains it. */}}
+  <h2 class="section-heading">{{.T "tags.reindex"}}</h2>
+  <p class="field-help">{{.T "tags.reindex.help"}}</p>
+  <form method="post" action="/search/reindex">
+    {{template "csrf" .CSRFToken}}
+    <button type="submit" class="btn btn-quiet">{{.T "tags.reindex"}}</button>
+  </form>
+
+</section>
+{{end}}

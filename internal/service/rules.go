@@ -89,28 +89,34 @@ func (s *Service) OvertimeNotices(ctx context.Context, date time.Time) ([]Overti
 		return nil, err
 	}
 
-	// Totals per customer per day, and per customer for the week. Only counted
-	// entries: a pending proposal or a flagged entry is not yet somebody's time.
+	// Totals per project per day, and per project for the week. Per project
+	// rather than per customer because terms can attach to either, and two
+	// projects for one account may have agreed different thresholds.
+	//
+	// Only counted entries: a pending proposal or a flagged entry is not yet
+	// somebody's time.
 	type bucket struct {
-		name      string
-		perDay    map[string]int64
-		perDayOT  map[string]int64
-		weekTotal int64
-		weekOT    int64
+		customerID int64
+		name       string
+		perDay     map[string]int64
+		perDayOT   map[string]int64
+		weekTotal  int64
+		weekOT     int64
 	}
 	buckets := map[int64]*bucket{}
 	for _, entry := range entries {
 		if !entry.Counts() {
 			continue
 		}
-		b := buckets[entry.CustomerID]
+		b := buckets[entry.ProjectID]
 		if b == nil {
 			b = &bucket{
-				name:     entry.CustomerName,
-				perDay:   map[string]int64{},
-				perDayOT: map[string]int64{},
+				customerID: entry.CustomerID,
+				name:       entry.CustomerName,
+				perDay:     map[string]int64{},
+				perDayOT:   map[string]int64{},
 			}
-			buckets[entry.CustomerID] = b
+			buckets[entry.ProjectID] = b
 		}
 		day := entry.StartedAt.In(loc).Format("2006-01-02")
 		b.perDay[day] += entry.DurationSeconds
@@ -122,12 +128,14 @@ func (s *Service) OvertimeNotices(ctx context.Context, date time.Time) ([]Overti
 	}
 
 	var notices []OvertimeNotice
-	for customerID, b := range buckets {
-		customer, err := s.db.GetCustomer(ctx, customerID)
+	for projectID, b := range buckets {
+		// Resolved for the start of the week. A threshold that changed mid-week
+		// is a real edge, and using the week's own start keeps the daily and
+		// weekly notices talking about the same agreement.
+		rules, err := s.db.ResolveTerms(ctx, b.customerID, projectID, weekStart)
 		if err != nil {
 			return nil, err
 		}
-		rules := customer.Rules
 
 		if limit := rules.OvertimeDailyThresholdSeconds; limit > 0 {
 			for day, seconds := range b.perDay {
@@ -142,7 +150,7 @@ func (s *Service) OvertimeNotices(ctx context.Context, date time.Time) ([]Overti
 					return nil, parseErr
 				}
 				notices = append(notices, OvertimeNotice{
-					CustomerID: customerID, CustomerName: b.name,
+					CustomerID: b.customerID, CustomerName: b.name,
 					Period: "day", Starting: when,
 					ThresholdSeconds: limit,
 					RecordedSeconds:  seconds,
@@ -154,7 +162,7 @@ func (s *Service) OvertimeNotices(ctx context.Context, date time.Time) ([]Overti
 		if limit := rules.OvertimeWeeklyThresholdSeconds; limit > 0 &&
 			b.weekTotal-b.weekOT > limit {
 			notices = append(notices, OvertimeNotice{
-				CustomerID: customerID, CustomerName: b.name,
+				CustomerID: b.customerID, CustomerName: b.name,
 				Period: "week", Starting: start,
 				ThresholdSeconds: limit,
 				RecordedSeconds:  b.weekTotal,
@@ -234,11 +242,11 @@ func (s *Service) NeedsReceipt(ctx context.Context, expense domain.Expense) (boo
 	if expense.AttachmentCount > 0 {
 		return false, nil
 	}
-	customer, err := s.db.GetCustomer(ctx, expense.CustomerID)
+	rules, err := s.db.ResolveTerms(ctx, expense.CustomerID, expense.ProjectID, expense.SpentOn)
 	if err != nil {
 		return false, err
 	}
-	limit := customer.Rules.ReceiptRequiredAboveMinor
+	limit := rules.ReceiptRequiredAboveMinor
 	return limit > 0 && expense.AmountMinor > limit, nil
 }
 

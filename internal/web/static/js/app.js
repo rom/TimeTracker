@@ -492,6 +492,222 @@
     });
   }
 
+  /* ---------------------------------------------------------- timeline ---- */
+
+  /*
+   * Dragging a block to move it, and its bottom edge to resize it.
+   *
+   * Strictly an enhancement. The server draws the timeline and every block
+   * already carries a form with a start time and a length that posts to the
+   * same endpoint this does. Script hides that form and drives the endpoint
+   * from pointer events instead; with no script, or if this throws, the forms
+   * come back and nothing is lost but the dragging.
+   *
+   * Pointer events rather than mouse events, so a touch screen and a stylus
+   * work without a second code path.
+   */
+  function initTimeline() {
+    var timeline = document.querySelector("[data-timeline]");
+    if (!timeline) return;
+
+    /* Marking the document lets the stylesheet hide the fallback forms only
+       when there is script to replace them. Doing it here rather than at load
+       means a failure earlier in this file leaves the forms visible. */
+    document.documentElement.classList.add("js-enabled");
+
+    var startHour = parseInt(timeline.getAttribute("data-start-hour"), 10);
+    var endHour = parseInt(timeline.getAttribute("data-end-hour"), 10);
+    var date = timeline.getAttribute("data-date");
+    if (isNaN(startHour) || isNaN(endHour) || endHour <= startHour) return;
+
+    var spanMinutes = (endHour - startHour) * 60;
+    /* Fifteen minutes is the granularity people actually record in, and it is
+       what makes dragging land on a round number instead of 09:07. */
+    var snapMinutes = 15;
+
+    timeline.querySelectorAll(".timeline-block").forEach(function (block) {
+      var grip = block.querySelector("[data-grip]");
+      if (grip) makeDraggable(block, grip, true);
+      makeDraggable(block, block, false);
+    });
+
+
+    /* pixelsToMinutes converts a drag distance into time, snapped.
+     *
+     * Against scrollHeight rather than clientHeight: the timeline scrolls when
+     * the day is long, and the visible height would then be less than the grid
+     * it is measuring, so every drag would move less than the pointer did. */
+    function pixelsToMinutes(pixels) {
+      var height = timeline.scrollHeight || timeline.clientHeight;
+      if (!height) return 0;
+      var minutes = (pixels / height) * spanMinutes;
+      return Math.round(minutes / snapMinutes) * snapMinutes;
+    }
+
+    /* dragThreshold is how far the pointer must travel before this counts as a
+       drag rather than a click.
+       
+       The whole block is a link to the correction screen, so both gestures
+       start in the same place and something has to tell them apart. Distance
+       is the honest test: a click that wandered three pixels is still a click,
+       and anything past that was somebody moving the block. */
+    var dragThreshold = 4;
+
+    function makeDraggable(block, handle, resizing) {
+      handle.addEventListener("pointerdown", function (event) {
+        /* A form control keeps its own behaviour: typing a time into the
+           fallback field must not drag the block it sits in. */
+        if (event.target.closest("input, button, select")) return;
+        if (event.button !== 0 && event.pointerType === "mouse") return;
+
+        /* The grip sits inside the block, so a pointerdown on it would reach
+           the block's own handler as well and both would run - one resizing,
+           one moving, and both posting. The grip claims the gesture. */
+        if (resizing) event.stopPropagation();
+
+        /* Deliberately no preventDefault here. Doing it would kill the click
+           that opens the correction screen, which is the commoner action. The
+           click is suppressed further down, and only once a real drag has
+           happened. */
+        var startY = event.clientY;
+        var originalTop = block.offsetTop;
+        var originalHeight = block.offsetHeight;
+        var startMinutes = minutesOf(block.getAttribute("data-start"));
+        var lengthMinutes = Math.round(
+          parseInt(block.getAttribute("data-duration"), 10) / 60);
+        if (startMinutes === null || isNaN(lengthMinutes)) return;
+
+        var deltaMinutes = 0;
+        var dragged = false;
+
+        /* The moves are listened for on the window rather than on the handle,
+         * and the pointer is deliberately not captured.
+         *
+         * The handle can be an eight-pixel grip, so a drag leaves it
+         * immediately and listeners attached to it would stop hearing anything
+         * after the first few pixels. Pointer capture would fix that and
+         * introduce a worse problem: while an element holds the pointer the
+         * browser retargets the following click to it, so a plain click on a
+         * block would never reach the link inside it and the correction screen
+         * would silently stop opening. The window hears everything and
+         * retargets nothing. */
+        function onMove(moveEvent) {
+          var travelled = moveEvent.clientY - startY;
+          if (!dragged) {
+            if (Math.abs(travelled) < dragThreshold) return;
+            dragged = true;
+            block.classList.add("is-dragging");
+          }
+          deltaMinutes = pixelsToMinutes(travelled);
+          var pixels = (deltaMinutes / spanMinutes) *
+            (timeline.scrollHeight || timeline.clientHeight);
+          if (resizing) {
+            /* A block cannot be shorter than one snap: a zero-length entry is
+               not a thing anybody means to create by dragging. */
+            block.style.height =
+              Math.max(originalHeight + pixels, 4) + "px";
+          } else {
+            block.style.top = originalTop + pixels + "px";
+          }
+        }
+
+        function onUp() {
+          window.removeEventListener("pointermove", onMove);
+          window.removeEventListener("pointerup", onUp);
+          window.removeEventListener("pointercancel", onUp);
+          block.classList.remove("is-dragging");
+
+          if (!dragged || deltaMinutes === 0) {
+            /* A click, or a drag that snapped back to where it started.
+               Leave the block where the server put it and let the click
+               through to the correction screen. */
+            block.style.top = "";
+            block.style.height = "";
+            return;
+          }
+
+          /* This was a drag, so the click that follows it is not a request to
+             open anything. Swallowed once, on the way out.
+             
+             The listener also clears itself on a timer: a drag that ends
+             without a click - released outside the block, or cancelled by the
+             browser - would otherwise leave it attached to eat somebody's next
+             real click, which is the kind of fault that looks like the page
+             randomly ignoring you. */
+          var suppress = function (clickEvent) {
+            clickEvent.preventDefault();
+            clickEvent.stopPropagation();
+            release();
+          };
+          var release = function () {
+            block.removeEventListener("click", suppress, true);
+          };
+          block.addEventListener("click", suppress, true);
+          window.setTimeout(release, 400);
+
+          var newStart = startMinutes;
+          var newLength = lengthMinutes;
+          if (resizing) {
+            newLength = Math.max(lengthMinutes + deltaMinutes, snapMinutes);
+          } else {
+            newStart = Math.max(startMinutes + deltaMinutes, 0);
+          }
+          submitMove(block, newStart, newLength);
+        }
+
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", onUp);
+        window.addEventListener("pointercancel", onUp);
+      });
+    }
+
+    /* submitMove posts the block's new position through its own form, so the
+       CSRF token and the endpoint are the ones the server already rendered
+       rather than a second set assembled here. */
+    function submitMove(block, startMinutes, lengthMinutes) {
+      var form = block.querySelector(".timeline-form");
+      if (!form) return;
+
+      var startField = form.querySelector('input[name="start"]');
+      var durationField = form.querySelector('input[name="duration"]');
+      if (!startField || !durationField) return;
+
+      startField.value = clockOf(startMinutes);
+      durationField.value = lengthMinutes + "m";
+
+      var dateField = document.createElement("input");
+      dateField.type = "hidden";
+      dateField.name = "date";
+      dateField.value = date;
+      form.appendChild(dateField);
+
+      form.requestSubmit ? form.requestSubmit() : form.submit();
+    }
+  }
+
+  /* minutesOf reads "09:30" as minutes past midnight. */
+  function minutesOf(clock) {
+    if (!clock) return null;
+    var parts = clock.split(":");
+    if (parts.length !== 2) return null;
+    var hours = parseInt(parts[0], 10);
+    var minutes = parseInt(parts[1], 10);
+    if (isNaN(hours) || isNaN(minutes)) return null;
+    return hours * 60 + minutes;
+  }
+
+  /* clockOf is the inverse, clamped to the day: dragging a block off the top
+     must not produce a negative hour. */
+  function clockOf(minutes) {
+    if (minutes < 0) minutes = 0;
+    if (minutes > 23 * 60 + 59) minutes = 23 * 60 + 59;
+    var hours = Math.floor(minutes / 60);
+    var rest = minutes % 60;
+    return (
+      String(hours).padStart(2, "0") + ":" + String(rest).padStart(2, "0")
+    );
+  }
+
   /* ------------------------------------------------------------- start ---- */
 
   function startLiveClocks() {
@@ -521,6 +737,7 @@
       ["paste", initPaste],
       ["help", initHelp],
       ["shortcuts", initShortcuts],
+      ["timeline", initTimeline],
     ];
 
     features.forEach(function (feature) {

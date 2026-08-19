@@ -53,8 +53,12 @@
 | 017 help | Every help screen renders in every language. The help control is asserted to be a real link that returns a whole page without JavaScript. An unknown screen falls back rather than erroring. The markup renderer is tested against script injection, since help text is written by translators and its output is marked as trusted HTML. |
 | 015 least privilege | Config tests assert that server mode refuses a public bind without TLS, that a half-configured TLS pair is rejected, that a group-readable private key is refused with a message saying how to fix it, and that no CBC or non-forward-secret cipher suite is offered. The platform profiles in `deploy/` are **not** covered by automated tests - they are verified by `scripts/harden-check.sh` and `systemd-analyze security` against a real deployment, which is stated plainly rather than implied. |
 | 020 approval and correction | The lock is proved by removing it: a sanity run that neuters `checkPeriodOpen` must fail create, update, delete, timer start and the HTTP-level test together - a lock is only real if every mutation asks. Positive cases cover submit → withdraw → edit, edit refused *into* a locked week as well as inside one, an administrator being refused like anyone else, an empty week refused for submission, rejection requiring a reason, the reason reaching the owner's screen, a resubmission starting clean, nobody deciding on their own week in either mode, and reopen restoring the ability to edit. Week-start arithmetic is tested against Sunday-start weeks and a zone where late Sunday in UTC is already Monday locally. |
+| 021 contract terms | Resolution is pinned as a table: which revision is in force on which day, including the day a revision starts and a revision agreed for the future. The project-over-customer merge is tested for the case that motivated it - a project that names only its overtime keeps following the account for everything else - and for the case that required the enumerations to gain an explicit default, where a project overrides a customer that does not pay for travel. A backdated entry is proved to price at the terms in force then, and moving it across a boundary to re-price. |
 | 021 contract rules | The rate table is exercised for every kind against every combination of set and unset rule, because an unset rule silently behaving as zero would bill work at nothing - the most expensive failure available here. Quantity pricing is pinned exactly (42.5 km at 25.00 is 106250 minor units, not approximately that) and the formatter is proved to round-trip through the parser, so what is displayed can be typed back. Service tests prove the kind survives storage - it once did not, see §3a - that unbilled travel is still recorded in full, that a threshold produces a notice and marking the time stops it, that an explicit 0% markup is not overwritten by a customer default, and that a claim over the evidence threshold refuses the week's submission by name. |
 | 022 learnability | Every guide topic is asserted to exist in every catalogued language, since a missing one renders as its own key - a page of gibberish rather than an error. The proxy topic is checked for the specific promises that make it worth having (a proposal, the inbox, the `@name` syntax, the shared project). Topics that cannot apply in the running mode are asserted absent. The markup renderer is tested for what it must and must not do: lists where every line is a marker, prose otherwise, and HTML from the catalogue escaped rather than executed. |
+| 023 routines | The property the design rests on is proved by absence: having a routine creates nothing until it is applied. Weekday matching is tested across a whole week including Sunday, which is 0 in Go and 7 in the stored list. Applying all skips what is already recorded, and a routine cannot be applied by anybody but its owner. |
+| 024 calendar import | The parser is tested against what Google and Outlook actually emit - folded lines with a space and with a tab, TZID parameters, DURATION instead of DTEND, bare line feeds, escaped separators - because those are the details that silently truncate a meeting name. The service tests are about judgement rather than parsing: every cancelled, declined, all-day and recurring event is accounted for by name; matching produces one candidate or none; a preview writes nothing; a re-import detects what is already there; a failure on one event does not fail the rest. |
+| 025 search | Each mechanism is tested for the property that justifies it, not merely for returning rows: trigram finds a fragment inside a word, a two-character query falls back rather than returning nothing, a query containing FTS5 operators is matched literally, and a regular expression is a regular expression with a malformed one reported as the searcher's mistake. The index is proved to follow edits, tag renames and deletions. |
 | 014 exactness | Rounding boundary tables (exactly on the increment, one second either side, zero, negative guard); rate × duration half-away-from-zero; mixed-currency addition panics/errors; a source-level check that no persisted field or total is `float64`. |
 
 ## 3a. Regression tests
@@ -75,6 +79,7 @@ list is short and each entry is specific:
 | the header clock showed `--:--:--` forever | a placeholder waiting for a script, in the browser's zone, behind an init sequence where one throw disabled everything after it |
 | the inbox returned 500 with any proposal in it | a custom template function named `index` shadowed the builtin, so a map lookup failed |
 | a kind was applied to a rate but never stored | the service kept its own copy of the entry insert, and the copies drifted |
+| a migration wrote timestamps the reader refused | `datetime()` separates date and time with a space; no fresh-database test could see it |
 
 Two of those are worth dwelling on. The 500 was invisible because the test logger
 discarded output and the smoke test rendered only empty pages - so the regression
@@ -96,6 +101,14 @@ screen all worked until there was a row on them. Smoke tests that load every
 screen on an empty database prove nothing about any of them, so the regression
 tests here seed a row first and the broad smoke test now covers the screens that
 have one.
+
+The data-carrying migration is a third kind: a statement that only executes when
+there is data to carry, in a suite that always starts from an empty database.
+`TestMigrationsUpgradeExistingData` applies the schema in two halves with real
+rows in between, which is what an upgrade actually is, and then reads every
+timestamp column in the database back through the parser the application uses.
+`TestMigrationsWriteTimestampsInTheStoredFormat` is the cheap general guard for
+the same defect and needs no data at all.
 
 The header clock is the other kind. It could not be reproduced in a headless
 browser at all - it ticks there - so the fix was not to chase the trigger but to
@@ -160,6 +173,12 @@ Some things automation cannot honestly settle, checked before each release:
 * Clipboard paste of an image on macOS, Windows and Linux browsers — clipboard
   behaviour differs per platform and is not reproducible in `httptest`.
 * A restore drill: take a backup, destroy the installation, restore, verify.
+* **The timeline**, in a real browser: that a block can be dragged to move it
+  and its edge dragged to resize it, that a plain click still opens the
+  correction screen, that the fallback forms are visible with JavaScript
+  disabled and hidden without, and that the page reports no content-security
+  violations. The geometry itself is Go and has ordinary tests; only the
+  gestures need a browser.
 * **The header clock**, in a real browser: that it ticks; that it still shows the
   right time with JavaScript disabled entirely; and that sabotaging the first
   initialiser leaves the clock and every later feature running, with the failure

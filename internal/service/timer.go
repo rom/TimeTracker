@@ -201,6 +201,9 @@ type EntryInput struct {
 	// Kind is work, overtime or travel. Empty means work, so a caller that does
 	// not know about kinds records ordinary work rather than nothing.
 	Kind domain.EntryKind
+	// Tags are the complete set for the entry: what is saved replaces what was
+	// there, because the form shows every tag and a removed one has to go.
+	Tags []string
 	// OnBehalfOf, when set to another user, makes this a proxy proposal that
 	// requires that user's confirmation before it counts.
 	OnBehalfOf int64
@@ -253,6 +256,7 @@ func (s *Service) CreateEntry(ctx context.Context, in EntryInput) (domain.TimeEn
 		Note:         in.Note,
 		Billable:     in.Billable,
 		Kind:         in.Kind,
+		Tags:         in.Tags,
 		Status:       status,
 		// The entry's own zone decides which day it belongs to, so it is the
 		// subject's zone rather than the reader's.
@@ -328,6 +332,7 @@ func (s *Service) UpdateEntry(ctx context.Context, entryID int64, in EntryInput)
 	updated.Note = in.Note
 	updated.Billable = in.Billable
 	updated.Kind = in.Kind
+	updated.Tags = in.Tags
 	// Editing an entry clears a review flag: a human has now looked at it, which
 	// is exactly what the flag was asking for.
 	updated.Flagged = false
@@ -508,9 +513,9 @@ func entryDiff(before, after domain.TimeEntry, assignmentLabel string) map[strin
 // storing was not stored at all. Column knowledge belongs in exactly one
 // package, and this is how the service reaches it without keeping a second copy.
 func createEntryTx(ctx context.Context, tx *sql.Tx, e domain.TimeEntry) (domain.TimeEntry, error) {
-	return store.CreateEntryTx(ctx, tx, e)
+	return store.CreateEntryWithTagsTx(ctx, tx, e)
 }
 
 func updateEntryTx(ctx context.Context, tx *sql.Tx, e domain.TimeEntry) error {
-	return store.UpdateEntryTx(ctx, tx, e)
+	return store.UpdateEntryWithTagsTx(ctx, tx, e)
 }

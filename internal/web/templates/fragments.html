@@ -94,7 +94,11 @@
   {{/* The row accepts a pasted image, which attaches it to this entry. It posts
        to the same endpoint a file input does, so there is no second, laxer path
        into the blob store. */}}
+  {{/* data-colour puts the customer's colour on the whole line rather than on
+       a dot at the start of it: a row is scanned, and a dot is too small a
+       target to sort forty of them by. */}}
   <tr class="entry-row {{if $e.Flagged}}flagged{{end}} {{if eq (printf "%s" $e.Status) "pending"}}pending{{end}}"
+      data-colour="{{$e.ColourKey}}"
       data-paste-target="/attachments/time_entry/{{$e.ID}}" tabindex="0">
     <td class="cell-chip">
       <span class="chip" data-colour="{{$e.ColourKey}}" title="{{$e.CustomerName}}">
@@ -123,6 +127,11 @@
       {{$kind := printf "%s" $e.KindOrDefault}}
       {{if ne $kind "work"}}
         <span class="badge badge-kind badge-{{$kind}}">{{$page.T (printf "kind.%s" $kind)}}</span>
+      {{end}}
+      {{/* Tags link to a filtered view of themselves, which is the only thing
+           anybody wants to do with a tag they can see. */}}
+      {{range $e.Tags}}
+        <a class="badge badge-tag" href="/entries?tags={{.}}">#{{.}}</a>
       {{end}}
     </td>
     <td class="cell-time">
@@ -248,6 +257,18 @@
     </div>
 
     <div class="field field-wide">
+      <label for="edit-tags">{{$page.T "entry.tags"}}</label>
+      <input type="text" id="edit-tags" name="tags" list="tag-options"
+             value="{{tagList $entry.Tags}}"
+             placeholder="{{$page.T "entry.tags.placeholder"}}"
+             aria-describedby="edit-tags-help">
+      <p class="field-help" id="edit-tags-help">{{$page.T "entry.tags.help"}}</p>
+      <datalist id="tag-options">
+        {{range $page.Tags}}<option value="{{.Name}}">{{end}}
+      </datalist>
+    </div>
+
+    <div class="field field-wide">
       <label for="edit-note">{{$page.T "entry.note"}}</label>
       <input type="text" id="edit-note" name="note" value="{{$entry.Note}}"
              placeholder="{{$page.T "entry.note.placeholder"}}">
@@ -312,4 +333,150 @@
       {{end}}
     </div>
   {{- end -}}
+{{end}}
+
+{{/* ------------------------------------------------------ contract terms --- */}}
+{{/*
+  A one-line summary of a set of rules, for the revision list and for the
+  "what applies today" panel. Only what is set: a row listing every rule at its
+  default would be twelve columns of nothing.
+*/}}
+{{define "terms-summary"}}
+  {{- $r := .Rules -}}
+  {{- $page := .Page -}}
+  {{- $currency := .Currency -}}
+  <ul class="terms-summary">
+    {{if gt $r.OvertimeRateMinor 0}}
+      <li>{{$page.T "rules.overtime"}}: {{$page.Printer.FormatMoney $r.OvertimeRateMinor $currency}}</li>
+    {{else if gt $r.OvertimeMultiplierPct 0}}
+      <li>{{$page.T "rules.overtime"}}: {{$r.OvertimeMultiplierPct}}%</li>
+    {{end}}
+    {{if gt $r.OvertimeDailyThresholdSeconds 0}}
+      <li>{{$page.T "rules.overtime.daily"}}: {{$page.Printer.FormatDuration $r.OvertimeDailyThresholdSeconds}}</li>
+    {{end}}
+    {{if gt $r.OvertimeWeeklyThresholdSeconds 0}}
+      <li>{{$page.T "rules.overtime.weekly"}}: {{$page.Printer.FormatDuration $r.OvertimeWeeklyThresholdSeconds}}</li>
+    {{end}}
+
+    {{$travel := printf "%s" $r.TravelBilling}}
+    {{if eq $travel "unbilled"}}
+      <li>{{$page.T "rules.travel"}}: {{$page.T "rules.travel.unbilled"}}</li>
+    {{else if eq $travel "rate"}}
+      <li>{{$page.T "rules.travel"}}:
+        {{if gt $r.TravelRateMinor 0}}{{$page.Printer.FormatMoney $r.TravelRateMinor $currency}}
+        {{else}}{{$r.TravelMultiplierPct}}%{{end}}</li>
+    {{else if eq $travel "work"}}
+      <li>{{$page.T "rules.travel"}}: {{$page.T "rules.travel.aswork"}}</li>
+    {{end}}
+
+    {{if gt $r.ExpenseMarkupPct 0}}
+      <li>{{$page.T "rules.expense.markup"}}: {{$r.ExpenseMarkupPct}}%</li>
+    {{end}}
+    {{if eq (printf "%s" $r.ExpenseBilling) "no"}}
+      <li>{{$page.T "rules.expense.notbilled"}}</li>
+    {{end}}
+    {{if gt $r.MileageRateMinor 0}}
+      <li>{{$page.T "rules.mileage"}}: {{$page.Printer.FormatMoney $r.MileageRateMinor $currency}}</li>
+    {{end}}
+    {{if gt $r.PerDiemMinor 0}}
+      <li>{{$page.T "rules.perdiem"}}: {{$page.Printer.FormatMoney $r.PerDiemMinor $currency}}</li>
+    {{end}}
+    {{if gt $r.ReceiptRequiredAboveMinor 0}}
+      <li>{{$page.T "rules.receipt"}}: {{$page.Printer.FormatMoney $r.ReceiptRequiredAboveMinor $currency}}</li>
+    {{end}}
+
+    {{if not $r.Configured}}
+      <li class="empty">{{$page.T "terms.none"}}</li>
+    {{end}}
+  </ul>
+{{end}}
+
+{{/* ------------------------------------------------------------- timeline --- */}}
+{{/*
+  The day as blocks against a clock.
+
+  A list of entries answers "what did I record"; a timeline answers "what does
+  my day look like", which is the question somebody asks when they are trying to
+  find the hour they have not accounted for. Overlaps are visible as overlaps
+  rather than as a discrepancy between two totals.
+
+  It is an enhancement, not a replacement. Every block is a link to the same
+  correction screen the list uses, and every block carries start/length controls
+  that post an ordinary form. With script, those controls are hidden and the
+  block can be dragged to move it or its edge dragged to resize it; both post to
+  the same endpoint the form does. With no script, nothing is lost but the
+  dragging.
+
+  Positions are inline styles because they are data, not design: the top of a
+  block is where that entry starts, and there is no stylesheet rule that could
+  know it.
+*/}}
+{{define "day-timeline"}}
+  {{- $day := .Day -}}
+  {{- $page := . -}}
+  <section class="timeline-wrap" aria-labelledby="timeline-heading">
+    <h2 class="section-heading" id="timeline-heading">{{.T "timeline.title"}}</h2>
+
+    <div class="timeline" data-timeline data-slots="{{$day.Slots}}"
+         data-date="{{date $day.Date}}"
+         data-start-hour="{{$day.StartHour}}" data-end-hour="{{$day.EndHour}}">
+      {{/* The hour rules, sharing the grid's row template so a label lines up
+           with the slot it names. */}}
+      <div class="timeline-hours" aria-hidden="true">
+        {{range $day.Hours}}
+          <div class="timeline-hour slot-{{.Slot}}">{{.Label}}</div>
+        {{end}}
+      </div>
+
+      <ol class="timeline-blocks" data-lanes="{{if $day.Blocks}}{{(index $day.Blocks 0).Lanes}}{{else}}1{{end}}">
+        {{range $day.Blocks}}
+          {{$entry := .Entry}}
+          {{/* Position is a class, not an inline style: the content security
+               policy forbids style attributes, and the geometry is a fixed set
+               of quarter-hour slots rather than arbitrary values. */}}
+          <li class="timeline-block slot-{{.Slot}} span-{{.Span}} lane-{{.Lane}} {{if $entry.Running}}is-running{{end}}"
+              data-colour="{{$entry.ColourKey}}"
+              data-entry="{{$entry.ID}}"
+              data-start="{{clock $entry.StartedAt $day.Location}}"
+              data-duration="{{$entry.DurationSeconds}}">
+            <a class="timeline-link" href="/entries/{{$entry.ID}}/edit">
+              <span class="timeline-name">{{$entry.AssignmentName}}</span>
+              <span class="timeline-time">
+                {{clock $entry.StartedAt $day.Location}}
+                · {{$page.Printer.FormatDuration $entry.DurationSeconds}}
+              </span>
+              {{if $entry.Note}}<span class="timeline-note">{{$entry.Note}}</span>{{end}}
+            </a>
+
+            {{/* The no-script path, and the accessible one: a real form with a
+                 time and a length. Script hides it and drives the same endpoint
+                 from pointer events, so there is one way in on the server. */}}
+            <form class="timeline-form" method="post" action="/entries/{{$entry.ID}}/move"
+                  hx-post="/entries/{{$entry.ID}}/move">
+              {{template "csrf" $page.CSRFToken}}
+              <label>
+                <span class="visually-hidden">{{$page.T "entry.start"}}</span>
+                <input type="time" name="start" value="{{clock $entry.StartedAt $day.Location}}">
+              </label>
+              <label>
+                <span class="visually-hidden">{{$page.T "entry.duration"}}</span>
+                <input type="text" name="duration" size="5"
+                       value="{{duration $entry.DurationSeconds}}">
+              </label>
+              <button type="submit" class="btn btn-small">{{$page.T "action.apply"}}</button>
+            </form>
+
+            {{/* The resize grip. aria-hidden because the form above does the
+                 same thing accessibly, and announcing a drag handle a screen
+                 reader cannot use is noise. */}}
+            <span class="timeline-grip" data-grip aria-hidden="true"></span>
+          </li>
+        {{else}}
+          <li class="timeline-empty">{{$page.T "timeline.empty"}}</li>
+        {{end}}
+      </ol>
+    </div>
+
+    <p class="field-help">{{.T "timeline.help"}}</p>
+  </section>
 {{end}}

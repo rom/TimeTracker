@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Customer-specific rate rules: overtime, travel time, and reimbursement.
@@ -53,12 +54,22 @@ func (k EntryKind) Valid() bool {
 // MessageKey is the catalogue key naming this kind.
 func (k EntryKind) MessageKey() string { return "kind." + string(k) }
 
-// TravelBilling says how a customer pays for travel time.
+// TravelBilling says how travel time is paid for.
 type TravelBilling string
 
 const (
-	// TravelAsWork is the default: travel bills exactly like work.
-	TravelAsWork TravelBilling = ""
+	// TravelInherit is unset: take whatever the wider scope says, and bill
+	// travel as work if nothing does.
+	//
+	// Distinct from TravelAsWork because terms now nest - a project's terms are
+	// merged over its customer's - and "say nothing about travel" has to mean
+	// something different from "travel is billed as work here". Without the
+	// distinction, a project setting only its overtime would silently cancel
+	// its customer's travel terms.
+	TravelInherit TravelBilling = ""
+	// TravelAsWork bills travel exactly like work, said explicitly. It is how a
+	// project overrides a customer that does not pay for travel.
+	TravelAsWork TravelBilling = "work"
 	// TravelAtRate bills travel at its own rate or multiplier.
 	TravelAtRate TravelBilling = "rate"
 	// TravelUnbilled records travel in full but never invoices it. A distinct
@@ -72,8 +83,10 @@ const (
 type ExpenseBilling string
 
 const (
-	// ExpenseBillable is the default: an expense is invoiced to the customer.
-	ExpenseBillable ExpenseBilling = ""
+	// ExpenseInherit is unset, on the same reasoning as TravelInherit.
+	ExpenseInherit ExpenseBilling = ""
+	// ExpenseBillable invoices expenses to the customer, said explicitly.
+	ExpenseBillable ExpenseBilling = "yes"
 	// ExpenseNotBilled means expenses are reimbursed to the person who paid but
 	// never invoiced - a fixed-price engagement, typically.
 	ExpenseNotBilled ExpenseBilling = "no"
@@ -117,6 +130,46 @@ type RateRules struct {
 // about a customer that has none.
 func (r RateRules) Configured() bool {
 	return r != RateRules{}
+}
+
+// Merge lays these rules over a wider scope's, field by field.
+//
+// A field set here wins; a field left unset takes the base's value. Field-level
+// rather than whole-record, so a project that differs only in overtime says
+// only that and the rest keeps following the account. Restating a customer's
+// whole contract on each of its projects would be the alternative, and those
+// copies would drift the moment one of them was renegotiated.
+//
+// "Unset" is zero for the numbers and the empty string for the two enumerations,
+// which is why those needed an explicit value for their default: a project has
+// to be able to say "travel is billed as work here" as something other than
+// silence.
+func (r RateRules) Merge(base RateRules) RateRules {
+	merged := base
+
+	overlay := func(dst *int64, value int64) {
+		if value != 0 {
+			*dst = value
+		}
+	}
+	overlay(&merged.OvertimeRateMinor, r.OvertimeRateMinor)
+	overlay(&merged.OvertimeMultiplierPct, r.OvertimeMultiplierPct)
+	overlay(&merged.OvertimeDailyThresholdSeconds, r.OvertimeDailyThresholdSeconds)
+	overlay(&merged.OvertimeWeeklyThresholdSeconds, r.OvertimeWeeklyThresholdSeconds)
+	overlay(&merged.TravelRateMinor, r.TravelRateMinor)
+	overlay(&merged.TravelMultiplierPct, r.TravelMultiplierPct)
+	overlay(&merged.ExpenseMarkupPct, r.ExpenseMarkupPct)
+	overlay(&merged.MileageRateMinor, r.MileageRateMinor)
+	overlay(&merged.PerDiemMinor, r.PerDiemMinor)
+	overlay(&merged.ReceiptRequiredAboveMinor, r.ReceiptRequiredAboveMinor)
+
+	if r.TravelBilling != TravelInherit {
+		merged.TravelBilling = r.TravelBilling
+	}
+	if r.ExpenseBilling != ExpenseInherit {
+		merged.ExpenseBilling = r.ExpenseBilling
+	}
+	return merged
 }
 
 // RateForKind returns the hourly rate for a kind of time, given the base rate
@@ -182,16 +235,109 @@ func (r RateRules) Validate() error {
 		return invalid("a weekly overtime threshold cannot exceed 168 hours")
 	}
 	switch r.TravelBilling {
-	case TravelAsWork, TravelAtRate, TravelUnbilled:
+	case TravelInherit, TravelAsWork, TravelAtRate, TravelUnbilled:
 	default:
 		return invalid("unknown travel billing rule %q", r.TravelBilling)
 	}
 	switch r.ExpenseBilling {
-	case ExpenseBillable, ExpenseNotBilled:
+	case ExpenseInherit, ExpenseBillable, ExpenseNotBilled:
 	default:
 		return invalid("unknown expense billing rule %q", r.ExpenseBilling)
 	}
 	return nil
+}
+
+// ---------------------------------------------------------- dated terms ----
+
+// TermsScope says what a set of contract terms attaches to.
+type TermsScope string
+
+const (
+	// TermsForCustomer are the account's terms, the usual case.
+	TermsForCustomer TermsScope = "customer"
+	// TermsForProject override the account's for one engagement, field by
+	// field. A project that differs only in overtime says only that.
+	TermsForProject TermsScope = "project"
+)
+
+// Valid reports whether the scope is one this application knows.
+func (s TermsScope) Valid() bool {
+	return s == TermsForCustomer || s == TermsForProject
+}
+
+// ContractTerms is one dated set of rules for one customer or project.
+//
+// Terms are dated because contracts are renegotiated, and because a rate that
+// went up in April has to keep answering for March. Entries already freeze the
+// amount they were billed at (ADR-0014); dating the terms is what makes a
+// *newly recorded* entry, backdated into an earlier period, price at the terms
+// that were in force then rather than at today's.
+type ContractTerms struct {
+	ID      int64
+	Scope   TermsScope
+	ScopeID int64
+	// EffectiveFrom is the first day these terms apply, YYYY-MM-DD. The empty
+	// string means "since forever" - which is what terms written before dating
+	// existed carry, because there was nothing else for them to mean.
+	EffectiveFrom string
+	Rules         RateRules
+	// Note is why the terms changed. A rate that went up on renewal is
+	// explicable years later only if somebody wrote down why.
+	Note      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+
+	// Denormalised for display.
+	ScopeName string
+}
+
+// AppliesOn reports whether these terms are in force on a date.
+func (t ContractTerms) AppliesOn(day string) bool {
+	return t.EffectiveFrom == "" || t.EffectiveFrom <= day
+}
+
+// Validate checks the rules that hold regardless of storage.
+func (t ContractTerms) Validate() error {
+	if !t.Scope.Valid() {
+		return invalid("unknown terms scope %q", t.Scope)
+	}
+	if t.ScopeID == 0 {
+		return invalid("contract terms must belong to a customer or a project")
+	}
+	if t.EffectiveFrom != "" {
+		if _, err := time.Parse("2006-01-02", t.EffectiveFrom); err != nil {
+			return invalid("%q is not a date", t.EffectiveFrom)
+		}
+	}
+	if len(t.Note) > 1000 {
+		return invalid("the note is too long (max 1000 characters)")
+	}
+	return t.Rules.Validate()
+}
+
+// ResolveTerms merges a customer's and a project's terms for one day.
+//
+// The latest customer terms in force on that day are the base; the latest
+// project terms in force on that day are laid over them field by field. Both
+// lists must be ordered newest first, which is how the store returns them.
+//
+// One function so that the resolution order exists in exactly one place: the
+// billing path, the expense path and the screen that previews the terms all ask
+// the same question and must get the same answer.
+func ResolveTerms(customerTerms, projectTerms []ContractTerms, day string) RateRules {
+	rules := latestApplicable(customerTerms, day)
+	return latestApplicable(projectTerms, day).Merge(rules)
+}
+
+// latestApplicable returns the first set of terms in force on a day, from a list
+// ordered newest first.
+func latestApplicable(terms []ContractTerms, day string) RateRules {
+	for _, candidate := range terms {
+		if candidate.AppliesOn(day) {
+			return candidate.Rules
+		}
+	}
+	return RateRules{}
 }
 
 // ExpenseUnit is how a quantity-priced expense is measured.

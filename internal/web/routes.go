@@ -49,6 +49,8 @@ func (s *Server) routes() {
 	mux.HandleFunc("POST /entries/quick", s.handleQuickAdd)
 	mux.HandleFunc("GET /entries/{id}/edit", s.handleEditEntryForm)
 	mux.HandleFunc("POST /entries/{id}", s.handleUpdateEntry)
+	// The timeline's drag, resize and keyboard nudges all land here.
+	mux.HandleFunc("POST /entries/{id}/move", s.handleMoveEntryBlock)
 	mux.HandleFunc("POST /entries/{id}/delete", s.handleDeleteEntry)
 
 	// Catalogue administration.
@@ -92,8 +94,10 @@ func (s *Server) routes() {
 	mux.HandleFunc("GET /customers/{id}/edit", s.handleEditCustomer)
 	mux.HandleFunc("POST /customers/{id}", s.handleUpdateCustomer)
 	// Contract terms beyond the base rate: overtime, travel, reimbursement.
-	mux.HandleFunc("GET /customers/{id}/rules", s.handleCustomerRules)
-	mux.HandleFunc("POST /customers/{id}/rules", s.handleUpdateCustomerRules)
+	// Dated, and attached to a customer or a project.
+	mux.HandleFunc("GET /terms/{scope}/{id}", s.handleContractTerms)
+	mux.HandleFunc("POST /terms/{scope}/{id}", s.handleSaveContractTerms)
+	mux.HandleFunc("POST /terms/{scope}/{id}/delete", s.handleDeleteContractTerms)
 	mux.HandleFunc("GET /projects/{id}/edit", s.handleEditProject)
 	mux.HandleFunc("POST /projects/{id}", s.handleUpdateProject)
 	mux.HandleFunc("GET /assignments/{id}/edit", s.handleEditAssignment)
@@ -103,6 +107,22 @@ func (s *Server) routes() {
 	// Weekly submit and approve.
 	mux.HandleFunc("POST /week/submit", s.handleSubmitWeek)
 	mux.HandleFunc("POST /week/withdraw", s.handleWithdrawWeek)
+	// Recording again what was recorded before.
+	mux.HandleFunc("POST /days/copy", s.handleCopyDay)
+	mux.HandleFunc("POST /weeks/copy", s.handleCopyWeek)
+	mux.HandleFunc("POST /timers/switch", s.handleSwitchTimer)
+	mux.HandleFunc("GET /routines", s.handleRoutines)
+	mux.HandleFunc("POST /routines", s.handleSaveRoutine)
+	mux.HandleFunc("POST /routines/{id}/apply", s.handleApplyRoutine)
+	mux.HandleFunc("POST /routines/{id}/delete", s.handleDeleteRoutine)
+	mux.HandleFunc("POST /routines/apply-all", s.handleApplyAllRoutines)
+
+	// Tags, and the search index they feed.
+	mux.HandleFunc("GET /tags", s.handleTags)
+	mux.HandleFunc("POST /tags/{id}", s.handleUpdateTag)
+	mux.HandleFunc("POST /tags/{id}/delete", s.handleDeleteTag)
+	mux.HandleFunc("POST /search/reindex", s.handleReindexSearch)
+
 	// The user guide: how to do things, as opposed to what a screen is.
 	mux.HandleFunc("GET /guide", s.handleGuide)
 	mux.HandleFunc("GET /guide/{topic}", s.handleGuide)
@@ -121,6 +141,9 @@ func (s *Server) routes() {
 	mux.HandleFunc("POST /settings", s.handleUpdateSettings)
 
 	// Bulk import of hours from CSV.
+	mux.HandleFunc("GET /calendar", s.handleCalendarForm)
+	mux.HandleFunc("POST /calendar/preview", s.handleCalendarPreview)
+	mux.HandleFunc("POST /calendar", s.handleCalendarImport)
 	mux.HandleFunc("GET /import", s.handleImportForm)
 	mux.HandleFunc("POST /import/preview", s.handleImportPreview)
 	mux.HandleFunc("POST /import", s.handleImportCommit)

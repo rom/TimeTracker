@@ -43,11 +43,6 @@ func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	rules, err := rateRulesFromForm(r, r.FormValue("currency"))
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
 	_, err = s.svc.CreateCustomer(r.Context(), domain.Customer{
 		Name:      r.FormValue("name"),
 		Code:      r.FormValue("code"),
@@ -55,7 +50,6 @@ func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 		ColourKey: r.FormValue("colour_key"),
 		Icon:      r.FormValue("icon"),
 		RateMinor: rate,
-		Rules:     rules,
 	})
 	if err != nil {
 		s.fail(w, r, err)
@@ -202,4 +196,61 @@ func parseRate(raw, currency string) (int64, error) {
 		return 0, domainValidation("a rate cannot be negative")
 	}
 	return money.Minor, nil
+}
+
+// ------------------------------------------------------------------ tags ----
+
+// handleTags renders the tag management screen.
+func (s *Server) handleTags(w http.ResponseWriter, r *http.Request) {
+	data, err := s.newPageData(r, "", "tags")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	data.Title = data.Printer.T("tags.title")
+	if data.Tags, err = s.svc.Tags(r.Context()); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.render(w, r, "page_tags.html", data)
+}
+
+// handleUpdateTag renames or recolours one.
+func (s *Server) handleUpdateTag(w http.ResponseWriter, r *http.Request) {
+	if err := parseForm(r); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	err := s.svc.UpdateTag(r.Context(), domain.Tag{
+		ID:        int64Param(r.PathValue("id")),
+		Name:      r.FormValue("name"),
+		ColourKey: r.FormValue("colour_key"),
+	})
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	http.Redirect(w, r, "/tags", http.StatusSeeOther)
+}
+
+// handleDeleteTag removes a tag from every entry carrying it.
+func (s *Server) handleDeleteTag(w http.ResponseWriter, r *http.Request) {
+	if err := s.svc.DeleteTag(r.Context(), int64Param(r.PathValue("id"))); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	http.Redirect(w, r, "/tags", http.StatusSeeOther)
+}
+
+// handleReindexSearch rebuilds the full-text index.
+func (s *Server) handleReindexSearch(w http.ResponseWriter, r *http.Request) {
+	if err := parseForm(r); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if _, err := s.svc.ReindexSearch(r.Context()); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	http.Redirect(w, r, "/tags", http.StatusSeeOther)
 }

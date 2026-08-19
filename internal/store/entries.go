@@ -86,6 +86,36 @@ func CreateEntryTx(ctx context.Context, db Execer, e domain.TimeEntry) (domain.T
 	return e, nil
 }
 
+// CreateEntryWithTagsTx inserts an entry, its tags and its search index entry.
+//
+// One function so that the three cannot come apart: an entry whose tags were
+// written but whose index was not is findable by every route except search,
+// which is the sort of inconsistency nobody notices until they need it.
+func CreateEntryWithTagsTx(ctx context.Context, tx *sql.Tx, e domain.TimeEntry) (domain.TimeEntry, error) {
+	created, err := CreateEntryTx(ctx, tx, e)
+	if err != nil {
+		return domain.TimeEntry{}, err
+	}
+	if err := SetEntryTagsTx(ctx, tx, created.ID, e.Tags); err != nil {
+		return domain.TimeEntry{}, err
+	}
+	if err := IndexEntryTx(ctx, tx, created.ID); err != nil {
+		return domain.TimeEntry{}, err
+	}
+	return created, nil
+}
+
+// UpdateEntryWithTagsTx is the same for an edit.
+func UpdateEntryWithTagsTx(ctx context.Context, tx *sql.Tx, e domain.TimeEntry) error {
+	if err := UpdateEntryTx(ctx, tx, e); err != nil {
+		return err
+	}
+	if err := SetEntryTagsTx(ctx, tx, e.ID, e.Tags); err != nil {
+		return err
+	}
+	return IndexEntryTx(ctx, tx, e.ID)
+}
+
 // UpdateEntryTx saves an edited entry using the given executor.
 func UpdateEntryTx(ctx context.Context, db Execer, e domain.TimeEntry) error {
 	var endedAt any
@@ -164,7 +194,19 @@ func (db *DB) DeleteEntry(ctx context.Context, id int64) error {
 // GetEntry loads one entry with its display names.
 func (db *DB) GetEntry(ctx context.Context, id int64) (domain.TimeEntry, error) {
 	row := db.read.QueryRowContext(ctx, entrySelect+` WHERE e.id = ?`, id)
-	return scanEntry(row)
+	entry, err := scanEntry(row)
+	if err != nil {
+		return domain.TimeEntry{}, err
+	}
+	// Tags come with the entry rather than being a separate call the caller has
+	// to remember: an entry loaded without them looks like an entry with none,
+	// and an edit form built from that would silently clear them on save.
+	byEntry, err := db.TagsForEntries(ctx, []int64{id})
+	if err != nil {
+		return domain.TimeEntry{}, err
+	}
+	entry.Tags = byEntry[id]
+	return entry, nil
 }
 
 // GetEntryTx loads one entry inside a transaction, for read-modify-write
@@ -205,18 +247,61 @@ type EntryFilter struct {
 	Statuses []domain.EntryStatus
 	// BillableOnly restricts to entries marked billable.
 	BillableOnly bool
+	// Tags narrows to entries carrying all of them. All rather than any: asking
+	// for #incident and #billable-review means entries that are both, which is
+	// what somebody looking for a specific slice expects.
+	Tags []string
+	// Query is free text, matched against the note, the assignment, the project,
+	// the customer and the tags. UseRegexp treats it as a regular expression
+	// instead of a substring.
+	Query     string
+	UseRegexp bool
+	// Kinds limits to work, overtime or travel; empty means all of them.
+	Kinds []domain.EntryKind
 	// Limit caps the number of rows; 0 means unlimited.
 	Limit int
 }
 
 // ListEntries returns entries matching a filter, newest first.
+//
+// The second result says how a free-text query was matched, so the interface can
+// tell the user which mechanism answered them - a search that silently used a
+// different one from the one asked for produces results nobody can explain.
 func (db *DB) ListEntries(ctx context.Context, f EntryFilter) ([]domain.TimeEntry, error) {
-	query, args := f.build()
+	entries, _, err := db.SearchEntries(ctx, f)
+	return entries, err
+}
+
+// SearchEntries is ListEntries with the search mode reported back.
+func (db *DB) SearchEntries(ctx context.Context, f EntryFilter) ([]domain.TimeEntry, SearchMode, error) {
+	query, args, mode, err := f.buildSearch()
+	if err != nil {
+		return nil, SearchNone, err
+	}
 	rows, err := db.read.QueryContext(ctx, entrySelect+query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("list entries: %w", err)
+		return nil, SearchNone, fmt.Errorf("list entries: %w", err)
 	}
-	return collectEntries(rows)
+	entries, err := collectEntries(rows)
+	if err != nil {
+		return nil, SearchNone, err
+	}
+
+	// Tags come back in one query for the whole page rather than one per row.
+	if len(entries) > 0 {
+		ids := make([]int64, len(entries))
+		for i := range entries {
+			ids[i] = entries[i].ID
+		}
+		byEntry, tagErr := db.TagsForEntries(ctx, ids)
+		if tagErr != nil {
+			return nil, SearchNone, tagErr
+		}
+		for i := range entries {
+			entries[i].Tags = byEntry[entries[i].ID]
+		}
+	}
+	return entries, mode, nil
 }
 
 // build turns a filter into a WHERE clause and its bound arguments.
@@ -224,7 +309,10 @@ func (db *DB) ListEntries(ctx context.Context, f EntryFilter) ([]domain.TimeEntr
 // Every user-supplied value becomes a placeholder argument; nothing is
 // interpolated into the SQL text. The conditions themselves are literals written
 // here, which is what keeps this free of injection risk.
-func (f EntryFilter) build() (string, []any) {
+// It reports which search mechanism the free-text condition chose, so the
+// interface can say - a search that quietly used a different one from the one
+// asked for produces results nobody can explain.
+func (f EntryFilter) buildSearch() (string, []any, SearchMode, error) {
 	var conditions []string
 	var args []any
 
@@ -261,6 +349,23 @@ func (f EntryFilter) build() (string, []any) {
 			args = append(args, string(s))
 		}
 	}
+	if len(f.Kinds) > 0 {
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(f.Kinds)), ",")
+		// An entry stored before kinds existed has an empty column and is
+		// ordinary work, so a filter for work has to match it too.
+		condition := `e.kind IN (` + placeholders + `)`
+		for _, kind := range f.Kinds {
+			args = append(args, string(kind))
+			if kind == domain.KindWork {
+				condition = `(` + condition + ` OR e.kind = '')`
+			}
+		}
+		conditions = append(conditions, condition)
+	}
+	if tagCondition, tagArgs := tagFilterCondition(f.Tags); tagCondition != "" {
+		conditions = append(conditions, tagCondition)
+		args = append(args, tagArgs...)
+	}
 	if f.BillableOnly {
 		conditions = append(conditions, `e.billable = 1`)
 	}
@@ -269,12 +374,23 @@ func (f EntryFilter) build() (string, []any) {
 		args = append(args, scopeArgs...)
 	}
 
+	// Free text last, because it is the condition most likely to be rejected
+	// and there is no point building the rest of the query to throw it away.
+	mode, err := SearchNone, error(nil)
+	if searchCond, searchArgs, searchMode, searchErr := searchCondition(f.Query, f.UseRegexp); searchErr != nil {
+		return "", nil, SearchNone, searchErr
+	} else if searchCond != "" {
+		conditions = append(conditions, searchCond)
+		args = append(args, searchArgs...)
+		mode = searchMode
+	}
+
 	query := whereClause(conditions) + ` ORDER BY e.started_at DESC, e.id DESC`
 	if f.Limit > 0 {
 		query += ` LIMIT ?`
 		args = append(args, f.Limit)
 	}
-	return query, args
+	return query, args, mode, err
 }
 
 // RecentAssignments returns the assignments a user has logged time against most
