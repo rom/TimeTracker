@@ -28,7 +28,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Title}} · {{.T "app.name"}}</title>
   <link rel="stylesheet" href="/static/css/app.css">
+
+  {{/* Icons. The SVG first, because a browser that understands one prefers it
+       and gets a mark that is sharp at any size; the PNGs are what the rest
+       fall back to, and .ico is what a browser asks for without being told.
+
+       apple-touch-icon is iOS's home screen. It is opaque rather than
+       transparent, because iOS composites onto black and a transparent icon
+       arrives looking like a hole punched in the screen. */}}
   <link rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/icons/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="icon" href="/static/icons/favicon-16.png" sizes="16x16" type="image/png">
+  <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png" sizes="180x180">
+  <link rel="manifest" href="/static/icons/site.webmanifest">
+
+  {{/* The colour a mobile browser paints its own chrome with, and the colour
+       behind the page while it loads once installed. Both follow the light and
+       dark palettes rather than being a single compromise, because a white bar
+       above a dark page is worse than either. */}}
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1c2027" media="(prefers-color-scheme: dark)">
+  <meta name="application-name" content="{{.T "app.name"}}">
+  <meta name="apple-mobile-web-app-title" content="{{.T "app.name"}}">
+
   <script src="/static/js/app.js" defer></script>
 </head>
 <body>
@@ -40,10 +62,7 @@
 
 {{if eq .Active "login"}}
 <header class="topbar topbar-plain">
-  <span class="brand">
-    <span class="brand-mark" aria-hidden="true">◷</span>
-    {{.T "app.name"}}
-  </span>
+  <span class="brand">{{template "wordmark" .}}</span>
 </header>
 
 <main id="main" class="content content-narrow">
@@ -54,10 +73,7 @@
 {{else}}
 
 <header class="topbar">
-  <a class="brand" href="/today">
-    <span class="brand-mark" aria-hidden="true">◷</span>
-    {{.T "app.name"}}
-  </a>
+  <a class="brand" href="/today">{{template "wordmark" .}}</a>
 
   <nav class="mainnav" aria-label="{{.T "nav.main"}}">
     {{/* aria-current tells assistive technology which page this is, which the

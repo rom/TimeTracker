@@ -307,6 +307,44 @@ rather than alarming.
 * Colour is never the only carrier of meaning — status has a label or icon as well
   as a hue, which also matters for the colour-blind reader.
 
+## 7a. Identity
+
+The logotype is a clock mark and the name in two colours: **Time** in red,
+**Tracker** in blue. The two halves are separate catalogue entries rather than a
+substring taken at a fixed offset — a name is not obliged to split at the fourth
+character in every language, and slicing a translated string by index is how one
+ends up with half a grapheme. There is no whitespace between them in the markup,
+so it is one word to a reader and one word to a screen reader.
+
+Neither colour has a value of its own. `--brand-time` and `--brand-tracker` are
+aliases for the entity palette's red and blue, so each theme's own pair carries
+the brand: the terminal theme gets its phosphor colours, the high-contrast theme
+its heavy ones, and there is no second set of sixteen values to keep in step.
+Both are held to WCAG AA against the header's surface **in every theme** by the
+same test that covers body text; the narrowest is autumn at 4.67:1.
+
+**Icons** are generated, not exported. `internal/web/icongen` draws the mark at
+every size from the geometry in `favicon.svg`'s viewBox, so changing the mark
+means changing one shape and running `go generate ./internal/web/...` rather than
+re-exporting eight files by hand — the same reasoning that puts PDF generation in
+Go ([ADR-0007](adr/0007-pure-go-document-generation.md)): the build must not
+depend on tooling nobody has. Coverage is computed by supersampling a distance
+function, which for a ring and two round-capped segments is less code than a path
+rasteriser and needs no dependency.
+
+The set covers the three things that ask for different files:
+
+* **tabs** — an SVG first, with 16, 32 and 48 pixel PNGs and a multi-size `.ico`
+  behind it for what cannot read one.
+* **iOS home screens** — a 180-pixel `apple-touch-icon`, opaque, because iOS
+  composites onto black and a transparent icon arrives looking like a hole.
+* **Android and desktop installs** — 192 and 512 in the manifest, plus *maskable*
+  variants whose mark sits inside the middle 80%, since an adaptive icon is
+  cropped to whatever silhouette the platform prefers.
+
+Each of those rules is a test rather than a note, because every one of them is
+invisible until somebody installs the application.
+
 ## 8. Themes
 
 Eight themes, implemented purely as redefinitions of one semantic token set

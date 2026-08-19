@@ -1,8 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- A clock face, drawn in currentColor so it inherits the browser's own
-     rendering rather than fighting the user's theme. -->
+<!-- The clock mark: a blue ring with red hands, the same two colours as the two
+     halves of the logotype, so a tab and the header carry one identity.
+
+     This file is the source of the geometry. internal/web/icongen draws the
+     same shapes for the raster sizes from the same numbers, divided by this
+     32-unit viewBox - so changing the mark means changing it here and running
+     `go generate ./internal/web/...`, not editing eight exported files. -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
   <circle cx="16" cy="16" r="13" fill="none" stroke="#2563eb" stroke-width="3"/>
-  <path d="M16 8 v9 l6 4" fill="none" stroke="#2563eb" stroke-width="3"
+  <path d="M16 8 v9 l6 4" fill="none" stroke="#c02626" stroke-width="3"
         stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

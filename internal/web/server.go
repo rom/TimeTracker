@@ -9,12 +9,14 @@
 package web
 
 import (
+	"bytes"
 	"embed"
 	"fmt"
 	"html/template"
 	"io"
 	"io/fs"
 	"log/slog"
+	"mime"
 	"net/http"
 	"strings"
 	"time"
@@ -33,6 +35,11 @@ import (
 //go:embed templates/*.html
 var templateFS embed.FS
 
+// The icons under static/icons are drawn by internal/web/icongen, which reads
+// its geometry from favicon.svg's viewBox. Regenerate them after changing the
+// mark rather than exporting eight files by hand.
+//
+//go:generate go run ./icongen -dir ./static/icons
 //go:embed static
 var staticFS embed.FS
 
@@ -189,6 +196,42 @@ func (s *Server) renderFragment(w http.ResponseWriter, r *http.Request, page, fr
 // is what keeps the application usable with JavaScript disabled.
 func isHTMX(r *http.Request) bool {
 	return r.Header.Get("HX-Request") == "true"
+}
+
+// init registers the media types Go's table does not carry.
+//
+// http.ServeContent picks a type from the file extension, and the standard
+// table has no entry for .webmanifest - so a manifest goes out as text/plain,
+// which Chrome accepts with a warning and stricter clients refuse outright.
+// Registering it once here covers both the /static/ file server and the
+// root-path alias, rather than setting a header in two places that could drift.
+func init() {
+	// The type is the one the W3C specifies for a web app manifest.
+	if err := mime.AddExtensionType(".webmanifest", "application/manifest+json"); err != nil {
+		// Only reachable with a malformed extension, which is a literal here.
+		panic("register the manifest media type: " + err.Error())
+	}
+}
+
+// staticAsset serves one embedded file at a fixed path.
+//
+// Used for the root-path icons a browser asks for without being told. The name
+// is a constant from the routing table and never comes from the request, so
+// there is nothing here to traverse with.
+func (s *Server) staticAsset(name string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, err := staticFS.ReadFile("static/" + name)
+		if err != nil {
+			// Only reachable if the routing table names a file the embed
+			// directive did not include, which is a build-time mistake. The
+			// test in server_test.go turns it into a failing build.
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(data))
+	})
 }
 
 // staticHandler serves the embedded CSS, JavaScript and icons.

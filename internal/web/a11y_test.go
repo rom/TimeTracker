@@ -231,7 +231,15 @@ func TestEveryThemeMeetsWCAGForText(t *testing.T) {
 		{"--accent-text", "--accent", "text on a primary button"},
 		{"--accent", "--surface", "links on the page"},
 		{"--danger", "--surface", "error text"},
+		// The logotype. It sits on the header, which is a raised surface, and
+		// it is the first text on every page - so a theme whose red or blue is
+		// too light for text would fail in the most visible place available.
+		{"--brand-time", "--surface-raised", "the red half of the logotype"},
+		{"--brand-tracker", "--surface-raised", "the blue half of the logotype"},
 	}
+
+	// :root carries the tokens every theme shares, including the brand aliases.
+	root := parseTokens(themeBlock(stylesheet, defaultTheme))
 
 	for _, theme := range availableThemes {
 		block := themeBlock(stylesheet, theme)
@@ -244,8 +252,8 @@ func TestEveryThemeMeetsWCAGForText(t *testing.T) {
 		tokens := parseTokens(block)
 
 		for _, pair := range pairs {
-			fg, okFG := tokens[pair.foreground]
-			bg, okBG := tokens[pair.background]
+			fg, okFG := colourOf(tokens, root, pair.foreground)
+			bg, okBG := colourOf(tokens, root, pair.background)
 			if !okFG || !okBG {
 				t.Errorf("theme %s does not define %s or %s",
 					theme, pair.foreground, pair.background)
@@ -262,12 +270,43 @@ func TestEveryThemeMeetsWCAGForText(t *testing.T) {
 // parseTokens pulls "--name: #rrggbb;" declarations out of a CSS block.
 func parseTokens(block string) map[string]string {
 	tokens := map[string]string{}
-	pattern := regexp.MustCompile(`(--[a-z-]+)\s*:\s*(#[0-9a-fA-F]{6})`)
+	// Both a literal colour and a reference to another token. The second form
+	// is how the logotype's two halves are defined - as aliases of the entity
+	// palette, so that each theme's own red and blue carry the brand without a
+	// second set of values to keep in step. A parser that saw only hex would
+	// report those tokens as undefined.
+	pattern := regexp.MustCompile(`(--[a-z-]+)\s*:\s*(#[0-9a-fA-F]{6}|var\(\s*--[a-z-]+\s*\))`)
 	for _, match := range pattern.FindAllStringSubmatch(block, -1) {
-		tokens[match[1]] = match[2]
+		tokens[match[1]] = strings.TrimSpace(match[2])
 	}
 	return tokens
 }
+
+// colourOf resolves a token to a hex value the way the cascade would.
+//
+// A theme block overrides what :root declares, and a token may be an alias for
+// another - so an alias declared once on :root picks up the *theme's* value for
+// what it points at, because both live on the same element. One level of
+// indirection is all this stylesheet uses, and resolving exactly one keeps the
+// helper honest about that rather than pretending to be a CSS engine.
+func colourOf(theme, root map[string]string, name string) (string, bool) {
+	value, ok := theme[name]
+	if !ok {
+		value, ok = root[name]
+	}
+	if !ok {
+		return "", false
+	}
+	if reference := varReference.FindStringSubmatch(value); reference != nil {
+		return colourOf(theme, root, reference[1])
+	}
+	if !strings.HasPrefix(value, "#") {
+		return "", false
+	}
+	return value, true
+}
+
+var varReference = regexp.MustCompile(`^var\(\s*(--[a-z-]+)\s*\)$`)
 
 // contrastRatio computes the WCAG contrast ratio between two hex colours.
 func contrastRatio(a, b string) float64 {

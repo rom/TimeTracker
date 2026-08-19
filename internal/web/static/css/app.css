@@ -42,6 +42,16 @@
   --entity-teal:   #0d7490;
   --entity-slate:  #55606e;
 
+  /* The logotype's two halves, mapped onto the entity palette rather than given
+     values of their own. Every theme already defines a red and a blue that work
+     on its own background, so the brand picks up each theme's character for
+     free - the terminal theme gets its phosphor pair, the high-contrast theme
+     its heavy ones - and there is no second set of sixteen values to keep in
+     step. Both are held to AA against the header's surface by test, in every
+     theme; the narrowest is autumn at 4.67:1. */
+  --brand-time:    var(--entity-red);
+  --brand-tracker: var(--entity-blue);
+
   /* Non-colour tokens: shared so themes cannot drift structurally.
      A theme may still override one deliberately - terminal takes the monospace
      face, squares the radius and drops the shadow, because there its structure
@@ -371,7 +381,30 @@ a { color: var(--accent); }
   display: flex; align-items: center; gap: var(--gap-sm);
   font-weight: 650; color: var(--text); text-decoration: none;
 }
-.brand-mark { color: var(--accent); font-size: 1.2em; }
+
+/* The clock mark. Large enough to read as a mark rather than as a character
+   that wandered into the text, and given a fixed line-height so growing it does
+   not grow the header with it. */
+.brand-mark {
+  /* The same blue as the second half of the name and as the favicon's ring, so
+     the tab, the home screen and the header are recognisably one mark. Not the
+     accent: that is a theme's own signature colour, and following it would make
+     the clock terracotta on sand and green on terminal while the name beside it
+     stayed red and blue. */
+  color: var(--brand-tracker);
+  font-size: 1.9em;
+  line-height: 1;
+  /* The glyph sits high in its em box, so it needs nudging down to sit level
+     with the name beside it rather than with the name's ascenders. */
+  transform: translateY(0.06em);
+}
+
+/* The name in two colours. The halves are separate elements with no whitespace
+   between them in the markup, so this is purely colour: the word is still one
+   word to a reader and to a screen reader. */
+.brand-name { letter-spacing: -0.01em; }
+.brand-time { color: var(--brand-time); }
+.brand-tracker { color: var(--brand-tracker); }
 
 .mainnav { display: flex; gap: 4px; flex: 1; }
 .mainnav a {

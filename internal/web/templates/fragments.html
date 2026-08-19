@@ -639,3 +639,28 @@
     <p class="empty">{{$page.T "attachments.none"}}</p>
   {{end}}
 {{end}}
+
+{{/* -------------------------------------------------------------- wordmark */}}
+{{/*
+  The logotype: a clock mark, then the name in two colours.
+
+  The two halves are separate catalogue entries rather than a substring of
+  app.name taken at a fixed offset. A name is not obliged to split at the fourth
+  character in every language, and slicing a translated string by index is how
+  one ends up with half a grapheme.
+
+  There is deliberately no whitespace or newline between the two spans. A screen
+  reader announces adjacent inline elements as one word only when nothing
+  separates them, and "Time Tracker" read as two words is a different name.
+  Hence the trim markers, which are load-bearing rather than tidiness.
+*/}}
+{{define "wordmark"}}
+  {{- /* aria-hidden: the mark is decoration beside the name it accompanies, and
+         announcing "clock face TimeTracker" helps nobody. */ -}}
+  <span class="brand-mark" aria-hidden="true">◷</span>
+  {{- /* */ -}}
+  <span class="brand-name"
+    ><span class="brand-time">{{.T "app.name.first"}}</span
+    ><span class="brand-tracker">{{.T "app.name.second"}}</span
+  ></span>
+{{end}}

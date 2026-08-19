@@ -615,5 +615,7 @@
   "attachments.extract": "Det här är dokumentets text, inte dokumentet: layout, tabeller och bilder visas inte.",
   "attachments.nopdfviewer": "Den här webbläsaren visar inte PDF-filen här.",
   "attachments.help": "Bilder, PDF-filer, Word-dokument och textfiler kan förhandsgranskas. Övrigt lagras och kan laddas ner. Du kan också klistra in en skärmbild direkt på raden.",
-  "timeline.alloutside": "Allt som registrerats den här dagen ligger utanför de timmar som visas."
+  "timeline.alloutside": "Allt som registrerats den här dagen ligger utanför de timmar som visas.",
+  "app.name.first": "Time",
+  "app.name.second": "Tracker"
 }

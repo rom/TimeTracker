@@ -615,5 +615,7 @@
   "attachments.extract": "This is the document's text, not the document: its layout, tables and images are not shown.",
   "attachments.nopdfviewer": "This browser will not display the PDF here.",
   "attachments.help": "Images, PDFs, Word documents and text files can be previewed. Anything else is stored and downloadable. You can also paste a screenshot straight onto the row.",
-  "timeline.alloutside": "Everything recorded on this day falls outside the hours shown."
+  "timeline.alloutside": "Everything recorded on this day falls outside the hours shown.",
+  "app.name.first": "Time",
+  "app.name.second": "Tracker"
 }

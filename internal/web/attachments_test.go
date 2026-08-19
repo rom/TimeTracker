@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -46,23 +47,11 @@ func upload(t *testing.T, srv *Server, ownerType string, ownerID int64, filename
 	}
 
 	req := httptest.NewRequest(http.MethodPost,
-		"/attachments/"+ownerType+"/"+itoa(ownerID), &body)
+		"/attachments/"+ownerType+"/"+strconv.FormatInt(ownerID, 10), &body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 	return rec
-}
-
-func itoa(n int64) string {
-	if n == 0 {
-		return "0"
-	}
-	var digits []byte
-	for n > 0 {
-		digits = append([]byte{byte('0' + n%10)}, digits...)
-		n /= 10
-	}
-	return string(digits)
 }
 
 // onePixelPNG is the smallest real PNG, so the store's sniff has something
@@ -162,7 +151,7 @@ func TestPreviewsAppearOnTheEntryScreen(t *testing.T) {
 		t.Fatalf("upload = %d\n%s", rec.Code, rec.Body.String())
 	}
 
-	rec := get(t, srv, "/entries/"+itoa(entryID)+"/edit")
+	rec := get(t, srv, "/entries/"+strconv.FormatInt(entryID, 10)+"/edit")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("edit screen = %d\n%s", rec.Code, rec.Body.String())
 	}

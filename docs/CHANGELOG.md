@@ -12,6 +12,24 @@ the decision.
 
 ### Added
 
+* **A full icon set, and a web app manifest.** The application had one 32-pixel
+  SVG favicon and nothing else: no home-screen icon, no manifest, and a 404 on
+  `/favicon.ico` for every page load. There are now tab icons (SVG, 16/32/48 PNG
+  and a multi-size `.ico`), an opaque 180-pixel `apple-touch-icon` for iOS, and
+  192/512 icons in a manifest with *maskable* variants for Android's adaptive
+  shapes — so the application can be added to a home screen and launches
+  standalone. They are drawn by a checked-in Go generator from the geometry in
+  `favicon.svg`, so changing the mark is one shape and `go generate`, not eight
+  files re-exported by hand. Every platform rule that is invisible until somebody
+  installs the thing — opacity, declared sizes, the maskable safe zone, an
+  installable manifest — is a test.
+* **The logotype is the name in two colours**, Time in red and Tracker in blue,
+  beside a larger clock mark. The halves are catalogue entries rather than a
+  substring taken at a fixed offset, and carry no whitespace between them, so the
+  name is still one word to a screen reader. Neither colour has a value of its
+  own: both are aliases of the entity palette, so every theme's own red and blue
+  carry the brand, and both are held to WCAG AA on the header in all eight.
+
 * **PDF, DOCX and Markdown on the Entries screen.** PDF and DOCX had been
   written and tested since layer 5; the screen offered CSV and JSON under a hint
   saying the other two arrived later. All five now come from one list in the
