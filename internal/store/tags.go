@@ -87,32 +87,60 @@ func (db *DB) TagsForEntries(ctx context.Context, entryIDs []int64) (map[int64][
 		return map[int64][]string{}, nil
 	}
 
-	args := make([]any, len(entryIDs))
-	for i, id := range entryIDs {
-		args[i] = id
-	}
-	rows, err := db.read.QueryContext(ctx, `
-		SELECT et.entry_id, t.name
-		FROM entry_tags et
-		JOIN tags t ON t.id = et.tag_id
-		WHERE et.entry_id IN (`+repeatPlaceholders(len(entryIDs))+`)
-		ORDER BY t.name`, args...)
-	if err != nil {
-		return nil, fmt.Errorf("load entry tags: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
 	byEntry := make(map[int64][]string, len(entryIDs))
-	for rows.Next() {
-		var entryID int64
-		var name string
-		if err := rows.Scan(&entryID, &name); err != nil {
+
+	// In batches, because every id is a bound parameter and SQLite has a ceiling
+	// on how many a statement may carry. One query per page of entries was fine
+	// while the only caller was a screen capped at a thousand rows; an export
+	// covering a year is tens of thousands, and the whole statement is rejected
+	// rather than truncated - so this failed as a 500 on the download, not as a
+	// missing tag.
+	for start := 0; start < len(entryIDs); start += maxBoundParameters {
+		end := min(start+maxBoundParameters, len(entryIDs))
+		batch := entryIDs[start:end]
+
+		args := make([]any, len(batch))
+		for i, id := range batch {
+			args[i] = id
+		}
+		rows, err := db.read.QueryContext(ctx, `
+			SELECT et.entry_id, t.name
+			FROM entry_tags et
+			JOIN tags t ON t.id = et.tag_id
+			WHERE et.entry_id IN (`+repeatPlaceholders(len(batch))+`)
+			ORDER BY t.name`, args...)
+		if err != nil {
+			return nil, fmt.Errorf("load entry tags: %w", err)
+		}
+
+		for rows.Next() {
+			var entryID int64
+			var name string
+			if err := rows.Scan(&entryID, &name); err != nil {
+				_ = rows.Close()
+				return nil, err
+			}
+			byEntry[entryID] = append(byEntry[entryID], name)
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
 			return nil, err
 		}
-		byEntry[entryID] = append(byEntry[entryID], name)
+		if err := rows.Close(); err != nil {
+			return nil, err
+		}
 	}
-	return byEntry, rows.Err()
+	return byEntry, nil
 }
+
+// maxBoundParameters is how many placeholders one statement may carry.
+//
+// SQLite's own limit is higher - 32766 in the versions this builds against, and
+// 999 in older ones. Five hundred is well under either, and the batching costs
+// one extra query per five hundred entries against a query that is already
+// indexed. Choosing a number that is safe everywhere beats choosing one that is
+// exactly right for the SQLite this happens to be linked against today.
+const maxBoundParameters = 500
 
 // ListTags returns every tag with how many entries carry it.
 //

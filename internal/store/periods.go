@@ -116,8 +116,8 @@ func (db *DB) ListPeriodsByStatus(ctx context.Context, status domain.PeriodStatu
 				JOIN assignments a ON a.id = e.assignment_id
 				WHERE e.user_id = p.user_id
 				  AND a.project_id IN (`+placeholders+`)
-				  AND date(e.started_at) >= date(p.week_start)
-				  AND date(e.started_at) < date(p.week_start, '+7 days'))`)
+				  AND e.started_at >= p.week_start || 'T00:00:00Z'
+				  AND e.started_at < date(p.week_start, '+7 days') || 'T00:00:00Z')`)
 			for _, id := range scope.ProjectIDs {
 				args = append(args, id)
 			}
@@ -128,8 +128,8 @@ func (db *DB) ListPeriodsByStatus(ctx context.Context, status domain.PeriodStatu
 				JOIN projects   pr ON pr.id = a.project_id
 				WHERE e.user_id = p.user_id
 				  AND pr.customer_id = ?
-				  AND date(e.started_at) >= date(p.week_start)
-				  AND date(e.started_at) < date(p.week_start, '+7 days'))`)
+				  AND e.started_at >= p.week_start || 'T00:00:00Z'
+				  AND e.started_at < date(p.week_start, '+7 days') || 'T00:00:00Z')`)
 			args = append(args, scope.CustomerID)
 		}
 	}
@@ -165,8 +165,8 @@ func (db *DB) ListPeriodsInRange(ctx context.Context, from, to string, scope Sco
 				JOIN assignments a ON a.id = e.assignment_id
 				WHERE e.user_id = p.user_id
 				  AND a.project_id IN (`+repeatPlaceholders(len(scope.ProjectIDs))+`)
-				  AND date(e.started_at) >= date(p.week_start)
-				  AND date(e.started_at) < date(p.week_start, '+7 days'))`)
+				  AND e.started_at >= p.week_start || 'T00:00:00Z'
+				  AND e.started_at < date(p.week_start, '+7 days') || 'T00:00:00Z')`)
 			for _, id := range scope.ProjectIDs {
 				args = append(args, id)
 			}
@@ -177,8 +177,8 @@ func (db *DB) ListPeriodsInRange(ctx context.Context, from, to string, scope Sco
 				JOIN projects   pr ON pr.id = a.project_id
 				WHERE e.user_id = p.user_id
 				  AND pr.customer_id = ?
-				  AND date(e.started_at) >= date(p.week_start)
-				  AND date(e.started_at) < date(p.week_start, '+7 days'))`)
+				  AND e.started_at >= p.week_start || 'T00:00:00Z'
+				  AND e.started_at < date(p.week_start, '+7 days') || 'T00:00:00Z')`)
 			args = append(args, scope.CustomerID)
 		}
 	}
@@ -195,6 +195,19 @@ func (db *DB) ListPeriodsInRange(ctx context.Context, from, to string, scope Sco
 //
 // Used both when submitting - to record what was submitted - and when showing
 // an approver the week as it stands now.
+// The bounds are compared against the bare column, and the arithmetic happens on
+// the other side of the comparison. That is the whole difference between an
+// index seek and a scan: wrapping started_at in date() made the condition
+// something SQLite cannot answer from an index, so this summed a week by walking
+// every entry the user had ever recorded and calling date() on each one. It cost
+// 72 ms of every day-screen render against a hundred thousand entries - three
+// quarters of the page - because the week banner appears on every screen where
+// time is entered.
+//
+// Comparing the stored strings directly is exact rather than lucky: timestamps
+// are stored as RFC 3339 in UTC, a format whose lexicographic order is its
+// chronological order. That property is why it was chosen
+// (docs/adr/0015-utc-storage-local-display.md).
 func (db *DB) WeekSeconds(ctx context.Context, userID int64, weekStart string) (int64, error) {
 	var total sql.NullInt64
 	err := db.read.QueryRowContext(ctx, `
@@ -202,8 +215,8 @@ func (db *DB) WeekSeconds(ctx context.Context, userID int64, weekStart string) (
 		WHERE user_id = ?
 		  AND status = 'confirmed'
 		  AND flagged = 0
-		  AND date(started_at) >= date(?)
-		  AND date(started_at) < date(?, '+7 days')`,
+		  AND started_at >= ? || 'T00:00:00Z'
+		  AND started_at < date(?, '+7 days') || 'T00:00:00Z'`,
 		userID, weekStart, weekStart).Scan(&total)
 	if err != nil {
 		return 0, fmt.Errorf("total week: %w", err)

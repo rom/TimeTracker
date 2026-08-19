@@ -233,6 +233,10 @@ type EntryFilter struct {
 	UseRegexp bool
 	// Kinds limits to work, overtime or travel.
 	Kinds []domain.EntryKind
+	// Offset skips rows before the page being shown. Only meaningful with a
+	// Limit, and deliberately absent from every export: a download covers what
+	// the filter matches, not the page somebody happened to be looking at.
+	Offset int
 	// WithExpenses narrows to entries recorded on the same project and the same
 	// calendar day as an expense - the day somebody drove to the customer, or
 	// took them to lunch. Expenses hang off a project and a date rather than off
@@ -244,70 +248,85 @@ type EntryFilter struct {
 // Entries lists entries matching a filter, for the Entries screen and as the
 // basis of every export.
 func (s *Service) Entries(ctx context.Context, filter EntryFilter) ([]domain.TimeEntry, error) {
-	actor, err := auth.MustUser(ctx)
+	// Whose entries: your own unless you asked for someone else's and the
+	// authoriser agrees. The scope applies on top regardless, so even an
+	// approved cross-user read stays inside the actor's projects.
+	subjectID, scope, err := s.entryAudience(ctx, filter)
 	if err != nil {
 		return nil, err
+	}
+	entries, _, err := s.searchEntries(ctx, subjectID, scope, filter)
+	return entries, err
+}
+
+// EntryPage is one screenful of entries and how many there are in total.
+type EntryPage struct {
+	Entries []domain.TimeEntry
+	// Total is how many the filter matches, not how many are in Entries. It is
+	// what lets a screen say which page of how many it is showing, and what
+	// tells somebody their filter matched more than they can see.
+	Total int
+	Mode  store.SearchMode
+}
+
+// SearchEntriesPage is SearchEntries for a screen that shows one page at a time.
+func (s *Service) SearchEntriesPage(ctx context.Context, filter EntryFilter) (EntryPage, error) {
+	subjectID, scope, err := s.entryAudience(ctx, filter)
+	if err != nil {
+		return EntryPage{}, err
+	}
+	entries, mode, total, err := s.searchPage(ctx, subjectID, scope, filter)
+	if err != nil {
+		return EntryPage{}, err
+	}
+	return EntryPage{Entries: entries, Total: total, Mode: mode}, nil
+}
+
+// entryAudience settles whose entries are being asked for and what the actor may
+// see, which is the same question for every entry query and was answered three
+// times over before this existed.
+func (s *Service) entryAudience(ctx context.Context, filter EntryFilter) (int64, store.Scope, error) {
+	actor, err := auth.MustUser(ctx)
+	if err != nil {
+		return 0, store.Scope{}, err
 	}
 	if err := s.authz.Can(ctx, auth.ActionView, auth.Resource{
 		Type: "time_entry", OwnerID: actor.ID,
 	}); err != nil {
-		return nil, err
+		return 0, store.Scope{}, err
 	}
-	// Whose entries: your own unless you asked for someone else's and the
-	// authoriser agrees. The scope below applies on top regardless, so even an
-	// approved cross-user read stays inside the actor's projects.
+
 	subjectID := actor.ID
 	if filter.UserID != 0 && filter.UserID != actor.ID {
 		if err := s.authz.Can(ctx, auth.ActionView, auth.Resource{
 			Type: "time_entry", OwnerID: filter.UserID, ProjectID: filter.ProjectID,
 			CustomerID: filter.CustomerID,
 		}); err != nil {
-			return nil, notFoundFor(err)
+			return 0, store.Scope{}, notFoundFor(err)
 		}
 		subjectID = filter.UserID
 	}
 
 	scope, err := s.effectiveScope(ctx)
 	if err != nil {
-		return nil, err
+		return 0, store.Scope{}, err
 	}
-
-	entries, _, err := s.searchEntries(ctx, subjectID, scope, filter)
-	return entries, err
+	return subjectID, scope, nil
 }
 
 // SearchEntries is Entries with the search mechanism reported back, so the
 // screen can say whether it matched an index, a scan or a regular expression.
 func (s *Service) SearchEntries(ctx context.Context, filter EntryFilter) ([]domain.TimeEntry, store.SearchMode, error) {
-	actor, err := auth.MustUser(ctx)
-	if err != nil {
-		return nil, store.SearchNone, err
-	}
-	if err := s.authz.Can(ctx, auth.ActionView, auth.Resource{
-		Type: "time_entry", OwnerID: actor.ID,
-	}); err != nil {
-		return nil, store.SearchNone, err
-	}
-	subjectID := actor.ID
-	if filter.UserID != 0 && filter.UserID != actor.ID {
-		if err := s.authz.Can(ctx, auth.ActionView, auth.Resource{
-			Type: "time_entry", OwnerID: filter.UserID, ProjectID: filter.ProjectID,
-			CustomerID: filter.CustomerID,
-		}); err != nil {
-			return nil, store.SearchNone, notFoundFor(err)
-		}
-		subjectID = filter.UserID
-	}
-	scope, err := s.effectiveScope(ctx)
+	subjectID, scope, err := s.entryAudience(ctx, filter)
 	if err != nil {
 		return nil, store.SearchNone, err
 	}
 	return s.searchEntries(ctx, subjectID, scope, filter)
 }
 
-// searchEntries is the shared query, after the permission questions are settled.
-func (s *Service) searchEntries(ctx context.Context, subjectID int64, scope store.Scope, filter EntryFilter) ([]domain.TimeEntry, store.SearchMode, error) {
-	entries, mode, err := s.db.SearchEntries(ctx, store.EntryFilter{
+// storeFilter translates a service filter into the store's.
+func storeFilter(subjectID int64, scope store.Scope, filter EntryFilter) store.EntryFilter {
+	return store.EntryFilter{
 		UserID:       subjectID,
 		Scope:        scope,
 		From:         filter.From,
@@ -321,16 +340,102 @@ func (s *Service) searchEntries(ctx context.Context, subjectID int64, scope stor
 		UseRegexp:    filter.UseRegexp,
 		Kinds:        filter.Kinds,
 		Limit:        filter.Limit,
-	})
-	if err != nil || !filter.WithExpenses {
+		Offset:       filter.Offset,
+	}
+}
+
+// searchEntries is the shared query, after the permission questions are settled.
+func (s *Service) searchEntries(ctx context.Context, subjectID int64, scope store.Scope, filter EntryFilter) ([]domain.TimeEntry, store.SearchMode, error) {
+	if filter.WithExpenses {
+		entries, mode, _, err := s.searchWithExpenses(ctx, subjectID, scope, filter)
 		return entries, mode, err
 	}
+	return s.db.SearchEntries(ctx, storeFilter(subjectID, scope, filter))
+}
+
+// searchPage is searchEntries with the total behind the page.
+//
+// The total is what lets a screen say "page 3 of 12" and what tells somebody
+// their filter matched more than they can see. It is a second query rather than
+// the length of the slice, because the length of a page is not the size of the
+// result.
+func (s *Service) searchPage(ctx context.Context, subjectID int64, scope store.Scope, filter EntryFilter) ([]domain.TimeEntry, store.SearchMode, int, error) {
+	if filter.WithExpenses {
+		return s.searchWithExpenses(ctx, subjectID, scope, filter)
+	}
+
+	entries, mode, err := s.db.SearchEntries(ctx, storeFilter(subjectID, scope, filter))
+	if err != nil {
+		return nil, store.SearchNone, 0, err
+	}
+
+	// Only when a page was asked for. An unbounded query already knows its own
+	// size, and counting it again would double the work of every export.
+	total := len(entries)
+	if filter.Limit > 0 {
+		windowless := filter
+		windowless.Limit, windowless.Offset = 0, 0
+		if total, err = s.db.CountEntries(ctx, storeFilter(subjectID, scope, windowless)); err != nil {
+			return nil, store.SearchNone, 0, err
+		}
+	}
+	return entries, mode, total, nil
+}
+
+// searchWithExpenses answers the "time on a day its project also had a cost"
+// filter, and pages it in Go.
+//
+// The condition cannot be expressed in SQL - an entry's calendar day comes from
+// the zone it was recorded in, and SQLite cannot convert an instant to a named
+// zone's local date - so the rows are narrowed after the query. That means the
+// database cannot count them either, and a LIMIT applied before the narrowing
+// would return a page with holes in it. So the window is applied here, to the
+// narrowed set, which is small by construction: it is only the days somebody
+// actually spent money.
+//
+// The database query is still bounded, by a cap far above any plausible answer,
+// so a filter that matches everything cannot pull a whole table into memory.
+func (s *Service) searchWithExpenses(ctx context.Context, subjectID int64, scope store.Scope, filter EntryFilter) ([]domain.TimeEntry, store.SearchMode, int, error) {
+	unwindowed := filter
+	unwindowed.Limit, unwindowed.Offset = maxPostFilterRows, 0
+
+	entries, mode, err := s.db.SearchEntries(ctx, storeFilter(subjectID, scope, unwindowed))
+	if err != nil {
+		return nil, store.SearchNone, 0, err
+	}
+
 	kept, err := s.keepEntriesWithExpenses(ctx, entries, filter)
+	if err != nil {
+		return nil, store.SearchNone, 0, err
+	}
+	total := len(kept)
+
 	// The mode is the one the query used. Narrowing the result afterwards does
 	// not change which mechanism answered, and reporting SearchNone here would
 	// make the screen stop explaining a regexp search the moment somebody also
 	// ticked this box.
-	return kept, mode, err
+	return pageOf(kept, filter.Offset, filter.Limit), mode, total, nil
+}
+
+// maxPostFilterRows bounds a query whose narrowing happens outside SQL.
+//
+// Ten thousand: far above any range somebody filters by expenses over, and far
+// below anything that would trouble memory. A cap rather than no cap, because a
+// filter the database cannot apply must not be a way to ask for everything.
+const maxPostFilterRows = 10_000
+
+// pageOf slices a result to a window, tolerating an offset past the end.
+func pageOf(entries []domain.TimeEntry, offset, limit int) []domain.TimeEntry {
+	if offset >= len(entries) {
+		return nil
+	}
+	if offset > 0 {
+		entries = entries[offset:]
+	}
+	if limit > 0 && limit < len(entries) {
+		entries = entries[:limit]
+	}
+	return entries
 }
 
 // keepEntriesWithExpenses drops entries with no expense on the same project and

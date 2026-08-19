@@ -664,3 +664,58 @@
     ><span class="brand-tracker">{{.T "app.name.second"}}</span
   ></span>
 {{end}}
+
+{{/* ----------------------------------------------------------------- pager */}}
+{{/*
+  Page links for a filtered listing. Called with a dict of Page and Filter: the
+  filter knows the numbers, the page carries the translator.
+
+  Plain links, so this works with no script at all, and each one carries the
+  whole filter rather than only the page number - a pager that dropped the
+  search box would send somebody who clicked "next" into page two of a
+  different result.
+
+  <nav> with a label, because a screen reader user meets this as one of several
+  navigations on the page and "pagination" is how they tell it apart. The
+  current page is marked aria-current and rendered as text rather than a link:
+  a link to where you already are is a dead control.
+*/}}
+{{define "pager"}}
+{{- $page := .Page -}}
+{{- $filter := .Filter -}}
+  {{if $filter.HasPages}}
+    <nav class="pager" aria-label="{{$page.T "entries.pagination"}}">
+      {{if gt $filter.Page 1}}
+        <a class="pager-step" href="{{$filter.PageURL (sub $filter.Page 1)}}" rel="prev">
+          <span aria-hidden="true">‹</span> {{$page.T "action.previous"}}
+        </a>
+      {{else}}
+        {{/* Rendered as inert text rather than omitted, so the row does not
+             change shape between the first page and the rest. */}}
+        <span class="pager-step is-disabled" aria-hidden="true">‹ {{$page.T "action.previous"}}</span>
+      {{end}}
+
+      <ol class="pager-pages">
+        {{range $filter.PageNumbers}}
+          {{if eq . 0}}
+            {{/* A gap where pages were left out. aria-hidden because "ellipsis"
+                 announced between two numbers is noise, not information. */}}
+            <li class="pager-gap" aria-hidden="true">…</li>
+          {{else if eq . $filter.Page}}
+            <li><span class="pager-page is-current" aria-current="page">{{.}}</span></li>
+          {{else}}
+            <li><a class="pager-page" href="{{$filter.PageURL .}}">{{.}}</a></li>
+          {{end}}
+        {{end}}
+      </ol>
+
+      {{if lt $filter.Page $filter.Pages}}
+        <a class="pager-step" href="{{$filter.PageURL (add $filter.Page 1)}}" rel="next">
+          {{$page.T "action.next"}} <span aria-hidden="true">›</span>
+        </a>
+      {{else}}
+        <span class="pager-step is-disabled" aria-hidden="true">{{$page.T "action.next"}} ›</span>
+      {{end}}
+    </nav>
+  {{end}}
+{{end}}

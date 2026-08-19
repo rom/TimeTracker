@@ -102,7 +102,11 @@ test-short: ## Fast inner-loop tests (skips the store-heavy cases)
 
 .PHONY: test-perf
 test-perf: ## Performance suite for the ASR-012 budgets (slow)
-	go test -tags perf -run TestPerf -count=1 -timeout 20m $(PKG)
+	# -v because the measurements are the output. Without it `go test` hides the
+	# log lines of a passing test, and a run that says nothing but "ok" tells you
+	# the budget was met and not by how much - which is the number that shows a
+	# regression coming before it arrives.
+	go test -tags perf -run TestPerf -count=1 -timeout 20m -v $(PKG)
 
 # Only the packages that have tests. Passing ./... to -coverprofile asks the
 # toolchain to merge coverage for packages with no test binary, which needs the

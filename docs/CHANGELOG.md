@@ -12,6 +12,12 @@ the decision.
 
 ### Added
 
+* **The Entries list is paged**, fifty rows at a time, with the total beside it
+  ("Showing 51–100 of 137 entries") and a pager that carries the whole filter on
+  every link. Plain links, so it works with no script; the current page is marked
+  `aria-current`, and the window of page numbers is bounded so a filter matching
+  ten thousand entries does not render two hundred links. A page past the end
+  says so rather than looking like an empty database.
 * **A full icon set, and a web app manifest.** The application had one 32-pixel
   SVG favicon and nothing else: no home-screen icon, no manifest, and a 404 on
   `/favicon.ico` for every page load. There are now tab icons (SVG, 16/32/48 PNG
@@ -71,6 +77,35 @@ the decision.
 
 ### Fixed
 
+* **Exports were silently truncated at 1000 entries.** The Entries screen capped
+  its rows at a thousand, that cap was part of the filter, and the export handler
+  built its download from the same filter — so any range with more entries than
+  the cap lost the rest, oldest first, in a file somebody was about to invoice
+  from. Worse, the amount lost depended on which page of the screen they were
+  looking at. An export now covers everything the filter matches, whatever the
+  screen is showing.
+* **A tag lookup could exceed SQLite's bound-parameter limit.** Every entry id in
+  the lookup is a parameter, and the whole statement is rejected past the
+  ceiling — so the symptom is a 500 on a download, not a missing tag. It had been
+  hidden by the export truncation above: the screen's thousand-row cap was, by
+  accident, a cap on the query. The lookup batches now.
+* **Every screen took about 300 ms against a realistic database**, where the
+  budget is 100. Three queries on the page shell each walked every entry the user
+  had, and each had an index that should have prevented it
+  ([ADR-0032](adr/0032-measured-before-tuned.md)): a partial index the planner
+  declined in favour of a broader one, a predicate that did not match the partial
+  index it was written for, and `date()` wrapped around an indexed column, which
+  makes a condition no index can answer. The day view is now 27 ms, the week
+  view 32 ms, timer start/stop 28 ms — down from 365, 350 and 303.
+  `ANALYZE` was tried and rejected: it made one query 230× faster and another 3×
+  slower in the same run.
+* **The inbox badge built the inbox.** A number shown on every screen was
+  fetching every pending entry with its assignment, project, customer, both users
+  and an attachment count. It is a count query now.
+* **`make test-perf` passed with nothing behind it.** The target ran
+  `-run TestPerf` and no test of that name existed, so it exited 0 in silence
+  while TEST.md claimed ASR-012 was proved by it. The suite now exists, measures
+  through the HTTP handler, logs every figure, and asserts the budgets.
 * **An encrypted archive was structurally perfect and no other archiver could
   open it.** The general-purpose "encrypted" flag bit was never set, so every
   real tool handed the ciphertext straight to its inflater and failed with a

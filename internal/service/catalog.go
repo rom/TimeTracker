@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	"github.com/rom/timetracker/internal/auth"
 	"github.com/rom/timetracker/internal/domain"
@@ -309,6 +310,16 @@ func (s *Service) Assignment(ctx context.Context, id int64) (domain.Assignment, 
 	return a, nil
 }
 
+// RecentWindow is how far back "lately" reaches.
+//
+// Six weeks, which is what the day screen already promised in words and what
+// the query now actually does. It is bounded rather than open-ended for two
+// reasons, and the second is the one that forced it: an assignment nobody has
+// touched since last year is not a suggestion anybody wants, and grouping a
+// whole history to rank eight of them cost 170 ms on every render of the day
+// screen with three years of entries behind it.
+const RecentWindow = 42 * 24 * time.Hour
+
 // RecentAssignments returns what the user has worked on lately, most recent
 // first. It drives the one-click start list and the quick-add matcher, both of
 // which are far more useful ordered by habit than alphabetically.
@@ -322,7 +333,7 @@ func (s *Service) RecentAssignments(ctx context.Context, limit int) ([]domain.As
 	}); err != nil {
 		return nil, err
 	}
-	return s.db.RecentAssignments(ctx, actor.ID, limit)
+	return s.db.RecentAssignments(ctx, actor.ID, s.now().Add(-RecentWindow), limit)
 }
 
 // ------------------------------------------------------------------ shared --

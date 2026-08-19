@@ -378,7 +378,9 @@ func TestRecentAssignments(t *testing.T) {
 	mustEntry(first.ID, base)
 	mustEntry(second.ID, base.Add(24*time.Hour)) // more recent
 
-	recent, err := db.RecentAssignments(ctx, user.ID, 10)
+	// A window wide enough to include both entries: the query is bounded now,
+	// and the bound is what the test below is not about.
+	recent, err := db.RecentAssignments(ctx, user.ID, base.Add(-24*time.Hour), 10)
 	if err != nil {
 		t.Fatalf("recent: %v", err)
 	}
@@ -387,6 +389,18 @@ func TestRecentAssignments(t *testing.T) {
 	}
 	if recent[0].ID != second.ID {
 		t.Errorf("most recently used assignment should sort first, got %q", recent[0].Name)
+	}
+
+	// The window is a real bound, not decoration. Anything older than it is not
+	// a suggestion anybody wants, and leaving it unbounded made the day screen
+	// group a whole history to rank a handful of assignments.
+	narrow, err := db.RecentAssignments(ctx, user.ID, base.Add(12*time.Hour), 10)
+	if err != nil {
+		t.Fatalf("recent: %v", err)
+	}
+	if len(narrow) != 1 || narrow[0].ID != second.ID {
+		t.Errorf("a window starting after the first entry should return only the "+
+			"second, got %d assignments", len(narrow))
 	}
 }
 
@@ -749,5 +763,37 @@ func TestRoutineStorage(t *testing.T) {
 	}
 	if len(all) != 1 {
 		t.Errorf("the inactive routine was lost: %+v", all)
+	}
+}
+
+// TestTagsForEntriesExceedingTheParameterLimit.
+//
+// Every id in the lookup is a bound parameter, and SQLite rejects a statement
+// carrying more than its ceiling - 32766 in the versions this builds against.
+// The whole statement fails, so the symptom is a 500 on an export rather than a
+// missing tag.
+//
+// It stayed hidden because the only caller was a screen capped at a thousand
+// rows: the cap on the screen was, by accident, a cap on the query. Removing it
+// from the export exposed it against a year of entries.
+//
+// The ids here need not exist. What is being exercised is the statement's shape,
+// and forty thousand rows would take far longer to create than the check is
+// worth.
+func TestTagsForEntriesExceedingTheParameterLimit(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+
+	ids := make([]int64, 40_000)
+	for i := range ids {
+		ids[i] = int64(i + 1)
+	}
+
+	tags, err := db.TagsForEntries(ctx, ids)
+	if err != nil {
+		t.Fatalf("a lookup of %d entries failed: %v", len(ids), err)
+	}
+	if len(tags) != 0 {
+		t.Errorf("no entry exists, so no tags should come back; got %d", len(tags))
 	}
 }

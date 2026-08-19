@@ -41,6 +41,29 @@ type Inbox struct {
 // Count returns how many items need a decision, for the navigation badge.
 func (i Inbox) Count() int { return len(i.Entries) + len(i.Expenses) }
 
+// PendingCount is Count without building the inbox.
+//
+// The badge appears on every screen, so it was fetching every pending entry
+// with its assignment, project, customer, both users and an attachment count -
+// to render a number. Against a hundred thousand entries that measured 100 ms
+// per page (ASR-012, docs/adr/0032-measured-before-tuned.md).
+func (s *Service) PendingCount(ctx context.Context) (int, error) {
+	actor, err := auth.MustUser(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if err := s.authz.Can(ctx, auth.ActionView, auth.Resource{
+		Type: "time_entry", OwnerID: actor.ID,
+	}); err != nil {
+		return 0, err
+	}
+	scope, err := s.effectiveScope(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return s.db.CountPending(ctx, actor.ID, scope)
+}
+
 // Inbox returns everything awaiting the acting user's decision.
 func (s *Service) Inbox(ctx context.Context) (Inbox, error) {
 	actor, err := auth.MustUser(ctx)
