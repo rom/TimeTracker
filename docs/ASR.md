@@ -103,7 +103,8 @@ UI, except the user's own data directory.
 operate infrastructure. This forbids a separate frontend build artefact and forces
 templates, CSS, JS and migrations to be embedded via `embed.FS`.
 
-*Addressed by:* [ADR-0002](adr/0002-server-rendered-htmx.md), [ADR-0003](adr/0003-pure-go-sqlite.md), [ADR-0009](adr/0009-embedded-assets-and-migrations.md)
+*Addressed by:* [ADR-0002](adr/0002-server-rendered-htmx.md), [ADR-0003](adr/0003-pure-go-sqlite.md),
+[ADR-0032](adr/0032-measured-before-tuned.md), [ADR-0009](adr/0009-embedded-assets-and-migrations.md)
 
 ---
 

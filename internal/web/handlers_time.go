@@ -227,8 +227,8 @@ func (s *Server) newPageData(r *http.Request, title, active string) (pageData, e
 	// The proxy inbox count is shown as a badge on every screen, because a
 	// proposal nobody looks at is unbilled work.
 	inboxCount := 0
-	if inbox, inboxErr := s.svc.Inbox(r.Context()); inboxErr == nil {
-		inboxCount = inbox.Count()
+	if count, countErr := s.svc.PendingCount(r.Context()); countErr == nil {
+		inboxCount = count
 	}
 
 	return pageData{

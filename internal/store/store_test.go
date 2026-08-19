@@ -378,7 +378,9 @@ func TestRecentAssignments(t *testing.T) {
 	mustEntry(first.ID, base)
 	mustEntry(second.ID, base.Add(24*time.Hour)) // more recent
 
-	recent, err := db.RecentAssignments(ctx, user.ID, 10)
+	// A window wide enough to include both entries: the query is bounded now,
+	// and the bound is what the test below is not about.
+	recent, err := db.RecentAssignments(ctx, user.ID, base.Add(-24*time.Hour), 10)
 	if err != nil {
 		t.Fatalf("recent: %v", err)
 	}
@@ -387,6 +389,18 @@ func TestRecentAssignments(t *testing.T) {
 	}
 	if recent[0].ID != second.ID {
 		t.Errorf("most recently used assignment should sort first, got %q", recent[0].Name)
+	}
+
+	// The window is a real bound, not decoration. Anything older than it is not
+	// a suggestion anybody wants, and leaving it unbounded made the day screen
+	// group a whole history to rank a handful of assignments.
+	narrow, err := db.RecentAssignments(ctx, user.ID, base.Add(12*time.Hour), 10)
+	if err != nil {
+		t.Fatalf("recent: %v", err)
+	}
+	if len(narrow) != 1 || narrow[0].ID != second.ID {
+		t.Errorf("a window starting after the first entry should return only the "+
+			"second, got %d assignments", len(narrow))
 	}
 }
 

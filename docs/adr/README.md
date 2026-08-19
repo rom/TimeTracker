@@ -57,6 +57,7 @@ Statuses: `proposed` → `accepted` → `superseded by ADR-NNNN` | `deprecated`.
 | [0029](0029-searching-with-trigram-and-regexp.md) | Trigram full text, with a scan fallback and optional regexp | accepted | 2026-08-18 | ASR-025 |
 | [0030](0030-encrypted-backup-archives.md) | A backup is a zip archive, optionally AES-encrypted with a stored password | accepted | 2026-08-19 | ASR-013, ASR-019 |
 | [0031](0031-attachment-previews.md) | Attachments are previewed inline, and SVG is made safe rather than refused | accepted | 2026-08-19 | ASR-013 |
+| [0032](0032-measured-before-tuned.md) | Index for the query that is written, not the one that is meant | accepted | 2026-08-19 | ASR-012 |
 
 ## Writing a new one
 

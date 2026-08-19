@@ -31,6 +31,21 @@ const entrySelect = `
 	JOIN users       u  ON u.id  = e.user_id
 	JOIN users       eb ON eb.id = e.entered_by`
 
+// entrySelect is the column list and joins every entry query shares. It is one
+// string rather than several because two copies of it drifted once already, and
+// a column added to one and forgotten in the other is a stored field that
+// quietly stops being read.
+
+// entrySelectFrom is entrySelect with a clause attached to the entries table.
+//
+// Used for the one query that names its index. The alternative - a second copy
+// of the column list with a hint in it - is exactly the duplication the comment
+// above warns about.
+func entrySelectFrom(clause string) string {
+	return strings.Replace(entrySelect,
+		"FROM time_entries e\n", "FROM time_entries e "+clause+"\n", 1)
+}
+
 // CreateEntry inserts a time entry. A running entry is one with a nil EndedAt;
 // nothing here prevents several from existing at once for the same user, which is
 // the point (docs/adr/0004-concurrent-timers.md).
@@ -221,8 +236,21 @@ func GetEntryTx(ctx context.Context, tx *sql.Tx, id int64) (domain.TimeEntry, er
 // This is queried on every page render to draw the running-timer header, which is
 // why the schema carries a partial index covering exactly these rows.
 func (db *DB) ListRunningEntries(ctx context.Context, userID int64) ([]domain.TimeEntry, error) {
+	// INDEXED BY, not a hint: it is an instruction, and a deliberate one.
+	//
+	// idx_entries_running is a partial index over exactly the rows this asks
+	// for - a user's unfinished entries, of which there are never more than a
+	// handful. Left to itself the planner chose idx_entries_user_started and
+	// walked every entry the user had ever recorded, which measured 95 ms
+	// against a hundred thousand of them on a query whose answer is almost
+	// always empty. It runs on every page render.
+	//
+	// The cost of saying so is that dropping the index breaks the query instead
+	// of slowing it down. That is the better failure: a query that silently
+	// becomes a full scan is the one nobody notices.
 	rows, err := db.read.QueryContext(ctx,
-		entrySelect+` WHERE e.user_id = ? AND e.ended_at IS NULL ORDER BY e.started_at`, userID)
+		entrySelectFrom("INDEXED BY idx_entries_running")+
+			` WHERE e.user_id = ? AND e.ended_at IS NULL ORDER BY e.started_at`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list running entries: %w", err)
 	}
@@ -393,10 +421,53 @@ func (f EntryFilter) buildSearch() (string, []any, SearchMode, error) {
 	return query, args, mode, err
 }
 
+// CountPending returns how many entries and expenses await a user's decision.
+//
+// A count rather than the records, because the navigation badge is a number and
+// building the inbox to render it cost 100 ms on every page in the application.
+// The full Inbox still exists for the screen that shows the items; this is for
+// the badge beside it.
+//
+// The predicate is written as the index's predicate, not as an equivalent of it.
+// `status IN ('pending')` implies `status = 'pending'` to a reader and not to
+// SQLite's partial-index matcher, which is how the original fell back to a scan
+// of every entry the user had.
+func (db *DB) CountPending(ctx context.Context, userID int64, scope Scope) (int, error) {
+	entries, err := db.countPendingIn(ctx, `
+		SELECT COUNT(*) FROM time_entries e
+		JOIN assignments a ON a.id = e.assignment_id
+		JOIN projects    p ON p.id = a.project_id
+		WHERE e.user_id = ? AND e.status = 'pending'`, userID, scope)
+	if err != nil {
+		return 0, fmt.Errorf("count pending entries: %w", err)
+	}
+
+	expenses, err := db.countPendingIn(ctx, `
+		SELECT COUNT(*) FROM expenses e
+		JOIN projects p ON p.id = e.project_id
+		WHERE e.user_id = ? AND e.status = 'pending'`, userID, scope)
+	if err != nil {
+		return 0, fmt.Errorf("count pending expenses: %w", err)
+	}
+	return entries + expenses, nil
+}
+
+// countPendingIn runs one of the two counts with the actor's scope applied.
+func (db *DB) countPendingIn(ctx context.Context, query string, userID int64, scope Scope) (int, error) {
+	args := []any{userID}
+	if scoped, scopeArgs := scope.condition("p.id", "p.customer_id"); scoped != "" {
+		query += " AND " + scoped
+		args = append(args, scopeArgs...)
+	}
+	var count int
+	err := db.read.QueryRowContext(ctx, query, args...).Scan(&count)
+	return count, err
+}
+
 // RecentAssignments returns the assignments a user has logged time against most
 // recently, most recent first. It drives the quick-start list and the fuzzy match
 // in quick add, both of which are far more useful ordered by habit than by name.
-func (db *DB) RecentAssignments(ctx context.Context, userID int64, limit int) ([]domain.Assignment, error) {
+func (db *DB) RecentAssignments(ctx context.Context, userID int64, since time.Time, limit int) ([]domain.Assignment, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -409,12 +480,13 @@ func (db *DB) RecentAssignments(ctx context.Context, userID int64, limit int) ([
 		JOIN customers c ON c.id = p.customer_id
 		JOIN (
 			SELECT assignment_id, MAX(started_at) AS last_used
-			FROM time_entries WHERE user_id = ?
+			FROM time_entries
+			WHERE user_id = ? AND started_at >= ?
 			GROUP BY assignment_id
 		) recent ON recent.assignment_id = a.id
 		WHERE a.archived_at IS NULL
 		ORDER BY recent.last_used DESC
-		LIMIT ?`, userID, limit)
+		LIMIT ?`, userID, formatTime(since), limit)
 	if err != nil {
 		return nil, fmt.Errorf("recent assignments: %w", err)
 	}

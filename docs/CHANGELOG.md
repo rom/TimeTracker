@@ -71,6 +71,23 @@ the decision.
 
 ### Fixed
 
+* **Every screen took about 300 ms against a realistic database**, where the
+  budget is 100. Three queries on the page shell each walked every entry the user
+  had, and each had an index that should have prevented it
+  ([ADR-0032](adr/0032-measured-before-tuned.md)): a partial index the planner
+  declined in favour of a broader one, a predicate that did not match the partial
+  index it was written for, and `date()` wrapped around an indexed column, which
+  makes a condition no index can answer. The day view is now 27 ms, the week
+  view 32 ms, timer start/stop 28 ms — down from 365, 350 and 303.
+  `ANALYZE` was tried and rejected: it made one query 230× faster and another 3×
+  slower in the same run.
+* **The inbox badge built the inbox.** A number shown on every screen was
+  fetching every pending entry with its assignment, project, customer, both users
+  and an attachment count. It is a count query now.
+* **`make test-perf` passed with nothing behind it.** The target ran
+  `-run TestPerf` and no test of that name existed, so it exited 0 in silence
+  while TEST.md claimed ASR-012 was proved by it. The suite now exists, measures
+  through the HTTP handler, logs every figure, and asserts the budgets.
 * **An encrypted archive was structurally perfect and no other archiver could
   open it.** The general-purpose "encrypted" flag bit was never set, so every
   real tool handed the ciphertext straight to its inflater and failed with a

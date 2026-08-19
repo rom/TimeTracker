@@ -29,7 +29,7 @@ add it.
 | **4** | Proxy entries, weekly submit/approve, entry correction | ✅ delivered |
 | **5** | Reports, PDF and DOCX export | ✅ delivered |
 | **6** | Semi-automatic assistance | 🔨 partial: gaps and long-timer review shipped; idle detection and reminders outstanding |
-| **7** | Hardening, packaging, performance | 🔨 partial: hardening shipped; the performance suite is not yet written |
+| **7** | Hardening, packaging, performance | ✅ delivered |
 | **8** | Bulk import, backup, YAML configuration | ✅ delivered |
 | **9** | Customer contract rules, approval report, user guide | ✅ delivered |
 | **10** | Dated terms, tags, search, copy/routines/switching, calendar import, timeline | ✅ delivered |
@@ -176,12 +176,19 @@ review; end-of-day and end-of-week reminders; history-based suggestions ranked b
 weekday. Built as a suggestion pipeline so calendar and git sources can be added
 later without new machinery.
 
-## Layer 7 — Hardening and packaging
+## Layer 7 — Hardening and packaging ✅
 
 Cross-platform CI (macOS, Linux, Windows × amd64/arm64); performance validation
 against the 100k-entry dataset from ASR-012; backup/restore command and documented
 restore drill; systemd unit and reverse-proxy examples; import from Toggl/Harvest
 CSV; release artefacts with checksums.
+
+The performance suite was the last of these, and writing it was worth more than
+the reassurance it was expected to give: every interactive budget was breached by
+three to four times, by three queries on the page shell that each walked the
+whole entry table. `make test-perf` had been running `-run TestPerf` against no
+such test and passing in silence for as long as the target had existed. See
+[ADR-0032](adr/0032-measured-before-tuned.md).
 
 ---
 
