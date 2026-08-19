@@ -196,6 +196,69 @@ func TestHighContrastThemeMeetsWCAG(t *testing.T) {
 	}
 }
 
+// TestEveryThemeMeetsWCAGForText holds *all* the themes to AA on text, not only
+// the one named for contrast.
+//
+// The high-contrast theme exists for people who need more than AA. AA itself is
+// the floor for the other seven, and until this test was written two of them
+// were below it: the sand accent was 4.29:1 as link text, and the spring accent
+// was 3.77:1 as link text and 4.07:1 under the white text of a primary button.
+// Both were fixed by darkening one token each. Nobody had noticed, because
+// looking at a colour is not a way of measuring it - which is the whole argument
+// for computing this rather than reviewing it.
+//
+// Deliberately text pairs only. WCAG 1.4.11 asks 3:1 of *meaningful* graphical
+// objects and the boundaries of controls; the --border token is also used for
+// hairlines between table rows, which are decoration. Holding every theme to
+// 3:1 there would force seven palettes to change appearance in exchange for a
+// criterion those particular lines do not attract, so the border check stays on
+// the high-contrast theme, where the point is to exceed the floor everywhere.
+func TestEveryThemeMeetsWCAGForText(t *testing.T) {
+	css, err := staticFS.ReadFile("static/css/app.css")
+	if err != nil {
+		t.Fatalf("read stylesheet: %v", err)
+	}
+	stylesheet := string(css)
+
+	pairs := []struct {
+		foreground, background string
+		what                   string
+	}{
+		{"--text", "--surface", "body text on the page"},
+		{"--text", "--surface-raised", "body text on a card"},
+		{"--text-muted", "--surface", "muted text on the page"},
+		{"--text-muted", "--surface-raised", "muted text on a card"},
+		{"--accent-text", "--accent", "text on a primary button"},
+		{"--accent", "--surface", "links on the page"},
+		{"--danger", "--surface", "error text"},
+	}
+
+	for _, theme := range availableThemes {
+		block := themeBlock(stylesheet, theme)
+		if block == "" {
+			// themeBlock knows about :root, so an empty result means the theme
+			// is offered in the switcher and defined nowhere.
+			t.Errorf("theme %q is offered but has no token block", theme)
+			continue
+		}
+		tokens := parseTokens(block)
+
+		for _, pair := range pairs {
+			fg, okFG := tokens[pair.foreground]
+			bg, okBG := tokens[pair.background]
+			if !okFG || !okBG {
+				t.Errorf("theme %s does not define %s or %s",
+					theme, pair.foreground, pair.background)
+				continue
+			}
+			if ratio := contrastRatio(fg, bg); ratio < 4.5 {
+				t.Errorf("theme %s, %s: %.2f:1 between %s (%s) and %s (%s), need 4.5:1",
+					theme, pair.what, ratio, pair.foreground, fg, pair.background, bg)
+			}
+		}
+	}
+}
+
 // parseTokens pulls "--name: #rrggbb;" declarations out of a CSS block.
 func parseTokens(block string) map[string]string {
 	tokens := map[string]string{}
@@ -358,17 +421,18 @@ func TestEntityTintsKeepTextReadable(t *testing.T) {
 	for _, theme := range availableThemes {
 		block := themeBlock(stylesheet, theme)
 		if block == "" {
-			// The default theme is declared on :root rather than in a themed
-			// block, and is covered by the light entry below.
+			t.Errorf("theme %q is offered but has no token block", theme)
 			continue
 		}
 		tokens := parseTokens(block)
 		surface, ok := tokens["--surface-raised"]
 		if !ok {
+			t.Errorf("theme %q does not define --surface-raised", theme)
 			continue
 		}
 		text, ok := tokens["--text"]
 		if !ok {
+			t.Errorf("theme %q does not define --text", theme)
 			continue
 		}
 

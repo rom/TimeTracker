@@ -75,7 +75,7 @@ form validation with inline errors; CSRF plumbing present from the start even th
 local mode does not need it.
 
 **Presentation**
-The seven themes as token sets, theme switcher with pre-paint application, entity
+The eight themes as token sets, theme switcher with pre-paint application, entity
 colour palette keys, curated icon set, keyboard shortcuts, responsive layout.
 
 **Export**

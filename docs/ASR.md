@@ -227,7 +227,7 @@ WCAG 2.1 AA contrast ratios (4.5:1 for body text, 3:1 for large text and UI bord
 verified by the contrast test in TEST.md.
 
 *Rationale:* A theme system implemented with per-theme markup or per-theme
-stylesheets becomes unmaintainable at seven themes. Requiring a single token set
+stylesheets becomes unmaintainable at eight themes. Requiring a single token set
 constrains the CSS architecture from day one.
 
 *Addressed by:* [ADR-0011](adr/0011-theming-via-css-custom-properties.md)

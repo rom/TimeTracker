@@ -290,8 +290,7 @@ rather than alarming.
 
 ## 8. Themes
 
-Seven themes — light, dark, gold, sand, spring, autumn, high contrast — implemented
-purely as redefinitions of one semantic token set
+Eight themes, implemented purely as redefinitions of one semantic token set
 ([ADR-0011](adr/0011-theming-via-css-custom-properties.md)).
 
 | Theme | Character |
@@ -302,15 +301,32 @@ purely as redefinitions of one semantic token set
 | sand | warm off-white paper tones, muted terracotta accent |
 | spring | fresh greens, light and high-key |
 | autumn | ochre, rust and deep brown |
+| terminal | green phosphor on near-black, monospace, square corners |
 | high contrast | near-black on near-white, heavy borders, WCAG AA verified by test |
+
+**terminal** is the one theme that changes the typeface as well as the colours,
+and deliberately: green-on-black in a proportional face is a dark theme with an
+unusual accent, not a terminal. It squares the corners, drops the shadow, adds a
+faint phosphor glow and static scan lines, and puts a blinking block cursor on
+the running-timer clock — the one genuinely live thing on the screen, which is
+where a terminal would have put it. The glow and scan lines are removed under
+`prefers-contrast: more` and `prefers-reduced-transparency`, and the cursor stops
+blinking under `prefers-reduced-motion`: all three cost legibility, and none is
+what somebody who set those preferences is asking for.
 
 The choice persists per user, defaults to `prefers-color-scheme`, and is applied
 before first paint so there is no flash of the wrong theme.
 
 **Entity colours** (assignments, projects) are chosen from a palette by *key*, and
 each theme maps keys to values that work on its own background — "Acme is blue"
-stays legible in all seven. Icons are a curated inline-SVG set drawn in
-`currentColor`, plus optional emoji.
+stays legible in all eight. The terminal theme keeps the full palette rather than
+going monochrome: a phosphor tube could not have shown seven colours, but a
+timesheet that cannot tell one customer from another is a worse anachronism than
+a colour CRT. Icons are a curated inline-SVG set drawn in `currentColor`, plus
+optional emoji.
+
+**Every theme is held to WCAG AA on text by test**, not only the one named for
+contrast — see TEST.md §3. Two themes were below it until that test was written.
 
 ## 9. Semi-automatic assistance
 

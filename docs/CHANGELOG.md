@@ -12,6 +12,18 @@ the decision.
 
 ### Fixed
 
+* **Two themes were below WCAG AA on text, and nothing was checking.** The
+  contrast test only ever examined the theme named for contrast; the sand
+  accent was 4.29:1 as link text and the spring accent 3.77:1 as link text and
+  4.07:1 under the white text of a primary button. Both are corrected by
+  darkening one token each, and every theme is now held to AA on text by test.
+  Found while adding the terminal theme — looking at a colour is not a way of
+  measuring it, which is the whole argument for computing this.
+* **The light theme's colours were never actually tested.** `themeBlock` looked
+  for a `[data-theme]` block and the default theme is declared on `:root`, so it
+  returned nothing and the callers skipped it — one of them with a comment
+  claiming it was covered elsewhere. It now knows about `:root`, and a theme
+  that is offered but undefined is an error rather than a silent skip.
 * **A migration wrote timestamps the application could not read.** The carry-over
   in 0007 used SQLite's `datetime()`, which separates the date and time with a
   space where every timestamp here is RFC 3339. No test on a fresh database
@@ -57,6 +69,17 @@ the decision.
 
 ### Added
 
+* **A terminal theme**: green phosphor on near-black, monospace throughout,
+  square corners, a faint glow and static scan lines, and a blinking block
+  cursor on the running-timer clock — the one genuinely live thing on the
+  screen, which is where a terminal would have put it. It is the only theme
+  that changes the typeface, deliberately: green-on-black in a proportional
+  face is a dark theme with an unusual accent, not a terminal. The glow and
+  scan lines are removed under `prefers-contrast: more` and
+  `prefers-reduced-transparency`, and the cursor stops blinking under
+  `prefers-reduced-motion`. The entity palette stays a palette — a phosphor
+  tube could not have shown seven colours, but a timesheet that cannot tell one
+  customer from another is a worse anachronism than a colour CRT.
 * **Contract terms are dated, and attach to a project as well as a customer.**
   ADR-0024 named two costs it was accepting — no history, one set of terms per
   customer — and both have now been asked for. A revision records when it takes

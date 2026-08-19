@@ -42,7 +42,11 @@
   --entity-teal:   #0d7490;
   --entity-slate:  #55606e;
 
-  /* Non-colour tokens: shared so themes cannot drift structurally. */
+  /* Non-colour tokens: shared so themes cannot drift structurally.
+     A theme may still override one deliberately - terminal takes the monospace
+     face, squares the radius and drops the shadow, because there its structure
+     *is* its character. The point of the default is that drift has to be a
+     decision written in a theme block, not something that happens. */
   --radius:      6px;
   --radius-pill: 999px;
   --gap:         12px;
@@ -112,7 +116,7 @@
   --border-strong:  #b8a988;
   --text:           #2e2820;
   --text-muted:     #6b6152;
-  --accent:         #a75d3b;
+  --accent:         #985231;
   --accent-text:    #fffaf2;
   --accent-soft:    #efdccf;
   --danger:         #a83a2c;
@@ -137,7 +141,7 @@
   --border-strong:  #a3c79b;
   --text:           #16241a;
   --text-muted:     #4f6b55;
-  --accent:         #2f8f4e;
+  --accent:         #26743f;
   --accent-text:    #ffffff;
   --accent-soft:    #d5edd9;
   --danger:         #b8352c;
@@ -182,6 +186,106 @@
    Held to WCAG 2.1 AA (4.5:1 body text, 3:1 large text and UI borders) by the
    automated contrast test described in docs/TEST.md, so a future token edit
    cannot silently break it. */
+/* terminal - a green phosphor CRT.
+   ---------------------------------------------------------------------------
+   The one theme that changes the typeface as well as the colours, because on a
+   terminal the typeface *is* the theme: green-on-black in a proportional face
+   is a dark theme with an unusual accent, not a terminal. The radius goes to
+   zero and the shadow to none for the same reason - a character cell had no
+   rounded corners.
+
+   The colours are chosen against the contrast maths rather than by eye, and
+   TestEntityTintsKeepTextReadable holds them to it like every other theme. The
+   entity palette stays a palette: a phosphor tube could not show seven colours,
+   but a timesheet that cannot tell Acme from Globex is a worse anachronism than
+   a colour CRT. */
+[data-theme="terminal"] {
+  --surface:        #050705;
+  --surface-raised: #0b100b;
+  --surface-sunken: #121a12;
+  --border:         #3a7d3a;
+  --border-strong:  #5aa85a;
+  --text:           #33ff66;
+  --text-muted:     #5fbf7a;
+  --accent:         #33ff66;
+  --accent-text:    #04140a;
+  --accent-soft:    #0f2e18;
+  --danger:         #ff6b6b;
+  --success:        #5fff87;
+  --warning:        #ffd75f;
+
+  --entity-blue:   #5fafff;
+  --entity-green:  #5fff87;
+  --entity-amber:  #ffd75f;
+  --entity-red:    #ff6b6b;
+  --entity-purple: #d78fff;
+  --entity-teal:   #5fffd7;
+  --entity-slate:  #a8c0a8;
+
+  --font:   var(--font-mono);
+  --radius: 0;
+  --shadow: none;
+}
+
+/* The phosphor glow. Small enough to read as bloom rather than as blur - a
+   heavier one makes small text mushy, which is the failure mode of every CRT
+   pastiche. */
+[data-theme="terminal"] body {
+  text-shadow: 0 0 2px rgba(51, 255, 102, 0.28);
+}
+/* Coloured text keeps its own glow rather than a green one, or every entity
+   colour would drift towards the phosphor. */
+[data-theme="terminal"] .chip,
+[data-theme="terminal"] .badge,
+[data-theme="terminal"] .status-mark { text-shadow: none; }
+
+/* Scan lines, laid over the page as a fixed overlay so they do not scroll with
+   the content - a CRT's lines belong to the screen, not to the document.
+   pointer-events: none because it covers everything and must intercept
+   nothing. */
+[data-theme="terminal"] body::after {
+  content: ""; position: fixed; inset: 0; z-index: 9999;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.16) 0px,
+    rgba(0, 0, 0, 0.16) 1px,
+    transparent 1px,
+    transparent 3px);
+}
+
+/* Anyone who has asked for more contrast, or for less transparency, gets the
+   theme without the decoration. Both the glow and the scan lines cost
+   legibility, and neither is what somebody who set those preferences is asking
+   for. */
+@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+  [data-theme="terminal"] body { text-shadow: none; }
+  [data-theme="terminal"] body::after { display: none; }
+}
+
+/* Square everything the radius token does not reach, and let the borders read
+   as the box-drawing they are standing in for. */
+[data-theme="terminal"] .chip,
+[data-theme="terminal"] .badge,
+[data-theme="terminal"] .chip-button,
+[data-theme="terminal"] .btn { border-radius: 0; }
+
+/* A blinking block cursor after the running-timer clock: the one place the
+   interface is genuinely live, which is exactly where a terminal would have
+   put it. */
+[data-theme="terminal"] .live-clock::after {
+  content: "\2588";
+  margin-left: 2px;
+  animation: terminal-blink 1.06s step-end infinite;
+}
+@keyframes terminal-blink {
+  50% { opacity: 0; }
+}
+/* A blinking cursor is exactly what prefers-reduced-motion is for. */
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="terminal"] .live-clock::after { animation: none; }
+}
+
 [data-theme="contrast"] {
   --surface:        #ffffff;
   --surface-raised: #ffffff;

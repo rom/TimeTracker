@@ -44,7 +44,7 @@
 | 006 audit | For each mutating service method: the change and its audit row commit together; an injected failure in the audit write rolls back the change; no code path updates or deletes `audit_event`; a redaction test asserts secrets never reach either sink. |
 | 007 exports | Golden files per format; PDF page-break and repeating-header cases; DOCX opened and validated as a ZIP with well-formed OOXML parts; CSV BOM and non-ASCII names; JSON validated against the published schema. |
 | 008 proxy consent | A pending proxy entry appears in **no** total, report or export for the subject; accept makes it count; reject retains it; a test enumerates every aggregation query to assert the status filter is applied. |
-| 009 themes and accessibility | Contrast ratios are computed from the stylesheet by the WCAG 2.1 formula and asserted for every pair the interface actually uses; the contrast maths is itself verified against known reference points (black on white is exactly 21:1, `#767676` on white is the 4.5:1 boundary). Structural checks cover the skip link's position and target, the landmarks and their names, `aria-current` on the current page, an accessible name on every form control, `aria-live` on the totals, and text alternatives wherever colour or an icon carries meaning. None of this replaces the manual screen-reader pass in §5. |
+| 009 themes and accessibility | Contrast ratios are computed from the stylesheet by the WCAG 2.1 formula and asserted for every text pair the interface uses, **in every theme** rather than only in the one named for contrast - two themes were below AA until that test was written, because looking at a colour is not a way of measuring it. The high-contrast theme additionally has its borders held to 3:1. Entity tints are recomputed in Go at each mix level the stylesheet uses, for every colour in every theme, so colouring a whole row cannot make the text on it unreadable. The contrast maths is itself verified against known reference points (black on white is exactly 21:1, `#767676` on white is the 4.5:1 boundary). Structural checks cover the skip link's position and target, the landmarks and their names, `aria-current` on the current page, an accessible name on every form control, `aria-live` on the totals, and text alternatives wherever colour or an icon carries meaning. None of this replaces the manual screen-reader pass in §5. |
 | 010 durability | Migrations apply from empty and from each released schema version; a tampered checksum fails startup; a newer database version fails startup; backup → wipe → restore reproduces database *and* attachments. |
 | 011 readability | `gofmt -l` empty, `go vet` clean, linter clean; a doc-comment check on exported symbols and package comments. |
 | 012 performance | Against 100k entries: day view, week view and timer start/stop under 100 ms p95; a one-year report under 2 s. Tagged `perf`, run in CI on a fixed runner, reported as a trend rather than a hard gate. |
@@ -166,7 +166,7 @@ Some things automation cannot honestly settle, checked before each release:
 
 * Generated DOCX opened in **Microsoft Word** and **LibreOffice Writer**; PDF in at
   least two viewers.
-* Each of the seven themes viewed on each screen — automated contrast checking does
+* Each of the eight themes viewed on each screen — automated contrast checking does
   not catch "this looks wrong".
 * Keyboard-only traversal of the primary flows, and a screen-reader pass over Today
   and Week.

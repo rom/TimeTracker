@@ -169,7 +169,13 @@ func printerFor(r *http.Request, user domain.User) *i18n.Printer {
 // availableThemes is the list offered in the theme switcher. It is defined here
 // and in the stylesheet's token blocks; a theme missing from either is caught by
 // the contrast test described in docs/TEST.md.
-var availableThemes = []string{"light", "dark", "gold", "sand", "spring", "autumn", "contrast"}
+var availableThemes = []string{
+	defaultTheme, "dark", "gold", "sand", "spring", "autumn", "terminal", "contrast",
+}
+
+// defaultTheme is the one declared on :root, and therefore the one in force
+// before the switcher has said anything.
+const defaultTheme = "light"
 
 // newPageData assembles the fields every screen needs.
 func (s *Server) newPageData(r *http.Request, title, active string) (pageData, error) {
