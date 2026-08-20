@@ -53,7 +53,11 @@
 
   <script src="/static/js/app.js" defer></script>
 </head>
-<body>
+{{/* data-idle-seconds is the threshold the idle watcher uses, and its absence
+     or a zero is how the script knows the feature is off. It is an attribute
+     rather than an inline script because the content security policy allows no
+     inline script at all (docs/adr/0017-defence-in-depth-hardening.md). */}}
+<body{{if .IdleSeconds}} data-idle-seconds="{{.IdleSeconds}}"{{end}}>
 
 {{/* The skip link is the first thing in the tab order. Someone navigating by
      keyboard should not have to tab through the whole navigation on every page

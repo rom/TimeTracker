@@ -271,6 +271,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 	weekStart, _ := strconv.Atoi(r.FormValue("week_start"))
 	maxTimer, _ := strconv.ParseInt(r.FormValue("max_timer_hours"), 10, 64)
+	idleMinutes, _ := strconv.ParseInt(r.FormValue("idle_minutes"), 10, 64)
 	dayStart, _ := strconv.Atoi(r.FormValue("day_start_hour"))
 	dayEnd, _ := strconv.Atoi(r.FormValue("day_end_hour"))
 
@@ -280,6 +281,10 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		DefaultRate:     r.FormValue("default_rate"),
 		WeekStart:       weekStart,
 		MaxTimerHours:   maxTimer,
+		// The checkbox is the switch and the number is the threshold, so an
+		// unticked box turns the watching off whatever the number says.
+		IdleMinutes:     idleMinutes,
+		IdleDisabled:    r.FormValue("idle_enabled") == "",
 		ShowClock:       r.FormValue("show_clock") != "",
 		ShowTimeAndDate: r.FormValue("show_time_and_date") != "",
 

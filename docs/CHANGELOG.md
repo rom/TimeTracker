@@ -12,6 +12,23 @@ the decision.
 
 ### Added
 
+* **Time the application saw nothing during is reported, never removed**
+  ([ADR-0033](adr/0033-idle-time-is-observed.md), ASR-026). A timer left running
+  through lunch was the one common mistake nothing caught: the overnight case is
+  flagged by the timer limit, but six hours is a plausible morning. While a timer
+  runs, the page watches for two things it can honestly see — that it stopped
+  running (the machine asleep, or the tab suspended) and that it ran untouched —
+  and reports either as an observation. Once the timer stops, the Today screen
+  asks about it, with *keep*, *split* and *discard*, each showing what it would
+  leave on the timesheet. Nothing happens without somebody pressing one, keep is
+  the default, and the wording says what was seen rather than concluding that
+  anybody was away — because a page cannot know that, and a tracker that
+  subtracts hours on that evidence removes work from a file somebody is about to
+  invoice from. Answering is an edit, so it respects the week lock, the
+  authorisation rules and the audit trail; nobody, administrator included, can
+  file or answer an observation about somebody else's time. Configurable in
+  Settings, with a switch to turn it off.
+
 * **Exports stream instead of being assembled.** CSV and JSON are now written
   row by row from a database cursor, so the memory a download costs is the size
   of a row rather than the size of the file. A three-year export of the

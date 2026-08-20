@@ -28,7 +28,7 @@ add it.
 | **3** | Attachments, paste, expenses | ✅ delivered |
 | **4** | Proxy entries, weekly submit/approve, entry correction | ✅ delivered |
 | **5** | Reports, PDF and DOCX export | ✅ delivered |
-| **6** | Semi-automatic assistance | 🔨 partial: gaps and long-timer review shipped; idle detection and reminders outstanding |
+| **6** | Semi-automatic assistance | 🔨 partial: gaps, long-timer review and idle observation shipped; reminders outstanding |
 | **7** | Hardening, packaging, performance | ✅ delivered |
 | **8** | Bulk import, backup, YAML configuration | ✅ delivered |
 | **9** | Customer contract rules, approval report, user guide | ✅ delivered |
@@ -175,6 +175,17 @@ Gap detection on the day view; idle detection with keep/discard/split; long-time
 review; end-of-day and end-of-week reminders; history-based suggestions ranked by
 weekday. Built as a suggestion pipeline so calendar and git sources can be added
 later without new machinery.
+
+Idle detection turned out to be a question about honesty rather than about
+detection. A web page can see that its own tab stopped running or sat untouched;
+it cannot see a person. Building it as *observation* - stored with the source
+that produced it, reported as a question with keep, discard and split, and
+applied only when somebody presses one - is what makes the weaker of the two
+signals usable at all: a false positive costs a click, where subtracting the time
+would have cost an hour off an invoice. See
+[ADR-0033](adr/0033-idle-time-is-observed.md) and ASR-026.
+
+Still outstanding from this layer: end-of-day and end-of-week reminders.
 
 ## Layer 7 — Hardening and packaging ✅
 

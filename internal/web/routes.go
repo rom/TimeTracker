@@ -57,6 +57,12 @@ func (s *Server) routes() {
 	mux.HandleFunc("POST /timers/{id}/stop", s.handleStopTimer)
 	mux.HandleFunc("POST /timers/stop-all", s.handleStopAllTimers)
 
+	// Idle observation. The page reports what it saw; a person decides what it
+	// meant. Both POST, because one writes a row and the other rewrites a
+	// timesheet (docs/adr/0033-idle-time-is-observed.md).
+	mux.HandleFunc("POST /idle", s.handleRecordIdle)
+	mux.HandleFunc("POST /idle/{id}/resolve", s.handleResolveIdle)
+
 	// Time entries.
 	mux.HandleFunc("POST /entries", s.handleCreateEntry)
 	mux.HandleFunc("POST /entries/quick", s.handleQuickAdd)

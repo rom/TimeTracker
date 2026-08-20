@@ -22,7 +22,10 @@
       <span class="running-label">{{.N "timer.running" (len .Running)}}</span>
       <ul class="running-list">
         {{range .Running}}
-          <li class="running-item" data-colour="{{.ColourKey}}">
+          {{/* data-entry-id is what the idle watcher reports against: it needs
+               to name the timer a stretch of nothing belongs to, and the
+               running list is the one place the page already knows. */}}
+          <li class="running-item" data-colour="{{.ColourKey}}" data-entry-id="{{.ID}}">
             <span class="chip" data-colour="{{.ColourKey}}" aria-hidden="true">
               {{if .Icon}}{{.Icon}}{{else}}●{{end}}
             </span>

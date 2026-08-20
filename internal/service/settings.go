@@ -27,6 +27,14 @@ type SettingsInput struct {
 	DefaultRate     string
 	WeekStart       int
 	MaxTimerHours   int64
+	// IdleMinutes is how long a stretch the application saw nothing has to be
+	// before the page reports it; zero or absent leaves it as it was.
+	// IdleDisabled is the switch that turns the whole thing off, and is
+	// separate for the same reason ClearBackupPassword is: a zero that means
+	// both "unchanged" and "off" would let any caller who forgot the field
+	// silently disable a feature.
+	IdleMinutes     int64
+	IdleDisabled    bool
 	ShowClock       bool
 	ShowTimeAndDate bool
 
@@ -97,6 +105,18 @@ func (s *Service) UpdateSettings(ctx context.Context, in SettingsInput) error {
 			ErrValidation)
 	}
 
+	idle := existing.IdleSeconds
+	switch {
+	case in.IdleDisabled:
+		idle = 0
+	case in.IdleMinutes > 0:
+		idle = in.IdleMinutes * 60
+	}
+	if idle > 24*3600 {
+		return fmt.Errorf("%w: an idle threshold above a day would never be reached",
+			ErrValidation)
+	}
+
 	// Presentation choices degrade to a known value rather than being refused.
 	// A rate that will not parse is worth stopping the form for; a navigation
 	// position nobody recognises is not worth making somebody re-enter their
@@ -121,6 +141,7 @@ func (s *Service) UpdateSettings(ctx context.Context, in SettingsInput) error {
 		DefaultRateMinor: rate.Minor,
 		WeekStart:        weekStart,
 		MaxTimerSeconds:  maxTimer,
+		IdleSeconds:      idle,
 		ShowClock:        in.ShowClock,
 		ShowTimeAndDate:  in.ShowTimeAndDate,
 		NavPosition:      string(domain.NavPosition(in.NavPosition).OrDefault()),

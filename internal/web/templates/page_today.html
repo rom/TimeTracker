@@ -120,6 +120,87 @@
     <button type="submit" class="btn btn-small btn-quiet">{{.T "day.copy"}}</button>
   </form>
 
+  {{/* What the application saw nothing during, on timers that have stopped.
+       Every button carries the arithmetic of what it would do, because the
+       difference between discarding and splitting an hour is an afternoon
+       (docs/adr/0033-idle-time-is-observed.md). */}}
+  {{if .IdleReview}}
+    <section class="idle-review" aria-labelledby="idle-heading">
+      <h2 class="section-heading" id="idle-heading">{{.T "idle.heading"}}</h2>
+      <ul class="idle-list">
+        {{range .IdleReview}}
+          {{$o := .Observation}}
+          <li class="idle-item" data-colour="{{$o.ColourKey}}">
+            <p class="idle-what">
+              <span class="chip" data-colour="{{$o.ColourKey}}" aria-hidden="true">●</span>
+              <strong>{{$o.AssignmentName}}</strong>
+              <span class="idle-customer">{{$o.CustomerName}}</span>
+            </p>
+            {{/* The sentence says what was seen, not what it meant. "Asleep"
+                 and "untouched" are different observations and are worded
+                 differently, because one is far weaker evidence than the
+                 other. */}}
+            <p class="idle-observed">
+              {{$.T (printf "idle.saw.%s" $o.Source)
+                    ($.Printer.FormatTime $o.StartedAt $.Zone)
+                    ($.Printer.FormatTime $o.EndedAt $.Zone)
+                    ($.Printer.FormatDuration $o.Seconds)}}
+            </p>
+            <div class="idle-actions">
+              <form method="post" action="/idle/{{$o.ID}}/resolve"
+                    hx-post="/idle/{{$o.ID}}/resolve" class="inline">
+                {{template "csrf" $.CSRFToken}}
+                <input type="hidden" name="resolution" value="keep">
+                <button type="submit" class="btn btn-small">{{$.T "idle.keep"}}</button>
+              </form>
+              {{if .CanSplit}}
+                <form method="post" action="/idle/{{$o.ID}}/resolve"
+                      hx-post="/idle/{{$o.ID}}/resolve" class="inline">
+                  {{template "csrf" $.CSRFToken}}
+                  <input type="hidden" name="resolution" value="split">
+                  <button type="submit" class="btn btn-small btn-quiet">
+                    {{$.T "idle.split" ($.Printer.FormatDuration .Split.KeptSeconds)}}
+                  </button>
+                </form>
+              {{end}}
+              {{if .CanDiscard}}
+                <form method="post" action="/idle/{{$o.ID}}/resolve"
+                      hx-post="/idle/{{$o.ID}}/resolve" class="inline"
+                      hx-confirm="{{$.T "idle.discard.confirm"
+                                        ($.Printer.FormatDuration .Discard.RemovedSeconds)}}">
+                  {{template "csrf" $.CSRFToken}}
+                  <input type="hidden" name="resolution" value="discard">
+                  <button type="submit" class="btn btn-small btn-quiet">
+                    {{$.T "idle.discard" ($.Printer.FormatDuration .Discard.KeptSeconds)}}
+                  </button>
+                </form>
+              {{end}}
+            </div>
+            {{if not .CanDiscard}}
+              {{/* The stretch covers the whole entry, so there is nothing to
+                   keep either side of it. Saying so beats offering a button
+                   that would empty the row. */}}
+              <p class="idle-note">{{$.T "idle.whole"}}</p>
+            {{end}}
+          </li>
+        {{end}}
+      </ul>
+    </section>
+  {{end}}
+
+  {{/* The same observation on a timer still running is a notice, not a
+       question: its interval is still being measured. Said now because now is
+       when somebody can still remember what they were doing. */}}
+  {{if .IdleNotices}}
+    <div class="idle-notice" role="note">
+      <strong>{{.T "idle.running"}}</strong>
+      {{range .IdleNotices}}
+        <span class="gap">{{$.Printer.FormatTime .StartedAt $.Zone}}–{{$.Printer.FormatTime .EndedAt $.Zone}}
+          ({{$.Printer.FormatDuration .Seconds}})</span>
+      {{end}}
+    </div>
+  {{end}}
+
   {{/* Gaps are prompts, never auto-filled. The tool reports what it observed and
        leaves the judgement to the person who did the work. */}}
   {{if $day.Gaps}}

@@ -41,6 +41,7 @@ Status legend: **A** = accepted, **P** = proposed, **R** = retired.
 | [ASR-017](#asr-017) | Learnability | Deliberate but surprising behaviour is explained in context | A |
 | [ASR-018](#asr-018) | Recoverability | A user can take and restore their own backups, whole or partial | A |
 | [ASR-019](#asr-019) | Interoperability | Existing hours can be brought in from a spreadsheet | A |
+| [ASR-026](#asr-026) | Integrity | Time is never removed from a timesheet without a person saying so | A |
 
 ---
 
@@ -657,3 +658,35 @@ word-boundary index cannot answer it. A two-character query returning nothing
 from a trigram index is worse than slow: it looks like an answer.
 
 *Addressed by:* [ADR-0029](adr/0029-searching-with-trigram-and-regexp.md)
+
+---
+
+### ASR-026
+**Time is never removed from a timesheet without a person saying so.**
+
+*Quality attribute:* Integrity / Suitability
+
+*Requirement:* A timer left running through a break must be easy to correct, and
+no mechanism may shorten a recorded interval on its own. Whatever the application
+observes about a person's absence, the decision about what that time was belongs
+to them.
+
+*Fit criterion:* A stretch during which the application saw nothing - its page
+not running, or running untouched - is stored as an observation with the source
+that produced it, and appears on the Today screen as a question with three
+answers: keep, discard, or split into a separate entry. Each answer shows what it
+would leave on the timesheet, computed by the function that applies it. Keep is
+the default and changes nothing. Nobody may file or answer an observation about
+somebody else's time, including an administrator. Applying one respects the week
+lock, the authorisation rules and the audit trail exactly as editing the entry by
+hand does. A stretch reported twice is one question; a stretch reaching outside
+its entry is clamped to it; a stretch covering the whole entry offers no answer
+that would empty it.
+
+*Rationale:* A web page cannot see what a person was doing, and a tracker that
+subtracts time on that evidence removes hours somebody worked, in a file they are
+about to invoice from. A missing hour is not noticed the way an invented one is:
+the total simply looks smaller and still plausible. The observation is worth
+making - a billed lunch is a real cost - but only as a question.
+
+*Addressed by:* [ADR-0033](adr/0033-idle-time-is-observed.md)
