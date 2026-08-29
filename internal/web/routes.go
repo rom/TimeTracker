@@ -57,6 +57,17 @@ func (s *Server) routes() {
 	mux.HandleFunc("POST /timers/{id}/stop", s.handleStopTimer)
 	mux.HandleFunc("POST /timers/stop-all", s.handleStopAllTimers)
 
+	// Idle observation. The page reports what it saw; a person decides what it
+	// meant. Both POST, because one writes a row and the other rewrites a
+	// timesheet (docs/adr/0033-idle-time-is-observed.md).
+	mux.HandleFunc("POST /idle", s.handleRecordIdle)
+	mux.HandleFunc("POST /idle/{id}/resolve", s.handleResolveIdle)
+
+	// Reminders. One route, because a nudge is computed rather than stored and
+	// dismissing it is the only thing there is to write
+	// (docs/adr/0034-reminders-are-shown-not-sent.md).
+	mux.HandleFunc("POST /reminders/{kind}/dismiss", s.handleDismissReminder)
+
 	// Time entries.
 	mux.HandleFunc("POST /entries", s.handleCreateEntry)
 	mux.HandleFunc("POST /entries/quick", s.handleQuickAdd)

@@ -1165,6 +1165,53 @@ input[type="text"], input[type="date"], input[type="time"], select {
 }
 .gap { margin-left: var(--gap-sm); font-variant-numeric: tabular-nums; }
 
+/* End-of-day and end-of-week nudges.
+   Accent-coloured rather than warning-coloured: a nudge is a prompt about
+   something ordinary, and a panel that looks like an error every evening is one
+   people stop reading. */
+.reminders { margin-bottom: var(--gap); }
+.reminder-list { list-style: none; margin: 0; padding: 0; }
+.reminder {
+  display: flex; flex-wrap: wrap; align-items: center;
+  justify-content: space-between; gap: var(--gap-sm);
+  padding: 10px var(--gap);
+  background: var(--surface-sunken);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+}
+.reminder + .reminder { margin-top: var(--gap-sm); }
+.reminder-text { flex: 1 1 20ch; }
+.reminder-detail { color: var(--text-muted); }
+.reminder-actions { display: flex; flex-wrap: wrap; gap: var(--gap-sm); align-items: center; }
+
+/* Time the application saw nothing during.
+   Warning-coloured like a gap, because it is the same kind of statement: an
+   observation the person is asked about, not a finding. */
+.idle-review {
+  margin-bottom: var(--gap);
+  padding: 10px var(--gap);
+  background: var(--surface-sunken);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius);
+}
+.idle-review .section-heading { margin-top: 0; }
+.idle-list { list-style: none; margin: 0; padding: 0; }
+.idle-item + .idle-item {
+  margin-top: var(--gap-sm);
+  padding-top: var(--gap-sm);
+  border-top: 1px solid var(--border);
+}
+.idle-what { margin: 0; display: flex; align-items: center; gap: var(--gap-sm); }
+.idle-customer { color: var(--text-muted); font-size: 0.9em; }
+.idle-observed { margin: 4px 0; font-size: 0.9em; }
+.idle-note { margin: 4px 0 0; color: var(--text-muted); font-size: 0.88em; }
+.idle-actions { display: flex; flex-wrap: wrap; gap: var(--gap-sm); }
+.idle-notice {
+  padding: 10px var(--gap); margin-bottom: var(--gap);
+  background: var(--surface-sunken); border-left: 3px solid var(--warning);
+  border-radius: var(--radius); font-size: 0.9em;
+}
+
 .banner { padding: 10px var(--gap); border-radius: var(--radius); margin-bottom: var(--gap); }
 .banner-error { background: var(--surface-sunken); border-left: 3px solid var(--danger); }
 

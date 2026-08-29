@@ -103,6 +103,23 @@ type pageData struct {
 
 	// Weekly submit and approve.
 	PeriodView *service.PeriodView
+	// Reminders are the end-of-day and end-of-week nudges that are true right
+	// now. Shown on the day and week screens only, and only when those screens
+	// are showing the current day or week: a nudge about today, rendered under
+	// last Tuesday, is a puzzle rather than a prompt.
+	Reminders []service.Reminder
+
+	// IdleReview is what the application saw nothing during, on entries that
+	// have stopped, with the effect of each answer worked out so the buttons can
+	// carry the numbers. IdleNotices is the same observation on a timer that is
+	// still running, where there is nothing stable to rewrite yet and the
+	// interface therefore only says what it saw.
+	IdleReview  []service.IdleReport
+	IdleNotices []domain.IdleObservation
+	// IdleSeconds is the threshold the page watches against, and zero when idle
+	// observation is switched off - which is how the script knows not to watch.
+	IdleSeconds int64
+
 	// Overtime is where a customer's threshold has been passed without the time
 	// being marked as overtime. Prompts, not findings.
 	Overtime  []service.OvertimeNotice
@@ -169,6 +186,18 @@ func (d pageData) N(key string, count int, args ...any) string {
 	return d.Printer.N(key, count, args...)
 }
 
+// sameDay reports whether two instants fall on the same calendar day in a zone.
+//
+// Which zone is the point: "today" is the person's today, and comparing two UTC
+// instants would put somebody in Stockholm on the wrong side of midnight for two
+// hours every evening.
+func sameDay(a, b time.Time, loc *time.Location) bool {
+	if loc == nil {
+		loc = time.UTC
+	}
+	return domain.SameDay(a.In(loc), b.In(loc))
+}
+
 // printerFor picks the language for a request.
 //
 // The order is: the user's stored preference, then the browser's Accept-Language
@@ -232,20 +261,24 @@ func (s *Server) newPageData(r *http.Request, title, active string) (pageData, e
 	}
 
 	return pageData{
-		Title:           title,
-		Active:          active,
-		User:            user,
-		Now:             s.svc.Now(),
-		Running:         running,
-		Themes:          availableThemes,
-		CSRFToken:       csrfTokenFrom(r),
-		ServerMode:      s.accounts != nil,
-		Printer:         printer,
-		Lang:            printer.Code(),
-		Languages:       languageOptions(),
-		HasHelp:         helpAvailable(active),
-		HelpScreen:      active,
-		Settings:        settings,
+		Title:      title,
+		Active:     active,
+		User:       user,
+		Now:        s.svc.Now(),
+		Running:    running,
+		Themes:     availableThemes,
+		CSRFToken:  csrfTokenFrom(r),
+		ServerMode: s.accounts != nil,
+		Printer:    printer,
+		Lang:       printer.Code(),
+		Languages:  languageOptions(),
+		HasHelp:    helpAvailable(active),
+		HelpScreen: active,
+		Settings:   settings,
+		// The threshold travels on every page because a timer runs across
+		// screens, and the script that watches for a gap has to know how big a
+		// gap is worth reporting. Zero switches the watching off entirely.
+		IdleSeconds:     settings.IdleSeconds,
 		BackupEncrypted: backupEncrypted,
 		Nav:             domain.NavPosition(settings.NavPosition).OrDefault(),
 		Rounding:        service.RoundingPresets(),
@@ -329,6 +362,26 @@ func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	// The nudges, but only when this screen is showing today. A reminder about
+	// finishing the day, rendered under a day three weeks ago, is a puzzle.
+	if sameDay(date, s.svc.Now(), day.Location) {
+		if data.Reminders, err = s.svc.Reminders(r.Context()); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
+
+	// What the application saw nothing during: questions about timers that have
+	// stopped, notices about ones still going. Both live here rather than in the
+	// page shell, so the two queries are on the one screen that acts on them.
+	if data.IdleReview, err = s.svc.PendingIdle(r.Context()); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if data.IdleNotices, err = s.svc.RunningIdle(r.Context()); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	if data.Tags, err = s.svc.Tags(r.Context()); err != nil {
 		s.fail(w, r, err)
 		return
@@ -358,6 +411,14 @@ func (s *Server) handleWeek(w http.ResponseWriter, r *http.Request) {
 	}
 	data.Week = &week
 	data.Totals = week.Totals
+
+	// As on the day screen: only for the week somebody is actually in.
+	if !s.svc.Now().Before(week.Start) && s.svc.Now().Before(week.End) {
+		if data.Reminders, err = s.svc.Reminders(r.Context()); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
 
 	// The week view is where submitting belongs: it is the screen showing
 	// exactly what would be submitted.

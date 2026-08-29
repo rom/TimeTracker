@@ -728,6 +728,155 @@
     window.setInterval(updateClocks, 1000);
   }
 
+  /* ---------------------------------------------------------- idle watch --- */
+
+  /*
+   * While a timer runs, the page watches for stretches during which it saw
+   * nothing, and reports them. It never decides anything: a report becomes a
+   * question on the Today screen, and only a person answers it
+   * (docs/adr/0033-idle-time-is-observed.md).
+   *
+   * Two things are observable from inside a browser tab, and they are reported
+   * as two different sources because one is far better evidence than the other:
+   *
+   *   asleep    - the tick that should have arrived a second ago arrived much
+   *               later, so wall-clock time passed with nothing in this tab
+   *               running. Either the machine slept or the browser suspended
+   *               the tab; from in here those are the same event, which is why
+   *               the message the server stores says the page was not running
+   *               rather than claiming the machine was asleep.
+   *
+   *   untouched - the page ran and was visible throughout, and saw no pointer,
+   *               key or scroll event. Much weaker: a visible tab on a second
+   *               monitor is untouched all day by somebody working hard. It is
+   *               still worth reporting, because "keep" is one click and the
+   *               alternative is billing a lunch.
+   *
+   * A hidden tab is deliberately not watched for the second case. The page
+   * knows nothing about a person who has switched to another window, and
+   * reporting them as untouched would be inventing an observation rather than
+   * making one.
+   */
+
+  /* The tick cadence, and how late a tick has to be before it counts as the
+     page having stopped. Two seconds of lateness is ordinary scheduling jitter
+     under load; a real suspension is orders of magnitude longer than that, and
+     the threshold is the configured one anyway. */
+  var IDLE_TICK_MS = 1000;
+  /* How often an ongoing untouched stretch is re-reported so the row on the
+     server keeps up with it. The server widens an overlapping observation
+     rather than adding one, so this cannot turn one absence into many. */
+  var IDLE_REPORT_EVERY_MS = 60000;
+
+  function idleThresholdMs() {
+    var raw = document.body.getAttribute("data-idle-seconds");
+    var seconds = parseInt(raw, 10);
+    if (isNaN(seconds) || seconds <= 0) return 0;
+    return seconds * 1000;
+  }
+
+  function runningEntryIds() {
+    var ids = [];
+    document.querySelectorAll(".running-item[data-entry-id]").forEach(function (el) {
+      var id = el.getAttribute("data-entry-id");
+      if (id) ids.push(id);
+    });
+    return ids;
+  }
+
+  /*
+   * Reporting is fire-and-forget. A failed report is not something a person can
+   * act on, and the observation it describes is one the server is free to
+   * decline anyway - too short, outside the entry, already recorded.
+   */
+  function reportIdle(from, to, source) {
+    var ids = runningEntryIds();
+    if (!ids.length) return;
+
+    ids.forEach(function (id) {
+      var body = new URLSearchParams();
+      body.set("entry_id", id);
+      body.set("from", new Date(from).toISOString());
+      body.set("to", new Date(to).toISOString());
+      body.set("source", source);
+      body.set("csrf_token", currentCSRFToken());
+
+      fetch("/idle", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-CSRF-Token": currentCSRFToken(),
+        },
+        body: body.toString(),
+        credentials: "same-origin",
+      }).catch(function () {
+        /* Nothing to do and nothing to say: the timesheet is unaffected. */
+      });
+    });
+  }
+
+  function initIdleWatch() {
+    var threshold = idleThresholdMs();
+    if (!threshold) return;
+
+    var lastTick = Date.now();
+    var lastInteraction = Date.now();
+    var untouchedSince = 0;
+    var untouchedReportedAt = 0;
+
+    function interacted() {
+      var now = Date.now();
+      if (untouchedSince) {
+        /* The stretch has ended, so report it whole - including the part since
+           the last periodic report. */
+        reportIdle(untouchedSince, now, "untouched");
+        untouchedSince = 0;
+        untouchedReportedAt = 0;
+      }
+      lastInteraction = now;
+    }
+
+    ["pointerdown", "keydown", "scroll", "wheel", "touchstart"].forEach(function (event) {
+      window.addEventListener(event, interacted, { passive: true });
+    });
+    document.addEventListener("visibilitychange", function () {
+      /* Becoming visible is a sign of life; becoming hidden ends the page's
+         claim to be observing anything. */
+      if (!document.hidden) interacted();
+      else {
+        untouchedSince = 0;
+        untouchedReportedAt = 0;
+        lastInteraction = Date.now();
+      }
+    });
+
+    window.setInterval(function () {
+      var now = Date.now();
+      var slept = now - lastTick;
+      lastTick = now;
+
+      if (slept >= threshold) {
+        /* The page was not running for that stretch. The tick before this one
+           is where it stopped. */
+        reportIdle(now - slept, now, "asleep");
+        lastInteraction = now;
+        untouchedSince = 0;
+        untouchedReportedAt = 0;
+        return;
+      }
+
+      if (document.hidden) return;
+
+      if (now - lastInteraction >= threshold) {
+        if (!untouchedSince) untouchedSince = lastInteraction;
+        if (now - untouchedReportedAt >= IDLE_REPORT_EVERY_MS) {
+          reportIdle(untouchedSince, now, "untouched");
+          untouchedReportedAt = now;
+        }
+      }
+    }, IDLE_TICK_MS);
+  }
+
   /*
    * Each feature is started separately, and a failure in one does not stop the
    * rest.
@@ -750,6 +899,7 @@
       ["help", initHelp],
       ["shortcuts", initShortcuts],
       ["timeline", initTimeline],
+      ["idle watch", initIdleWatch],
     ];
 
     features.forEach(function (feature) {

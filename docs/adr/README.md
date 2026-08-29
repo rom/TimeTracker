@@ -58,6 +58,8 @@ Statuses: `proposed` → `accepted` → `superseded by ADR-NNNN` | `deprecated`.
 | [0030](0030-encrypted-backup-archives.md) | A backup is a zip archive, optionally AES-encrypted with a stored password | accepted | 2026-08-19 | ASR-013, ASR-019 |
 | [0031](0031-attachment-previews.md) | Attachments are previewed inline, and SVG is made safe rather than refused | accepted | 2026-08-19 | ASR-013 |
 | [0032](0032-measured-before-tuned.md) | Index for the query that is written, not the one that is meant | accepted | 2026-08-19 | ASR-012 |
+| [0033](0033-idle-time-is-observed.md) | Idle time is observed, never inferred | accepted | 2026-08-20 | ASR-026 |
+| [0034](0034-reminders-are-shown-not-sent.md) | Reminders are shown, not sent | accepted | 2026-08-29 | ASR-027 |
 
 ## Writing a new one
 

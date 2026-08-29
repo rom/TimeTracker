@@ -41,6 +41,8 @@ Status legend: **A** = accepted, **P** = proposed, **R** = retired.
 | [ASR-017](#asr-017) | Learnability | Deliberate but surprising behaviour is explained in context | A |
 | [ASR-018](#asr-018) | Recoverability | A user can take and restore their own backups, whole or partial | A |
 | [ASR-019](#asr-019) | Interoperability | Existing hours can be brought in from a spreadsheet | A |
+| [ASR-026](#asr-026) | Integrity | Time is never removed from a timesheet without a person saying so | A |
+| [ASR-027](#asr-027) | Suitability | The application says what needs attention, without sending anything | A |
 
 ---
 
@@ -657,3 +659,65 @@ word-boundary index cannot answer it. A two-character query returning nothing
 from a trigram index is worse than slow: it looks like an answer.
 
 *Addressed by:* [ADR-0029](adr/0029-searching-with-trigram-and-regexp.md)
+
+---
+
+### ASR-026
+**Time is never removed from a timesheet without a person saying so.**
+
+*Quality attribute:* Integrity / Suitability
+
+*Requirement:* A timer left running through a break must be easy to correct, and
+no mechanism may shorten a recorded interval on its own. Whatever the application
+observes about a person's absence, the decision about what that time was belongs
+to them.
+
+*Fit criterion:* A stretch during which the application saw nothing - its page
+not running, or running untouched - is stored as an observation with the source
+that produced it, and appears on the Today screen as a question with three
+answers: keep, discard, or split into a separate entry. Each answer shows what it
+would leave on the timesheet, computed by the function that applies it. Keep is
+the default and changes nothing. Nobody may file or answer an observation about
+somebody else's time, including an administrator. Applying one respects the week
+lock, the authorisation rules and the audit trail exactly as editing the entry by
+hand does. A stretch reported twice is one question; a stretch reaching outside
+its entry is clamped to it; a stretch covering the whole entry offers no answer
+that would empty it.
+
+*Rationale:* A web page cannot see what a person was doing, and a tracker that
+subtracts time on that evidence removes hours somebody worked, in a file they are
+about to invoice from. A missing hour is not noticed the way an invented one is:
+the total simply looks smaller and still plausible. The observation is worth
+making - a billed lunch is a real cost - but only as a question.
+
+*Addressed by:* [ADR-0033](adr/0033-idle-time-is-observed.md)
+
+---
+
+### ASR-027
+**The application says what needs attention, without sending anything.**
+
+*Quality attribute:* Functional suitability / Simplicity
+
+*Requirement:* A timer left running, a day with nothing recorded, time a
+colleague has recorded on somebody's behalf and a week nobody has submitted must
+each be surfaced while they can still be acted on. No scheduler, no mail, no push
+channel and no message queue may be introduced to do it.
+
+*Fit criterion:* Each nudge is computed from the timesheet when a screen renders,
+so it cannot be shown about something already dealt with. They appear on the day
+and week screens, only for the current day or week, and only from a configurable
+hour of the person's own local afternoon - the week nudge from the last working
+day of the configured week. An empty week is not nudged about. Each can be
+dismissed for its day or week and returns the next one, and the whole feature has
+an instance-wide switch. The only row written is the dismissal.
+
+*Rationale:* A running timer left overnight costs hours and an unsubmitted week
+delays an invoice, so the prompts are worth having. But a sent message is a claim
+about the past: it arrives about a timer stopped a minute later, and a reminder
+that is sometimes wrong is one people learn to ignore - which removes the value
+of every other one. Computing the prompt from current state makes it impossible
+for it to be stale, and costs no daemon in a binary whose whole shape is that it
+does not need one.
+
+*Addressed by:* [ADR-0034](adr/0034-reminders-are-shown-not-sent.md)

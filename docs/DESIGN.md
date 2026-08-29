@@ -60,8 +60,14 @@ Safety rails, because "forgot to stop it" is the dominant failure:
 
 * a timer past a configurable maximum (default 12 h) is flagged for review and
   excluded from totals until the user confirms or corrects it;
-* **idle detection**: after a configurable idle period the app offers *keep*,
-  *discard the idle time*, or *split into a separate entry*;
+* **idle observation**: a stretch during which the application saw nothing is
+  reported, with *keep*, *discard the idle time* or *split into a separate entry*
+  ([ADR-0033](adr/0033-idle-time-is-observed.md)). What it can see is its own
+  page: that the page stopped running - the machine asleep or the tab suspended -
+  or that it ran untouched. Neither is a person being away, so neither is
+  described as one, and none of the three answers happens without somebody
+  choosing it. Every answer shows what it would leave behind, because discarding
+  a break in the middle of a six-hour entry drops the afternoon too;
 * stopping is idempotent — a double-click cannot produce a negative or doubled
   duration.
 
@@ -409,11 +415,24 @@ you are using. What it *can* do:
 * **Gap detection** — the day view marks unaccounted stretches between entries
   ("2h 15m unaccounted, 13:00–15:15") and offers to fill them from a recent
   assignment.
-* **Idle detection** — on running timers, as described above.
+* **Idle observation** — a running timer whose page stops running, or sits
+  untouched, is reported for review as described above. Deliberately not called
+  detection: what is detected is the state of a browser tab, and the difference
+  between that and the state of a person is the whole design
+  ([ADR-0033](adr/0033-idle-time-is-observed.md)). While the timer is still going
+  it is only a notice, since its interval is still being measured; it becomes a
+  question with keep, discard and split once the timer stops.
 * **Overtime notices** — a day or week past the customer's agreed threshold with
   none of the time marked as overtime. Reported, never applied: see §4b.
-* **Reminders** — end-of-day and end-of-week nudges for missing time and pending
-  proposals.
+* **Reminders** — end-of-day and end-of-week nudges: a timer still running, a day
+  with nothing on it, time a colleague recorded for you, a week nobody submitted
+  ([ADR-0034](adr/0034-reminders-are-shown-not-sent.md)). Shown, never sent: each
+  is computed from the timesheet when a screen is drawn, so it cannot appear
+  about something already dealt with, and there is no scheduler, mail or queue
+  behind it. They wait for a configurable hour of *your* local afternoon — the
+  week one for the last working day of the week — because a panel that is always
+  there is one nobody reads. Each can be waved away for its day or week, and the
+  next one asks again.
 * **Suggestions from your own history** — the assignments you usually work on this
   weekday, ranked, so the common case is one click.
 * **Long-running-timer review** — a timer past the maximum is flagged, not counted.

@@ -34,8 +34,8 @@ type helpTopic struct {
 // the day view needs the quick-add syntax more than it needs the role model, and
 // no rule can infer that.
 var helpForScreen = map[string][]helpTopic{
-	"today":   {{Key: "help.today"}, {Key: "help.quickadd"}, {Key: "help.editing"}, {Key: "help.themes"}},
-	"week":    {{Key: "help.week"}, {Key: "help.approvals"}, {Key: "help.today"}},
+	"today":   {{Key: "help.today"}, {Key: "help.quickadd"}, {Key: "help.idle"}, {Key: "help.reminders"}, {Key: "help.editing"}, {Key: "help.themes"}},
+	"week":    {{Key: "help.week"}, {Key: "help.approvals"}, {Key: "help.reminders"}, {Key: "help.today"}},
 	"entries": {{Key: "help.entries"}, {Key: "help.editing"}, {Key: "help.today"}},
 	"admin":   {{Key: "help.admin"}, {Key: "help.themes"}},
 	// Both period topics on the approvals screen, because the lock and the way

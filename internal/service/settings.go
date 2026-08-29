@@ -27,8 +27,21 @@ type SettingsInput struct {
 	DefaultRate     string
 	WeekStart       int
 	MaxTimerHours   int64
-	ShowClock       bool
-	ShowTimeAndDate bool
+	// IdleMinutes is how long a stretch the application saw nothing has to be
+	// before the page reports it; zero or absent leaves it as it was.
+	// IdleDisabled is the switch that turns the whole thing off, and is
+	// separate for the same reason ClearBackupPassword is: a zero that means
+	// both "unchanged" and "off" would let any caller who forgot the field
+	// silently disable a feature.
+	IdleMinutes  int64
+	IdleDisabled bool
+	// ReminderHour is the hour of the local day from which end-of-day nudges
+	// appear; outside 1-23 it is left as it was. RemindersDisabled is the
+	// switch, separate for the same reason IdleDisabled is.
+	ReminderHour      int
+	RemindersDisabled bool
+	ShowClock         bool
+	ShowTimeAndDate   bool
 
 	// Presentation.
 	NavPosition  string
@@ -97,6 +110,23 @@ func (s *Service) UpdateSettings(ctx context.Context, in SettingsInput) error {
 			ErrValidation)
 	}
 
+	idle := existing.IdleSeconds
+	switch {
+	case in.IdleDisabled:
+		idle = 0
+	case in.IdleMinutes > 0:
+		idle = in.IdleMinutes * 60
+	}
+	if idle > 24*3600 {
+		return fmt.Errorf("%w: an idle threshold above a day would never be reached",
+			ErrValidation)
+	}
+
+	reminderHour := existing.ReminderHour
+	if in.ReminderHour > 0 && in.ReminderHour < 24 {
+		reminderHour = in.ReminderHour
+	}
+
 	// Presentation choices degrade to a known value rather than being refused.
 	// A rate that will not parse is worth stopping the form for; a navigation
 	// position nobody recognises is not worth making somebody re-enter their
@@ -121,6 +151,9 @@ func (s *Service) UpdateSettings(ctx context.Context, in SettingsInput) error {
 		DefaultRateMinor: rate.Minor,
 		WeekStart:        weekStart,
 		MaxTimerSeconds:  maxTimer,
+		IdleSeconds:      idle,
+		RemindersEnabled: !in.RemindersDisabled,
+		ReminderHour:     reminderHour,
 		ShowClock:        in.ShowClock,
 		ShowTimeAndDate:  in.ShowTimeAndDate,
 		NavPosition:      string(domain.NavPosition(in.NavPosition).OrDefault()),
