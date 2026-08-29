@@ -510,6 +510,11 @@ type Settings struct {
 	// before the page reports it. Zero turns idle observation off entirely, as
 	// zero turns off the long-timer flag.
 	IdleSeconds int64
+	// RemindersEnabled and ReminderHour drive the end-of-day and end-of-week
+	// nudges: whether to show them at all, and from which hour of the person's
+	// own local day.
+	RemindersEnabled bool
+	ReminderHour     int
 	// Display toggles an administrator sets for the whole instance. A clock in
 	// the header is useful to some people and a distraction to others, so it is
 	// a choice rather than a decision made for everyone by the designer.
@@ -537,20 +542,23 @@ type Settings struct {
 // GetSettings reads the single settings row.
 func (db *DB) GetSettings(ctx context.Context) (Settings, error) {
 	var s Settings
-	var showClock, showTimeAndDate int
+	var showClock, showTimeAndDate, remindersEnabled int
 	err := db.read.QueryRowContext(ctx, `
 		SELECT default_currency, default_rounding, default_rate_minor, week_start,
-		       max_timer_seconds, idle_seconds, show_clock, show_time_and_date,
+		       max_timer_seconds, idle_seconds, reminders_enabled, reminder_hour,
+		       show_clock, show_time_and_date,
 		       nav_position, clock_format, date_format,
 		       day_start_hour, day_end_hour, day_overflow, backup_password
 		FROM settings WHERE id = 1`).
 		Scan(&s.DefaultCurrency, &s.DefaultRounding, &s.DefaultRateMinor, &s.WeekStart,
-			&s.MaxTimerSeconds, &s.IdleSeconds, &showClock, &showTimeAndDate,
+			&s.MaxTimerSeconds, &s.IdleSeconds, &remindersEnabled, &s.ReminderHour,
+			&showClock, &showTimeAndDate,
 			&s.NavPosition, &s.ClockFormat, &s.DateFormat,
 			&s.DayStartHour, &s.DayEndHour, &s.DayOverflow, &s.BackupPassword)
 	if err != nil {
 		return Settings{}, fmt.Errorf("read settings: %w", err)
 	}
+	s.RemindersEnabled = remindersEnabled != 0
 	s.ShowClock = showClock != 0
 	s.ShowTimeAndDate = showTimeAndDate != 0
 	return s, nil
@@ -561,12 +569,15 @@ func (db *DB) UpdateSettings(ctx context.Context, s Settings) error {
 	_, err := db.write.ExecContext(ctx, `
 		UPDATE settings SET default_currency = ?, default_rounding = ?, default_rate_minor = ?,
 		       week_start = ?, max_timer_seconds = ?, idle_seconds = ?,
+		       reminders_enabled = ?, reminder_hour = ?,
 		       show_clock = ?, show_time_and_date = ?,
 		       nav_position = ?, clock_format = ?, date_format = ?,
 		       day_start_hour = ?, day_end_hour = ?, day_overflow = ?, backup_password = ?
 		WHERE id = 1`,
 		s.DefaultCurrency, s.DefaultRounding, s.DefaultRateMinor, s.WeekStart,
-		s.MaxTimerSeconds, s.IdleSeconds, boolToInt(s.ShowClock), boolToInt(s.ShowTimeAndDate),
+		s.MaxTimerSeconds, s.IdleSeconds,
+		boolToInt(s.RemindersEnabled), s.ReminderHour,
+		boolToInt(s.ShowClock), boolToInt(s.ShowTimeAndDate),
 		s.NavPosition, s.ClockFormat, s.DateFormat,
 		s.DayStartHour, s.DayEndHour, s.DayOverflow, s.BackupPassword)
 	return err

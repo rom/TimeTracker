@@ -42,6 +42,7 @@ Status legend: **A** = accepted, **P** = proposed, **R** = retired.
 | [ASR-018](#asr-018) | Recoverability | A user can take and restore their own backups, whole or partial | A |
 | [ASR-019](#asr-019) | Interoperability | Existing hours can be brought in from a spreadsheet | A |
 | [ASR-026](#asr-026) | Integrity | Time is never removed from a timesheet without a person saying so | A |
+| [ASR-027](#asr-027) | Suitability | The application says what needs attention, without sending anything | A |
 
 ---
 
@@ -690,3 +691,33 @@ the total simply looks smaller and still plausible. The observation is worth
 making - a billed lunch is a real cost - but only as a question.
 
 *Addressed by:* [ADR-0033](adr/0033-idle-time-is-observed.md)
+
+---
+
+### ASR-027
+**The application says what needs attention, without sending anything.**
+
+*Quality attribute:* Functional suitability / Simplicity
+
+*Requirement:* A timer left running, a day with nothing recorded, time a
+colleague has recorded on somebody's behalf and a week nobody has submitted must
+each be surfaced while they can still be acted on. No scheduler, no mail, no push
+channel and no message queue may be introduced to do it.
+
+*Fit criterion:* Each nudge is computed from the timesheet when a screen renders,
+so it cannot be shown about something already dealt with. They appear on the day
+and week screens, only for the current day or week, and only from a configurable
+hour of the person's own local afternoon - the week nudge from the last working
+day of the configured week. An empty week is not nudged about. Each can be
+dismissed for its day or week and returns the next one, and the whole feature has
+an instance-wide switch. The only row written is the dismissal.
+
+*Rationale:* A running timer left overnight costs hours and an unsubmitted week
+delays an invoice, so the prompts are worth having. But a sent message is a claim
+about the past: it arrives about a timer stopped a minute later, and a reminder
+that is sometimes wrong is one people learn to ignore - which removes the value
+of every other one. Computing the prompt from current state makes it impossible
+for it to be stale, and costs no daemon in a binary whose whole shape is that it
+does not need one.
+
+*Addressed by:* [ADR-0034](adr/0034-reminders-are-shown-not-sent.md)

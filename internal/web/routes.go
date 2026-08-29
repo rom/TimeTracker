@@ -63,6 +63,11 @@ func (s *Server) routes() {
 	mux.HandleFunc("POST /idle", s.handleRecordIdle)
 	mux.HandleFunc("POST /idle/{id}/resolve", s.handleResolveIdle)
 
+	// Reminders. One route, because a nudge is computed rather than stored and
+	// dismissing it is the only thing there is to write
+	// (docs/adr/0034-reminders-are-shown-not-sent.md).
+	mux.HandleFunc("POST /reminders/{kind}/dismiss", s.handleDismissReminder)
+
 	// Time entries.
 	mux.HandleFunc("POST /entries", s.handleCreateEntry)
 	mux.HandleFunc("POST /entries/quick", s.handleQuickAdd)

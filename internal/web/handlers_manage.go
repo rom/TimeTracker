@@ -272,6 +272,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	weekStart, _ := strconv.Atoi(r.FormValue("week_start"))
 	maxTimer, _ := strconv.ParseInt(r.FormValue("max_timer_hours"), 10, 64)
 	idleMinutes, _ := strconv.ParseInt(r.FormValue("idle_minutes"), 10, 64)
+	reminderHour, _ := strconv.Atoi(r.FormValue("reminder_hour"))
 	dayStart, _ := strconv.Atoi(r.FormValue("day_start_hour"))
 	dayEnd, _ := strconv.Atoi(r.FormValue("day_end_hour"))
 
@@ -283,10 +284,14 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		MaxTimerHours:   maxTimer,
 		// The checkbox is the switch and the number is the threshold, so an
 		// unticked box turns the watching off whatever the number says.
-		IdleMinutes:     idleMinutes,
-		IdleDisabled:    r.FormValue("idle_enabled") == "",
-		ShowClock:       r.FormValue("show_clock") != "",
-		ShowTimeAndDate: r.FormValue("show_time_and_date") != "",
+		IdleMinutes:  idleMinutes,
+		IdleDisabled: r.FormValue("idle_enabled") == "",
+		// As with idle watching: the checkbox is the switch, the number is only
+		// the hour it starts from.
+		ReminderHour:      reminderHour,
+		RemindersDisabled: r.FormValue("reminders_enabled") == "",
+		ShowClock:         r.FormValue("show_clock") != "",
+		ShowTimeAndDate:   r.FormValue("show_time_and_date") != "",
 
 		NavPosition:  r.FormValue("nav_position"),
 		ClockFormat:  r.FormValue("clock_format"),

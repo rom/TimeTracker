@@ -33,10 +33,15 @@ type SettingsInput struct {
 	// separate for the same reason ClearBackupPassword is: a zero that means
 	// both "unchanged" and "off" would let any caller who forgot the field
 	// silently disable a feature.
-	IdleMinutes     int64
-	IdleDisabled    bool
-	ShowClock       bool
-	ShowTimeAndDate bool
+	IdleMinutes  int64
+	IdleDisabled bool
+	// ReminderHour is the hour of the local day from which end-of-day nudges
+	// appear; outside 1-23 it is left as it was. RemindersDisabled is the
+	// switch, separate for the same reason IdleDisabled is.
+	ReminderHour      int
+	RemindersDisabled bool
+	ShowClock         bool
+	ShowTimeAndDate   bool
 
 	// Presentation.
 	NavPosition  string
@@ -117,6 +122,11 @@ func (s *Service) UpdateSettings(ctx context.Context, in SettingsInput) error {
 			ErrValidation)
 	}
 
+	reminderHour := existing.ReminderHour
+	if in.ReminderHour > 0 && in.ReminderHour < 24 {
+		reminderHour = in.ReminderHour
+	}
+
 	// Presentation choices degrade to a known value rather than being refused.
 	// A rate that will not parse is worth stopping the form for; a navigation
 	// position nobody recognises is not worth making somebody re-enter their
@@ -142,6 +152,8 @@ func (s *Service) UpdateSettings(ctx context.Context, in SettingsInput) error {
 		WeekStart:        weekStart,
 		MaxTimerSeconds:  maxTimer,
 		IdleSeconds:      idle,
+		RemindersEnabled: !in.RemindersDisabled,
+		ReminderHour:     reminderHour,
 		ShowClock:        in.ShowClock,
 		ShowTimeAndDate:  in.ShowTimeAndDate,
 		NavPosition:      string(domain.NavPosition(in.NavPosition).OrDefault()),

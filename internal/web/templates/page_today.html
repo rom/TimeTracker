@@ -120,6 +120,10 @@
     <button type="submit" class="btn btn-small btn-quiet">{{.T "day.copy"}}</button>
   </form>
 
+  {{/* The nudges come before the day itself: they are the reason somebody
+       opened this screen at five o'clock. */}}
+  {{template "reminders" .}}
+
   {{/* What the application saw nothing during, on timers that have stopped.
        Every button carries the arithmetic of what it would do, because the
        difference between discarding and splitting an hour is an afternoon

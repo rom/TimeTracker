@@ -28,7 +28,7 @@ add it.
 | **3** | Attachments, paste, expenses | ✅ delivered |
 | **4** | Proxy entries, weekly submit/approve, entry correction | ✅ delivered |
 | **5** | Reports, PDF and DOCX export | ✅ delivered |
-| **6** | Semi-automatic assistance | 🔨 partial: gaps, long-timer review and idle observation shipped; reminders outstanding |
+| **6** | Semi-automatic assistance | ✅ delivered |
 | **7** | Hardening, packaging, performance | ✅ delivered |
 | **8** | Bulk import, backup, YAML configuration | ✅ delivered |
 | **9** | Customer contract rules, approval report, user guide | ✅ delivered |
@@ -169,7 +169,7 @@ decision rather than extend the writer.
 Still outstanding from this layer: budget consumption and burn reporting, and
 the narrowed `client` projection.
 
-## Layer 6 — Semi-automatic assistance
+## Layer 6 — Semi-automatic assistance ✅
 
 Gap detection on the day view; idle detection with keep/discard/split; long-timer
 review; end-of-day and end-of-week reminders; history-based suggestions ranked by
@@ -185,7 +185,17 @@ signals usable at all: a false positive costs a click, where subtracting the tim
 would have cost an hour off an invoice. See
 [ADR-0033](adr/0033-idle-time-is-observed.md) and ASR-026.
 
-Still outstanding from this layer: end-of-day and end-of-week reminders.
+The reminders closed the layer, and turned on the same question idle detection
+had: what does the application know, and what is it entitled to do about it. A
+reminder is computed when a screen renders rather than sent, so it cannot arrive
+about a timer stopped a minute earlier - and the binary still has no scheduler,
+no mail and no queue in it. See
+[ADR-0034](adr/0034-reminders-are-shown-not-sent.md) and ASR-027.
+
+What that buys is honesty about the limit: these reach somebody the next time
+they open the application, and no sooner. Catching a Tuesday on Wednesday is a
+great deal earlier than catching it at the end of the month, which is what
+happens now.
 
 ## Layer 7 — Hardening and packaging ✅
 

@@ -323,6 +323,21 @@ func newPerfServer(t *testing.T) (*Server, perfFixture) {
 	}
 	actor := auth.WithUser(ctx, user)
 
+	// Reminders from midnight, so the end-of-day window is open whatever time
+	// the suite runs and the day view is measured doing its most expensive
+	// work. Left at the default of four in the afternoon, this suite would have
+	// measured the cheap version of the screen every morning and the real one
+	// every evening, which is a budget that passes or fails by the clock.
+	settings, err := db.GetSettings(ctx)
+	if err != nil {
+		t.Fatalf("read settings: %v", err)
+	}
+	settings.RemindersEnabled = true
+	settings.ReminderHour = 0
+	if err := db.UpdateSettings(ctx, settings); err != nil {
+		t.Fatalf("set the reminder hour: %v", err)
+	}
+
 	customer, err := svc.CreateCustomer(actor, domain.Customer{
 		Name: "Acme AB", Currency: "SEK", RateMinor: 125000,
 	})

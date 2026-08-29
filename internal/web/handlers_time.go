@@ -103,6 +103,12 @@ type pageData struct {
 
 	// Weekly submit and approve.
 	PeriodView *service.PeriodView
+	// Reminders are the end-of-day and end-of-week nudges that are true right
+	// now. Shown on the day and week screens only, and only when those screens
+	// are showing the current day or week: a nudge about today, rendered under
+	// last Tuesday, is a puzzle rather than a prompt.
+	Reminders []service.Reminder
+
 	// IdleReview is what the application saw nothing during, on entries that
 	// have stopped, with the effect of each answer worked out so the buttons can
 	// carry the numbers. IdleNotices is the same observation on a timer that is
@@ -178,6 +184,18 @@ func (d pageData) N(key string, count int, args ...any) string {
 		return key
 	}
 	return d.Printer.N(key, count, args...)
+}
+
+// sameDay reports whether two instants fall on the same calendar day in a zone.
+//
+// Which zone is the point: "today" is the person's today, and comparing two UTC
+// instants would put somebody in Stockholm on the wrong side of midnight for two
+// hours every evening.
+func sameDay(a, b time.Time, loc *time.Location) bool {
+	if loc == nil {
+		loc = time.UTC
+	}
+	return domain.SameDay(a.In(loc), b.In(loc))
 }
 
 // printerFor picks the language for a request.
@@ -344,6 +362,15 @@ func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	// The nudges, but only when this screen is showing today. A reminder about
+	// finishing the day, rendered under a day three weeks ago, is a puzzle.
+	if sameDay(date, s.svc.Now(), day.Location) {
+		if data.Reminders, err = s.svc.Reminders(r.Context()); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
+
 	// What the application saw nothing during: questions about timers that have
 	// stopped, notices about ones still going. Both live here rather than in the
 	// page shell, so the two queries are on the one screen that acts on them.
@@ -384,6 +411,14 @@ func (s *Server) handleWeek(w http.ResponseWriter, r *http.Request) {
 	}
 	data.Week = &week
 	data.Totals = week.Totals
+
+	// As on the day screen: only for the week somebody is actually in.
+	if !s.svc.Now().Before(week.Start) && s.svc.Now().Before(week.End) {
+		if data.Reminders, err = s.svc.Reminders(r.Context()); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
 
 	// The week view is where submitting belongs: it is the screen showing
 	// exactly what would be submitted.

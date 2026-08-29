@@ -12,6 +12,22 @@ the decision.
 
 ### Added
 
+* **End-of-day and end-of-week reminders**
+  ([ADR-0034](adr/0034-reminders-are-shown-not-sent.md), ASR-027) — the last item
+  outstanding from layer 6. Four nudges: a timer still running, a day with
+  nothing recorded, time a colleague recorded for you, and a week nobody has
+  submitted. Each is *computed when a screen is drawn* rather than sent, which
+  is the whole design: there is no scheduler, no mail, no queue and no new
+  dependency, and a nudge cannot arrive about a timer that was stopped a minute
+  ago — recording the time makes it untrue and it simply stops being computed.
+  They wait for a configurable hour of the person's own local afternoon, so an
+  instance serving two time zones nudges each at the end of their own day; the
+  week nudge waits for the last working day of the configured week, since every
+  week is unsubmitted on a Wednesday and a panel that is always there is one
+  nobody reads. An empty week is not nudged about at all — that was somebody's
+  holiday. Each can be dismissed for its day or week and returns the next one.
+  Instance-wide switch in Settings.
+
 * **Time the application saw nothing during is reported, never removed**
   ([ADR-0033](adr/0033-idle-time-is-observed.md), ASR-026). A timer left running
   through lunch was the one common mistake nothing caught: the overnight case is

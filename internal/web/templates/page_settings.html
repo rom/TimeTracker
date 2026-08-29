@@ -188,6 +188,21 @@
         <input type="number" name="idle_minutes" min="1" max="1440"
                value="{{if .Settings.IdleSeconds}}{{divide .Settings.IdleSeconds 60}}{{else}}15{{end}}">
       </label>
+
+      {{/* The hour is the person's own local hour, not the server's: an
+           instance serving two time zones nudges each of them at the end of
+           their own afternoon. */}}
+      <label class="inline-check">
+        <input type="checkbox" name="reminders_enabled"
+               {{if .Settings.RemindersEnabled}}checked{{end}}>
+        {{.T "settings.reminders"}}
+      </label>
+      <p class="field-help">{{.T "settings.reminders.hint"}}</p>
+      <label>
+        {{.T "settings.reminderhour"}}
+        <input type="number" name="reminder_hour" min="1" max="23"
+               value="{{.Settings.ReminderHour}}">
+      </label>
     </fieldset>
 
     <button type="submit" class="btn btn-primary">{{.T "settings.save"}}</button>

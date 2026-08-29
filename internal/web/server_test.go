@@ -22,7 +22,20 @@ import (
 
 // newTestServer wires a complete server over a temporary database, exactly as
 // local mode does. These are HTTP-level tests with no browser involved.
+//
+// It runs on the real clock, which is right for most of these tests and wrong
+// for any that depend on the time of day - see newTestServerAt.
 func newTestServer(t *testing.T) (*Server, domain.User) {
+	return newTestServerAt(t, time.Time{})
+}
+
+// newTestServerAt is newTestServer with the clock stopped at a chosen instant.
+//
+// Anything that behaves differently in the afternoon than in the morning - the
+// end-of-day nudges, an observation clamped to the present - needs this. Written
+// after a test that passed all evening and would have failed the next morning.
+// A zero instant means the real clock.
+func newTestServerAt(t *testing.T, now time.Time) (*Server, domain.User) {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("web tests touch the filesystem; skipped under -short")
@@ -36,7 +49,11 @@ func newTestServer(t *testing.T) (*Server, domain.User) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := service.New(db, auth.SingleUserAuthorizer{}, logger, time.Now)
+	clock := time.Now
+	if !now.IsZero() {
+		clock = func() time.Time { return now }
+	}
+	svc := service.New(db, auth.SingleUserAuthorizer{}, logger, clock)
 
 	// A blob store, as the real server wires one. Without it every attachment
 	// operation is refused as unconfigured - which would make an upload test

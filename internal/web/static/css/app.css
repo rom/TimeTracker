@@ -1165,6 +1165,25 @@ input[type="text"], input[type="date"], input[type="time"], select {
 }
 .gap { margin-left: var(--gap-sm); font-variant-numeric: tabular-nums; }
 
+/* End-of-day and end-of-week nudges.
+   Accent-coloured rather than warning-coloured: a nudge is a prompt about
+   something ordinary, and a panel that looks like an error every evening is one
+   people stop reading. */
+.reminders { margin-bottom: var(--gap); }
+.reminder-list { list-style: none; margin: 0; padding: 0; }
+.reminder {
+  display: flex; flex-wrap: wrap; align-items: center;
+  justify-content: space-between; gap: var(--gap-sm);
+  padding: 10px var(--gap);
+  background: var(--surface-sunken);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+}
+.reminder + .reminder { margin-top: var(--gap-sm); }
+.reminder-text { flex: 1 1 20ch; }
+.reminder-detail { color: var(--text-muted); }
+.reminder-actions { display: flex; flex-wrap: wrap; gap: var(--gap-sm); align-items: center; }
+
 /* Time the application saw nothing during.
    Warning-coloured like a gap, because it is the same kind of statement: an
    observation the person is asked about, not a finding. */

@@ -424,8 +424,15 @@ you are using. What it *can* do:
   question with keep, discard and split once the timer stops.
 * **Overtime notices** — a day or week past the customer's agreed threshold with
   none of the time marked as overtime. Reported, never applied: see §4b.
-* **Reminders** — end-of-day and end-of-week nudges for missing time and pending
-  proposals.
+* **Reminders** — end-of-day and end-of-week nudges: a timer still running, a day
+  with nothing on it, time a colleague recorded for you, a week nobody submitted
+  ([ADR-0034](adr/0034-reminders-are-shown-not-sent.md)). Shown, never sent: each
+  is computed from the timesheet when a screen is drawn, so it cannot appear
+  about something already dealt with, and there is no scheduler, mail or queue
+  behind it. They wait for a configurable hour of *your* local afternoon — the
+  week one for the last working day of the week — because a panel that is always
+  there is one nobody reads. Each can be waved away for its day or week, and the
+  next one asks again.
 * **Suggestions from your own history** — the assignments you usually work on this
   weekday, ranked, so the common case is one click.
 * **Long-running-timer review** — a timer past the maximum is flagged, not counted.

@@ -309,6 +309,77 @@
   exactly like an open one until a save fails is the worst version of this
   feature: the banner is what makes the refusal predictable.
 */}}
+{{/* End-of-day and end-of-week nudges.
+
+     Each one is a fact about the timesheet as it stands, with a link to the
+     place it can be acted on and a control to say "I know". Nothing here is a
+     stored message: recording the time makes the nudge untrue and it simply
+     stops being computed (docs/adr/0034-reminders-are-shown-not-sent.md). */}}
+{{define "reminders"}}
+  {{- $page := . -}}
+  {{if $page.Reminders}}
+    <section class="reminders" aria-labelledby="reminders-heading">
+      <h2 class="visually-hidden" id="reminders-heading">{{$page.T "reminders.heading"}}</h2>
+      <ul class="reminder-list">
+        {{range $page.Reminders}}
+          <li class="reminder{{if .Weekly}} reminder-weekly{{end}}">
+            <span class="reminder-text">
+              {{if eq (printf "%s" .Kind) "running_timers"}}
+                {{$page.N "reminder.running" .Count .Count}}
+              {{else if eq (printf "%s" .Kind) "pending_proposals"}}
+                {{$page.N "reminder.proposals" .Count .Count}}
+              {{else if eq (printf "%s" .Kind) "unsubmitted_week"}}
+                {{$page.T "reminder.week"}}
+                {{if .Days}}
+                  {{/* The empty weekdays as an aside on the one nudge rather
+                       than as four nudges of their own. */}}
+                  <span class="reminder-detail">
+                    {{$page.T "reminder.week.empty"}}
+                    {{range $index, $day := .Days}}{{if $index}}, {{end}}{{$page.Printer.FormatWeekday $day}}{{end}}
+                  </span>
+                {{end}}
+              {{else}}
+                {{$page.T "reminder.emptyday"}}
+              {{end}}
+            </span>
+
+            <span class="reminder-actions">
+              {{/* The link goes to the screen that fixes the thing - unless that
+                   is the screen you are already on, where a button that takes
+                   you where you are is noise. */}}
+              {{if eq (printf "%s" .Kind) "pending_proposals"}}
+                <a class="btn btn-small" href="/inbox">{{$page.T "reminder.go.inbox"}}</a>
+              {{else if eq (printf "%s" .Kind) "unsubmitted_week"}}
+                {{if ne $page.Active "week"}}
+                  <a class="btn btn-small" href="/week">{{$page.T "reminder.go.week"}}</a>
+                {{end}}
+              {{else if eq (printf "%s" .Kind) "running_timers"}}
+                <form method="post" action="/timers/stop-all" hx-post="/timers/stop-all" class="inline">
+                  {{template "csrf" $page.CSRFToken}}
+                  <button type="submit" class="btn btn-small">{{$page.T "action.stopall"}}</button>
+                </form>
+              {{else if ne $page.Active "today"}}
+                <a class="btn btn-small" href="/today">{{$page.T "reminder.go.today"}}</a>
+              {{end}}
+
+              {{/* Dismissal is scoped to the day or the week, so tomorrow asks
+                   again. A nudge that cannot be waved away is nagging; one
+                   waved away for good is a feature quietly switched off. */}}
+              <form method="post" action="/reminders/{{.Kind}}/dismiss"
+                    hx-post="/reminders/{{.Kind}}/dismiss" class="inline">
+                {{template "csrf" $page.CSRFToken}}
+                <input type="hidden" name="scope" value="{{.Scope}}">
+                <button type="submit" class="btn btn-small btn-quiet"
+                        title="{{$page.T "reminder.dismiss.title"}}">{{$page.T "reminder.dismiss"}}</button>
+              </form>
+            </span>
+          </li>
+        {{end}}
+      </ul>
+    </section>
+  {{end}}
+{{end}}
+
 {{define "period-banner"}}
   {{- $page := . -}}
   {{- with $page.PeriodView -}}
