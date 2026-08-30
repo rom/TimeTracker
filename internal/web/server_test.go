@@ -111,7 +111,8 @@ func TestEveryScreenRenders(t *testing.T) {
 
 	for _, path := range []string{
 		"/", "/today", "/week", "/entries", "/admin", "/approvals",
-		"/approvals/report", "/guide", "/expenses", "/routines", "/tags", "/healthz",
+		"/approvals/report", "/reports/budgets", "/guide", "/expenses", "/routines",
+		"/tags", "/healthz",
 	} {
 		t.Run(path, func(t *testing.T) {
 			rec := get(t, srv, path)

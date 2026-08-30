@@ -12,6 +12,20 @@ the decision.
 
 ### Added
 
+* **Budgets and burn** ([ADR-0035](adr/0035-burn-is-a-projection.md), ASR-028) —
+  the last item outstanding from layer 5. A project could carry a cap in hours
+  and one in money since the very first migration; nothing set them and nothing
+  read them. Both are now editable on a project, and a report shows what each
+  engagement has used, worst first, with a weekly rate and a projected date.
+  The projection is the part that needed deciding rather than implementing. It
+  is an average over a stated four-week window, taken across the weeks that had
+  work so a fortnight's holiday does not double the apparent runway, and it
+  refuses outright in four cases — no budget, already over, nothing recorded
+  recently, fewer than two active weeks — each of which says so in the cell,
+  because a blank in a "runs out" column reads as *never*. An overrun is shown
+  as a percentage past 100 and a negative remainder rather than clamped: a row
+  capped at 100% looks exactly like a project that landed on budget.
+
 * **End-of-day and end-of-week reminders**
   ([ADR-0034](adr/0034-reminders-are-shown-not-sent.md), ASR-027) — the last item
   outstanding from layer 6. Four nudges: a timer still running, a day with

@@ -128,7 +128,9 @@ type pageData struct {
 	MyPeriods []domain.TimesheetPeriod
 	// Approval status per person per week, and the span it covers.
 	ApprovalReport *service.ApprovalReport
-	ReportWeeks    int
+	// Budget consumption and burn per project.
+	BudgetReport *service.BudgetReport
+	ReportWeeks  int
 
 	// Moving time.
 	MoveIDs []string

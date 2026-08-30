@@ -303,6 +303,19 @@ func templateFuncs() template.FuncMap {
 		"isToday": func(t time.Time, now time.Time) bool {
 			return t.Year() == now.Year() && t.YearDay() == now.YearDay()
 		},
+		// barWidth caps a percentage at the width of its track. The number
+		// beside the bar is the real one and is not capped - the bar is a
+		// picture, and a picture 340% wide is a layout bug rather than
+		// emphasis.
+		"barWidth": func(percent int) int {
+			if percent < 0 {
+				return 0
+			}
+			if percent > 100 {
+				return 100
+			}
+			return percent
+		},
 		// money renders minor units as a decimal string.
 		"money": func(minor int64, currency string) string {
 			return domain.NewMoney(minor, currency).String()

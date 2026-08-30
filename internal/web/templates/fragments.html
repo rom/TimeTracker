@@ -325,9 +325,9 @@
           <li class="reminder{{if .Weekly}} reminder-weekly{{end}}">
             <span class="reminder-text">
               {{if eq (printf "%s" .Kind) "running_timers"}}
-                {{$page.N "reminder.running" .Count .Count}}
+                {{$page.N "reminder.running" .Count}}
               {{else if eq (printf "%s" .Kind) "pending_proposals"}}
-                {{$page.N "reminder.proposals" .Count .Count}}
+                {{$page.N "reminder.proposals" .Count}}
               {{else if eq (printf "%s" .Kind) "unsubmitted_week"}}
                 {{$page.T "reminder.week"}}
                 {{if .Days}}

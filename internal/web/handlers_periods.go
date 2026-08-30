@@ -149,3 +149,27 @@ func (s *Server) handleApprovalReport(w http.ResponseWriter, r *http.Request) {
 
 // defaultReportWeeks is a quarter, which is the span most people review over.
 const defaultReportWeeks = 12
+
+// handleBudgetReport renders budget consumption and burn per project.
+//
+// A separate screen rather than a column on the admin list, because the
+// question it answers is asked at a different time by a different person: the
+// catalogue is where a project is set up, this is where somebody asks which
+// engagements are about to run out (docs/adr/0035-burn-is-a-projection.md).
+func (s *Server) handleBudgetReport(w http.ResponseWriter, r *http.Request) {
+	data, err := s.newPageData(r, "", "approvals")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	data.Title = data.Printer.T("report.budget.title")
+
+	report, err := s.svc.BudgetReportFor(r.Context(), s.svc.Now())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	data.BudgetReport = &report
+
+	s.render(w, r, "page_budget_report.html", data)
+}

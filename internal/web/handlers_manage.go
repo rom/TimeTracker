@@ -104,6 +104,11 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	budgetSeconds, budgetMinor, err := parseBudget(r, existing.Currency)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 
 	existing.Name = r.FormValue("name")
 	existing.Code = r.FormValue("code")
@@ -112,6 +117,8 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	existing.BillableDefault = r.FormValue("billable") != ""
 	existing.RateMinor = rate
 	existing.RoundingRule = r.FormValue("rounding_rule")
+	existing.BudgetSeconds = budgetSeconds
+	existing.BudgetMinor = budgetMinor
 	if customerID := int64Param(r.FormValue("customer_id")); customerID != 0 {
 		existing.CustomerID = customerID
 	}

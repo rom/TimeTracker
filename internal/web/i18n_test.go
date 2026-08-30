@@ -4,8 +4,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rom/timetracker/internal/i18n"
 )
@@ -150,16 +152,27 @@ func TestPluralForms(t *testing.T) {
 // TestEveryScreenRendersInEveryLanguage: a missing key or a bad format verb
 // takes a whole screen down, and it should never reach a user in any language.
 func TestEveryScreenRendersInEveryLanguage(t *testing.T) {
-	srv, _ := newTestServer(t)
+	// A fixed evening, so the end-of-day reminders are rendered and scanned
+	// every run. On the real clock this test saw the panel only after four in
+	// the afternoon - and the formatting bug it now catches was in that panel,
+	// which is to say the coverage was there for half of each day.
+	srv, _ := newTestServerAt(t, time.Date(2026, 5, 13, 17, 0, 0, 0, time.UTC))
 
 	// Give the screens something to render.
 	post(t, srv, "/customers", url.Values{"name": {"Acme"}, "currency": {"SEK"}})
 	post(t, srv, "/projects", url.Values{"customer_id": {"1"}, "name": {"P"}, "billable": {"on"}})
 	post(t, srv, "/assignments", url.Values{"project_id": {"1"}, "name": {"A"}, "billable": {"on"}})
 	post(t, srv, "/timers/start", url.Values{"assignment_id": {"1"}})
+	// A budget and some work against it, so the burn report renders rows rather
+	// than its empty state - the formatted cells are the ones worth scanning.
+	post(t, srv, "/projects/1", url.Values{"customer_id": {"1"}, "name": {"P"},
+		"billable": {"on"}, "currency": {"SEK"}, "budget_hours": {"40"}})
+	yesterday := srv.svc.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+	post(t, srv, "/entries", url.Values{"assignment_id": {"1"}, "date": {yesterday},
+		"start": {"09:00"}, "end": {"17:00"}})
 
 	paths := []string{"/today", "/week", "/entries", "/admin", "/approvals",
-		"/approvals/report", "/guide", "/guide/record", "/guide/correct",
+		"/approvals/report", "/reports/budgets", "/guide", "/guide/record", "/guide/correct",
 		"/terms/customer/1", "/terms/project/1", "/routines", "/tags",
 		// The correction screen is reached by id, and the running timer started
 		// above is entry 1.
@@ -185,6 +198,15 @@ func TestEveryScreenRendersInEveryLanguage(t *testing.T) {
 							path, language.Code, marker)
 					}
 				}
+				// A message given the wrong number of arguments does not fail:
+				// it renders fmt's complaint into the page. This comment used to
+				// claim the test caught that and it did not, which is how
+				// "in about 12 weeks%!(EXTRA int=12)" reached a screen.
+				if i := strings.Index(body, "%!"); i >= 0 {
+					end := min(i+60, len(body))
+					t.Errorf("a message was formatted wrongly in %s (%s): %s",
+						path, language.Code, body[i:end])
+				}
 			})
 		}
 	}
@@ -193,6 +215,27 @@ func TestEveryScreenRendersInEveryLanguage(t *testing.T) {
 // TestCatalogueParity: every key in the default catalogue must exist in every
 // other, or users of that language silently fall back to English in places
 // nobody noticed.
+// TestCatalogueValuesAreDecoded.
+//
+// A catalogue is JSON, so a message containing an em dash can be written as the
+// character or as \u2014 - and escaping that escape once too often stores the
+// six characters rather than the dash. Nothing downstream notices: the value is
+// a valid string, the parity test finds the key present, and the screen renders
+// a literal backslash-u to a user. Written after exactly that reached a page.
+func TestCatalogueValuesAreDecoded(t *testing.T) {
+	escaped := regexp.MustCompile(`\\u[0-9a-fA-F]{4}`)
+
+	for _, language := range i18n.Languages() {
+		printer := i18n.NewPrinter(language.Code)
+		for _, key := range i18n.Keys(language.Code) {
+			if value := printer.T(key); escaped.MatchString(value) {
+				t.Errorf("%s: %q holds an escape that was never decoded: %s",
+					language.Code, key, value)
+			}
+		}
+	}
+}
+
 func TestCatalogueParity(t *testing.T) {
 	if err := i18n.LoadError(); err != nil {
 		t.Fatalf("the catalogues did not load: %v", err)

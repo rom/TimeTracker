@@ -93,6 +93,8 @@
     <select name="rounding_rule" aria-label="{{.T "admin.rounding"}}">
       {{range .Rounding}}<option value="{{.Key}}">{{$.T .MessageKey}}</option>{{end}}
     </select>
+    <input type="text" name="budget_hours" placeholder="Budget h" size="8"
+           aria-label="Budget in hours">
     <label class="inline-check"><input type="checkbox" name="billable" checked> Billable</label>
     <button type="submit" class="btn btn-primary">Add project</button>
   </form>
@@ -255,6 +257,14 @@
     <input type="checkbox" name="billable" {{if .BillableDefault}}checked{{end}}>
     {{$.T "entry.billable"}}
   </label>
+  {{/* Either budget, both, or neither. Blank means no cap rather than a cap of
+       zero, which is why these are text rather than numbers defaulting to 0. */}}
+  <input type="text" name="budget_hours" size="7"
+         placeholder="{{$.T "admin.budget.hours"}}" aria-label="{{$.T "admin.budget.hours"}}"
+         value="{{if gt .BudgetSeconds 0}}{{hoursOf .BudgetSeconds}}{{end}}">
+  <input type="text" name="budget_amount" size="10"
+         placeholder="{{$.T "admin.budget.amount"}}" aria-label="{{$.T "admin.budget.amount"}}"
+         value="{{if gt .BudgetMinor 0}}{{money .BudgetMinor ""}}{{end}}">
   <button type="submit" class="btn btn-primary">{{$.T "action.save"}}</button>
   <a class="btn btn-quiet" href="/admin">{{$.T "action.cancel"}}</a>
 </form>

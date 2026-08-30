@@ -267,7 +267,8 @@ to the company. Receipts attach directly.
 | **Tags** | rename, recolour and tidy. Tags are created by using them, so this is not where they are defined. |
 | **Calendar import** | preview and import from an .ics export, with everything that is not work shown as such by name ([ADR-0028](adr/0028-calendar-import-is-a-conversation.md)). |
 | **Expenses** | list and entry, with receipts, billable/reimbursable flags. |
-| **Reports** | grouped totals by customer/project/assignment/person/tag over a range, billable vs non-billable, budget consumption, export in four formats. |
+| **Reports** | grouped totals by customer/project/assignment/person/tag over a range, billable vs non-billable, export in five formats. |
+| **Budgets and burn** | what each project has used of its cap in hours and money, worst first, with a burn rate and a projected date where the evidence supports one ([ADR-0035](adr/0035-burn-is-a-projection.md)). An overrun is shown as a number past 100% and a negative remainder rather than clamped. Where there is no honest projection the cell says which of the four reasons applies, because a blank in a "runs out" column reads as *never*. |
 | **Admin** | customers, projects, assignments, rates, tags; in server mode also users, roles, memberships, sessions and the audit log. |
 
 The day view opens with a **timeline**: the day as blocks against a clock, with

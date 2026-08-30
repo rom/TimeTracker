@@ -1,0 +1,122 @@
+{{/*
+  Budget consumption and burn, per project.
+
+  Two figures and a guess. The figures - used, remaining - are arithmetic. The
+  date is a projection at the recent rate, and is presented as one: the window it
+  was taken over is stated in the heading, and where there is not enough evidence
+  the cell says why rather than going blank, because a blank cell reads as zero
+  (docs/adr/0035-burn-is-a-projection.md).
+
+  Worst first, because a reader who has to sort by hand reads five rows and
+  stops.
+*/}}
+{{define "content"}}
+{{$report := .BudgetReport}}
+<section class="budget-report">
+
+  <header class="screen-header">
+    <div class="screen-title">
+      <h1>{{.T "report.budget.title"}}</h1>
+      {{if gt $report.Overruns 0}}
+        <span class="badge badge-flagged">{{.N "report.budget.overruns" $report.Overruns}}</span>
+      {{end}}
+    </div>
+  </header>
+
+  <p class="hint">{{.T "report.budget.intro" $report.WindowWeeks}}</p>
+
+  {{if not $report.Rows}}
+    <p class="empty">{{.T "report.budget.empty"}}</p>
+  {{else}}
+    <div class="table-scroll">
+      <table class="budget-table">
+        <caption class="visually-hidden">{{.T "report.budget.title"}}</caption>
+        <thead>
+          <tr>
+            <th scope="col">{{.T "admin.project"}}</th>
+            <th scope="col">{{.T "report.budget.budget"}}</th>
+            <th scope="col">{{.T "report.budget.used"}}</th>
+            <th scope="col">{{.T "report.budget.remaining"}}</th>
+            <th scope="col">{{.T "report.budget.rate"}}</th>
+            <th scope="col">{{.T "report.budget.runsout"}}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range $report.Rows}}
+            <tr class="budget-row {{if .Overrun}}flagged{{end}} {{if .Archived}}archived{{end}}">
+              <th scope="row" class="budget-project">
+                <span class="chip" data-colour="{{.ColourKey}}" aria-hidden="true">●</span>
+                {{.ProjectName}}
+                <span class="budget-customer">{{.CustomerName}}</span>
+                {{if .Archived}}<span class="badge">{{$.T "admin.archived"}}</span>{{end}}
+              </th>
+
+              <td class="budget-figure">
+                {{if gt .Budget.Seconds 0}}
+                  <span>{{$.Printer.FormatDuration .Budget.Seconds}}</span>
+                {{end}}
+                {{if gt .Budget.Minor 0}}
+                  <span>{{money .Budget.Minor .Currency}}</span>
+                {{end}}
+              </td>
+
+              <td class="budget-figure">
+                {{if gt .Budget.Seconds 0}}
+                  <span>{{$.Printer.FormatDuration .UsedSeconds}}</span>
+                {{end}}
+                {{if gt .Budget.Minor 0}}
+                  <span>{{money .UsedMinor .Currency}}</span>
+                {{end}}
+                {{/* The bar is the thing somebody reads at a glance, so it is
+                     drawn to the real proportion and allowed past its track
+                     when a project is over. aria-hidden because the percentage
+                     beside it is the accessible version of the same fact. */}}
+                <span class="budget-bar" aria-hidden="true">
+                  <span class="budget-fill {{if .Overrun}}is-over{{end}}"
+                        style="width: {{barWidth .UsedPercent}}%"></span>
+                </span>
+                <span class="budget-percent">{{$.T "report.budget.percent" .UsedPercent}}</span>
+              </td>
+
+              <td class="budget-figure {{if .Overrun}}budget-over{{end}}">
+                {{if gt .Budget.Seconds 0}}
+                  <span>{{$.Printer.FormatDuration .RemainingSeconds}}</span>
+                {{end}}
+                {{if gt .Budget.Minor 0}}
+                  <span>{{money .RemainingMinor .Currency}}</span>
+                {{end}}
+              </td>
+
+              <td class="budget-figure">
+                {{if .Burn.Projected}}
+                  {{if gt .Budget.Seconds 0}}
+                    <span>{{$.T "report.budget.perweek" ($.Printer.FormatDuration .Burn.WeeklySeconds)}}</span>
+                  {{end}}
+                  {{if gt .Budget.Minor 0}}
+                    <span>{{$.T "report.budget.perweek" (money .Burn.WeeklyMinor .Currency)}}</span>
+                  {{end}}
+                {{else}}
+                  <span class="budget-unknown">—</span>
+                {{end}}
+              </td>
+
+              {{/* Where there is no projection the cell says why. A blank here
+                   would read as "runs out: never", which is the opposite of
+                   what "we cannot tell" means. */}}
+              <td class="budget-figure">
+                {{if .Burn.Projected}}
+                  <span>{{$.Printer.FormatDate .Burn.RunsOut}}</span>
+                  <span class="budget-weeks">{{$.N "report.budget.weeks" .Burn.WeeksLeft}}</span>
+                {{else}}
+                  <span class="budget-unknown">{{$.T (printf "report.budget.no.%s" .Burn.Reason)}}</span>
+                {{end}}
+              </td>
+            </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  {{end}}
+
+</section>
+{{end}}

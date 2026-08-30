@@ -155,6 +155,10 @@ func (s *Server) routes() {
 	mux.HandleFunc("GET /guide/{topic}", s.handleGuide)
 	mux.HandleFunc("GET /approvals", s.handleApprovals)
 	mux.HandleFunc("GET /approvals/report", s.handleApprovalReport)
+	// Budget consumption and burn. Under /reports rather than /approvals: it is
+	// about engagements rather than about timesheets, and the only thing it
+	// shares with the approval report is the audience.
+	mux.HandleFunc("GET /reports/budgets", s.handleBudgetReport)
 	mux.HandleFunc("POST /approvals/approve", s.handleApproveWeek)
 	mux.HandleFunc("POST /approvals/reject", s.handleRejectWeek)
 	mux.HandleFunc("POST /approvals/reopen", s.handleReopenWeek)

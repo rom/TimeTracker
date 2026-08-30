@@ -1165,6 +1165,32 @@ input[type="text"], input[type="date"], input[type="time"], select {
 }
 .gap { margin-left: var(--gap-sm); font-variant-numeric: tabular-nums; }
 
+/* Budget consumption. The bar is the glance-level reading and the figures
+   beside it are the real ones; the bar is capped at its track while the
+   percentage is not, so an overrun reads as a number rather than as a broken
+   layout. */
+.budget-table { width: 100%; border-collapse: collapse; }
+.budget-table th, .budget-table td {
+  padding: 6px var(--gap-sm); text-align: left; vertical-align: top;
+  border-bottom: 1px solid var(--border);
+}
+.budget-project { font-weight: 600; }
+.budget-customer { color: var(--text-muted); font-weight: 400; margin-left: var(--gap-sm); }
+.budget-figure { font-variant-numeric: tabular-nums; }
+.budget-figure span { display: block; }
+.budget-bar {
+  display: block; height: 6px; margin: 4px 0 2px;
+  background: var(--surface-sunken); border-radius: 3px; overflow: hidden;
+  max-width: 12rem;
+}
+.budget-fill { display: block; height: 100%; background: var(--accent); }
+.budget-fill.is-over { background: var(--danger); }
+.budget-percent { color: var(--text-muted); font-size: 0.88em; }
+.budget-weeks { color: var(--text-muted); font-size: 0.88em; }
+.budget-unknown { color: var(--text-muted); font-style: italic; }
+.budget-over { color: var(--danger); font-weight: 600; }
+.budget-row.flagged { background: color-mix(in srgb, var(--danger) 8%, transparent); }
+
 /* End-of-day and end-of-week nudges.
    Accent-coloured rather than warning-coloured: a nudge is a prompt about
    something ordinary, and a panel that looks like an error every evening is one
