@@ -30,11 +30,15 @@ var ErrForbidden = errors.New("forbidden")
 // Action is a verb an actor may attempt.
 type Action string
 
+// The verbs. They are deliberately about records rather than about screens:
+// "may this actor update this entry" is a question with one answer, whereas "may
+// they open the edit page" has as many answers as there are ways to reach the
+// page.
 const (
-	ActionView   Action = "view"
-	ActionCreate Action = "create"
-	ActionUpdate Action = "update"
-	ActionDelete Action = "delete"
+	ActionView   Action = "view"   // read one record or a listing
+	ActionCreate Action = "create" // add a record
+	ActionUpdate Action = "update" // change an existing one
+	ActionDelete Action = "delete" // remove one
 	// ActionManage covers catalogue and settings administration.
 	ActionManage Action = "manage"
 	// ActionViewMoney gates rates and amounts, which not every role may see.

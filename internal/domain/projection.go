@@ -116,6 +116,7 @@ func ProjectCustomersForClient(customers []Customer) []Customer {
 	return customers
 }
 
+// ProjectProjectsForClient narrows a listing of projects.
 func ProjectProjectsForClient(projects []Project) []Project {
 	for i := range projects {
 		projects[i] = projects[i].ForClient()

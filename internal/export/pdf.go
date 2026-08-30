@@ -27,6 +27,11 @@ var pdfColumns = struct {
 	amount:     marginLeft + contentWidth,       // right edge of the amount column
 }
 
+// WritePDF renders a report as a PDF, using the minimal writer in pdfwriter.go
+// rather than a dependency (ADR-0009: no asset pipeline, no cgo).
+//
+// Buffered rather than streamed: a PDF's cross-reference table records the byte
+// offset of every object, so the document cannot be finished until it is whole.
 func WritePDF(w io.Writer, report Report) error {
 	doc := newPDF()
 

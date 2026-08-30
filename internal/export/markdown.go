@@ -20,6 +20,10 @@ import (
 // places it gets pasted will never render it. That is why the tables are padded
 // to an even width: a Markdown table nobody renders should still line up.
 
+// WriteMarkdown renders a report as a Markdown document.
+//
+// Buffered rather than streamed, like the other document formats: the tables are
+// padded to a common width, which cannot be decided until every row is known.
 func WriteMarkdown(w io.Writer, report Report) error {
 	var out strings.Builder
 

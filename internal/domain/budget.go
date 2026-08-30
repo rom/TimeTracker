@@ -92,7 +92,9 @@ func (l BudgetLine) UsedPercent() int { return int(l.UsedFraction()*100 + 0.5) }
 // budget has been passed. Negative rather than clamped: "12 hours over" is the
 // thing somebody needs to know.
 func (l BudgetLine) RemainingSeconds() int64 { return l.Budget.Seconds - l.UsedSeconds }
-func (l BudgetLine) RemainingMinor() int64   { return l.Budget.Minor - l.UsedMinor }
+
+// RemainingMinor is the money half of RemainingSeconds, in minor units.
+func (l BudgetLine) RemainingMinor() int64 { return l.Budget.Minor - l.UsedMinor }
 
 // Overrun reports whether either unit has been passed.
 func (l BudgetLine) Overrun() bool {

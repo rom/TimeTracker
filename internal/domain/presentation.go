@@ -49,17 +49,23 @@ const (
 	// what the application did before the setting existed, and an upgrade must
 	// not silently reformat every time on every screen.
 	ClockAuto ClockFormat = "auto"
-	Clock24   ClockFormat = "24h"
-	Clock12   ClockFormat = "12h"
+	// Clock24 and Clock12 override the language. Somebody reading a Swedish
+	// interface may still want a 12-hour clock, and somebody reading an English
+	// one may want 24; neither preference follows from the other.
+	Clock24 ClockFormat = "24h" // 17:30
+	Clock12 ClockFormat = "12h" // 5:30 pm
 )
 
 // ClockFormats are the choices, in the order the form offers them.
 var ClockFormats = []ClockFormat{ClockAuto, Clock24, Clock12}
 
+// Valid reports whether this is a format the renderer knows.
 func (c ClockFormat) Valid() bool {
 	return c == ClockAuto || c == Clock24 || c == Clock12
 }
 
+// OrDefault degrades an unrecognised value to following the language, which is
+// what every screen did before the setting existed.
 func (c ClockFormat) OrDefault() ClockFormat {
 	if c.Valid() {
 		return c
@@ -67,6 +73,7 @@ func (c ClockFormat) OrDefault() ClockFormat {
 	return ClockAuto
 }
 
+// MessageKey is the catalogue key naming this format.
 func (c ClockFormat) MessageKey() string { return "settings.clock." + string(c.OrDefault()) }
 
 // DateFormat is the order a date's parts are written in.
@@ -83,12 +90,15 @@ const (
 	// default, because 03/04 is genuinely ambiguous between them and a
 	// timesheet is not the place to guess.
 	DateDMY DateFormat = "dmy"
+	// DateMDY is the American order. It shares DateDMY's doc comment above
+	// because the pair only makes sense read together.
 	DateMDY DateFormat = "mdy"
 )
 
 // DateFormats are the choices, in the order the form offers them.
 var DateFormats = []DateFormat{DateAuto, DateISO, DateDMY, DateMDY}
 
+// Valid reports whether this is a format the renderer knows.
 func (d DateFormat) Valid() bool {
 	switch d {
 	case DateAuto, DateISO, DateDMY, DateMDY:
@@ -98,6 +108,8 @@ func (d DateFormat) Valid() bool {
 	}
 }
 
+// OrDefault degrades an unrecognised value to following the language rather
+// than guessing between the two ambiguous orders.
 func (d DateFormat) OrDefault() DateFormat {
 	if d.Valid() {
 		return d
@@ -105,6 +117,7 @@ func (d DateFormat) OrDefault() DateFormat {
 	return DateAuto
 }
 
+// MessageKey is the catalogue key naming this format.
 func (d DateFormat) MessageKey() string { return "settings.date." + string(d.OrDefault()) }
 
 // DayOverflow is what the day pane does with time recorded outside its window.
@@ -123,10 +136,14 @@ const (
 // DayOverflows are the choices, in the order the form offers them.
 var DayOverflows = []DayOverflow{DayOverflowExpand, DayOverflowArrows}
 
+// Valid reports whether this is a behaviour the timeline builder implements.
 func (o DayOverflow) Valid() bool {
 	return o == DayOverflowExpand || o == DayOverflowArrows
 }
 
+// OrDefault degrades to expanding the pane, which is what the day view did
+// before the setting existed: an unrecognised value must not be able to hide
+// somebody's evening work behind an arrow they were never shown.
 func (o DayOverflow) OrDefault() DayOverflow {
 	if o.Valid() {
 		return o
@@ -134,6 +151,7 @@ func (o DayOverflow) OrDefault() DayOverflow {
 	return DayOverflowExpand
 }
 
+// MessageKey is the catalogue key naming this behaviour.
 func (o DayOverflow) MessageKey() string { return "settings.overflow." + string(o.OrDefault()) }
 
 // DayWindow is the pane's default range of hours.

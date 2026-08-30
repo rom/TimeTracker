@@ -198,6 +198,11 @@ func (s *Service) AuthorizeBackup(ctx context.Context) error {
 	return s.authz.Can(ctx, auth.ActionView, listResource(ctx, "time_entry"))
 }
 
+// CreateBackup writes a backup archive of the database and the attachments.
+//
+// Authorised through AuthorizeBackup rather than through the ordinary view
+// check, for the reason stated there: a backup is the whole catalogue, including
+// the commercial data the narrowed client projection exists to withhold.
 func (s *Service) CreateBackup(ctx context.Context, opts BackupOptions) (Backup, error) {
 	actor, err := auth.MustUser(ctx)
 	if err != nil {
