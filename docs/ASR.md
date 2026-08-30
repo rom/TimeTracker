@@ -41,6 +41,12 @@ Status legend: **A** = accepted, **P** = proposed, **R** = retired.
 | [ASR-017](#asr-017) | Learnability | Deliberate but surprising behaviour is explained in context | A |
 | [ASR-018](#asr-018) | Recoverability | A user can take and restore their own backups, whole or partial | A |
 | [ASR-019](#asr-019) | Interoperability | Existing hours can be brought in from a spreadsheet | A |
+| [ASR-020](#asr-020) | Integrity | A submitted week is locked, and correcting one is deliberate | A |
+| [ASR-021](#asr-021) | Suitability / Integrity | Work is priced by the terms in force on the day it happened | A |
+| [ASR-022](#asr-022) | Learnability | Somebody who knows what they want to do can find out where to do it | A |
+| [ASR-023](#asr-023) | Suitability | Time that recurs is recorded in one action, and never invented | A |
+| [ASR-024](#asr-024) | Interoperability | Hours can be brought in from a calendar without importing what is not work | A |
+| [ASR-025](#asr-025) | Suitability | Search finds a fragment anywhere, and never answers a valid query with silence | A |
 | [ASR-026](#asr-026) | Integrity | Time is never removed from a timesheet without a person saying so | A |
 | [ASR-027](#asr-027) | Suitability | The application says what needs attention, without sending anything | A |
 | [ASR-028](#asr-028) | Suitability | An engagement's budget can be seen being consumed, before it runs out | A |

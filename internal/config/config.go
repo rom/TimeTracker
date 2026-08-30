@@ -2,9 +2,15 @@
 // environment and command-line flags.
 //
 // Configuration is validated once, at startup, and an invalid combination stops
-// the process rather than degrading quietly. A server that starts without a
-// session secret, or binds a public address with no TLS in front of it, is a
-// configuration error and not a warning to be scrolled past.
+// the process rather than degrading quietly. A server that binds a public
+// address with no TLS in front of it, or is handed half a TLS pair, or has a
+// group-readable private key, is a configuration error and not a warning to be
+// scrolled past.
+//
+// There is deliberately no session secret to configure: session ids are 256 bits
+// of crypto/rand stored as their SHA-256, so there is no key to set or rotate.
+// This comment used to name one as an example of a fatal omission, which sent a
+// reader looking for a setting that has never existed.
 package config
 
 import (

@@ -122,7 +122,12 @@ mark is searched for rather than executed as query syntax.
 
 * **CSRF**: a token bound to the session required for every unsafe method, plus
   `SameSite=Lax` as defence in depth.
-* **CSP** with no `unsafe-inline` at all - not for scripts, and not for styles.
+* **CSP** with no `unsafe-inline` on any page: not for scripts, and not for
+  styles. The one exception is the attachment preview response, which carries a
+  much stricter policy of its own - `default-src 'none'; style-src
+  'unsafe-inline'; sandbox` - so that an SVG can style itself inside a sandbox
+  that permits it nothing else. It is a different document, served from a
+  different route, and it inherits none of the application's own capabilities.
   All JavaScript and CSS is served as embedded files. The style half is the one
   that costs something: the day timeline needs per-block geometry, which is
   naturally an inline `style` attribute and is refused. Rather than relax the
@@ -235,8 +240,12 @@ The application cannot do these for you:
 * **Back up, and rehearse a restore.** An untested backup is not a backup.
 * **Configure the trusted proxy addresses**, or `X-Forwarded-For` is attacker
   controlled and your audit trail records fiction.
-* **Set a strong session secret** and keep it out of version control. The server
-  refuses to start without one.
+* **Nothing to configure for sessions.** A session id is 256 bits from
+  `crypto/rand`, stored as its SHA-256 and never in plaintext, so there is no
+  signing key to set, rotate or leak. This bullet used to instruct operators to
+  set a session secret and said the server refused to start without one; neither
+  was ever true, and an operator following it would have gone looking for a
+  setting that does not exist and concluded they had missed a security step.
 * **Rotate and retain logs**, and protect the syslog transport (use TLS off-host).
 
 ## 5. Known limitations

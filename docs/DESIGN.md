@@ -434,14 +434,20 @@ you are using. What it *can* do:
   week one for the last working day of the week — because a panel that is always
   there is one nobody reads. Each can be waved away for its day or week, and the
   next one asks again.
-* **Suggestions from your own history** — the assignments you usually work on this
-  weekday, ranked, so the common case is one click.
+* **Suggestions from your own history** — the assignments you have worked on
+  recently, favourites first, so the common case is one click. Ranked by
+  favourite and then by recency over a six-week window; *not* by weekday, which
+  this bullet claimed for some time and the query has never done.
 * **Long-running-timer review** — a timer past the maximum is flagged, not counted.
 
 Explicitly deferred, and requiring a separate desktop agent or an integration ADR:
-application/window activity tracking, calendar (ICS) import, git commit import. The
-suggestion pipeline is designed so those become additional *sources* of proposals
-rather than a new mechanism.
+application/window activity tracking and git commit import. The suggestion
+pipeline is designed so those become additional *sources* of proposals rather
+than a new mechanism.
+
+Calendar (ICS) import was on that list and is not deferred any more: it shipped
+in layer 10 ([ADR-0028](adr/0028-calendar-import-is-a-conversation.md)), as a
+conversation rather than a sync, which is the shape this paragraph anticipated.
 
 ## 10. Exports
 
