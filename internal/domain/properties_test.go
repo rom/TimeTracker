@@ -170,7 +170,10 @@ func TestRoundingNeverMovesAValueFurtherThanTheIncrement(t *testing.T) {
 					// work entirely, so anything under a single increment
 					// becomes one increment rather than vanishing from the
 					// invoice. Everything above that goes down.
-					if rounded > seconds && !(seconds > 0 && seconds < increment && rounded == increment) {
+					// The floor case: anything under a single increment becomes
+					// one increment. Everything else must go down.
+					floored := seconds > 0 && seconds < increment && rounded == increment
+					if rounded > seconds && !floored {
 						t.Fatalf("down/%d rounded %d up to %d", increment, seconds, rounded)
 					}
 				case RoundNearest:
