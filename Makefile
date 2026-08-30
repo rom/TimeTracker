@@ -139,7 +139,7 @@ coverage: ## Produce a coverage profile and an HTML report
 # declarations. It is not: it decides what the process listens on and whether it
 # will serve a login form in clear, and the tests that raised it from 14% to 92%
 # found two addresses that were treated as loopback and are not.
-COVERAGE_FLOORS = domain:66 service:57 store:48 export:85 blob:70 auth:80 \
+COVERAGE_FLOORS = domain:84 service:57 store:48 export:85 blob:70 auth:80 \
                   archive:75 preview:80 config:88
 
 .PHONY: coverage-check
