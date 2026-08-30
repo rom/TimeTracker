@@ -77,9 +77,20 @@
 {{else}}
 
 <header class="topbar">
-  <a class="brand" href="/today">{{template "wordmark" .}}</a>
+  <a class="brand" href="{{if .IsClient}}/entries{{else}}/today{{end}}">{{template "wordmark" .}}</a>
 
+  {{/* A client has one screen: the work done for them, and the downloads of it.
+       Everything else here is somebody's timesheet, somebody's inbox or the
+       administration of the instance, and offering a link whose only outcome is
+       a refusal is a worse answer than not offering it
+       (docs/adr/0008-rbac-model.md). The data behind those screens is narrowed
+       regardless - this is presentation, and presentation is never the
+       enforcement. */}}
   <nav class="mainnav" aria-label="{{.T "nav.main"}}">
+    {{if .IsClient}}
+      <a href="/entries" {{if eq .Active "entries"}}class="active" aria-current="page"{{end}}>{{.T "nav.entries"}}</a>
+      <a href="/guide"   {{if eq .Active "guide"}}class="active" aria-current="page"{{end}}>{{.T "nav.guide"}}</a>
+    {{else}}
     {{/* aria-current tells assistive technology which page this is, which the
          colour alone cannot convey. */}}
     <a href="/today"   {{if eq .Active "today"}}class="active" aria-current="page"{{end}}>{{.T "nav.today"}}</a>
@@ -106,6 +117,7 @@
     <a href="/guide"   {{if eq .Active "guide"}}class="active" aria-current="page"{{end}}>{{.T "nav.guide"}}</a>
     {{if .ServerMode}}
       <a href="/users" {{if eq .Active "users"}}class="active" aria-current="page"{{end}}>{{.T "nav.users"}}</a>
+    {{end}}
     {{end}}
   </nav>
 

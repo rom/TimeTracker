@@ -518,6 +518,16 @@ Exports respect authorisation: a `client` user's export contains only their
 customer's confirmed entries, with internal notes and cost data removed before the
 data leaves the service layer.
 
+That removal is a transformation of the value rather than a condition in a
+template ([ADR-0008](adr/0008-rbac-model.md)). A client's screen is one screen -
+the work done for them, and the downloads of it - and what reaches it has already
+had the note, the rate, the amount, the currency, the rounding rule, the proxy
+authorship, the tags and the attachment count taken out of it. The catalogue is
+narrowed the same way, because a customer row carries a negotiated rate and a
+project row carries a budget. Nothing that is not confirmed reaches them at all,
+and that is applied in the query rather than afterwards, so the count behind the
+pager is the number of rows they can be shown.
+
 ## 10a. Backups
 
 A backup is a **zip archive**: the JSON document, a readme, and every attachment

@@ -305,5 +305,9 @@ func (s *Service) ProposedByMe(ctx context.Context) ([]domain.TimeEntry, error) 
 	if err != nil {
 		return nil, err
 	}
-	return s.db.ListEntriesEnteredBy(ctx, actor.ID, scope)
+	entries, err := s.db.ListEntriesEnteredBy(ctx, actor.ID, scope)
+	if err != nil {
+		return nil, err
+	}
+	return s.narrowEntries(ctx, entries), nil
 }

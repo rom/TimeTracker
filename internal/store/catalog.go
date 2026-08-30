@@ -41,7 +41,8 @@ func (db *DB) CreateUser(ctx context.Context, u domain.User) (domain.User, error
 // GetUser loads one user by id.
 func (db *DB) GetUser(ctx context.Context, id int64) (domain.User, error) {
 	row := db.read.QueryRowContext(ctx, `
-		SELECT id, display_name, email, role, time_zone, theme, language, active, created_at
+		SELECT id, display_name, email, role, time_zone, theme, language, active, created_at,
+		       client_customer_id
 		FROM users WHERE id = ?`, id)
 	return scanUser(row)
 }
@@ -50,7 +51,8 @@ func (db *DB) GetUser(ctx context.Context, id int64) (domain.User, error) {
 // one. It is how the single-user identity is resolved at startup.
 func (db *DB) FirstUser(ctx context.Context) (domain.User, error) {
 	row := db.read.QueryRowContext(ctx, `
-		SELECT id, display_name, email, role, time_zone, theme, language, active, created_at
+		SELECT id, display_name, email, role, time_zone, theme, language, active, created_at,
+		       client_customer_id
 		FROM users ORDER BY id LIMIT 1`)
 	return scanUser(row)
 }
@@ -73,8 +75,13 @@ func scanUser(row rowScanner) (domain.User, error) {
 	var u domain.User
 	var role, createdAt string
 	var active int
+	// client_customer_id is part of the identity, not a detail of the
+	// administration screen. Leaving it out of this scan gave every client a
+	// customer of zero on every request, which the authoriser reads as "scoped
+	// to no customer" and refuses - so the role could sign in and then be
+	// refused every screen. One column, and the entire role.
 	err := row.Scan(&u.ID, &u.DisplayName, &u.Email, &role, &u.TimeZone, &u.Theme,
-		&u.Language, &active, &createdAt)
+		&u.Language, &active, &createdAt, &u.ClientCustomerID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.User{}, ErrNotFound
 	}

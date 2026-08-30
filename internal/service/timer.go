@@ -407,7 +407,7 @@ func (s *Service) Entry(ctx context.Context, entryID int64) (domain.TimeEntry, e
 	if err := s.authz.Can(ctx, auth.ActionView, entryResource(entry)); err != nil {
 		return domain.TimeEntry{}, notFoundFor(err)
 	}
-	return entry, nil
+	return s.narrowEntry(ctx, entry), nil
 }
 
 // RunningTimers returns every timer currently running for the acting user. The
@@ -417,10 +417,29 @@ func (s *Service) RunningTimers(ctx context.Context) ([]domain.TimeEntry, error)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.authz.Can(ctx, auth.ActionView, auth.Resource{Type: "time_entry", OwnerID: actor.ID}); err != nil {
+	// clientResource rather than a bare owner, because a client's permission is
+	// their customer and not the ownership of a record. Asked the ownership
+	// question, the authoriser correctly refuses - and this is called by the
+	// page shell, so every screen returned 403 to a client before it rendered
+	// anything. A read-only portal that cannot open a page is not a portal.
+	if err := s.authz.Can(ctx, auth.ActionView, clientResource(ctx, "time_entry")); err != nil {
 		return nil, err
 	}
-	return s.db.ListRunningEntries(ctx, actor.ID)
+	if actingAsClient(ctx) {
+		// A client runs no timers: they may not start one. The header has
+		// nothing to show them, and asking the database is a query with a known
+		// answer on every page render.
+		return nil, nil
+	}
+	entries, err := s.db.ListRunningEntries(ctx, actor.ID)
+	if err != nil {
+		return nil, err
+	}
+	// A client runs no timers, so this is empty for them. Narrowed regardless:
+	// every path that can return an entry applies the projection, so the
+	// guarantee holds by construction rather than by which filter happens to be
+	// in the query today.
+	return s.narrowEntries(ctx, entries), nil
 }
 
 // ------------------------------------------------------------------ helpers --

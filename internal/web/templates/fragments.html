@@ -175,23 +175,28 @@
           <button type="submit" class="btn btn-small btn-stop">{{$page.T "action.stop"}}</button>
         </form>
       {{end}}
-      {{/* A plain link, not a background swap: correcting an entry is a
-           deliberate act that deserves a screen of its own, and a link works
-           with no script at all. */}}
-      <a class="btn btn-small btn-quiet" href="/entries/{{$e.ID}}/edit"
-         title="{{$page.T "entry.edit.title"}}">
-        <span aria-hidden="true">✎</span>
-        <span class="visually-hidden">{{$page.T "action.edit"}}</span>
-      </a>
-      <form method="post" action="/entries/{{$e.ID}}/delete" hx-post="/entries/{{$e.ID}}/delete"
-            hx-confirm="{{$page.T "entry.delete.confirm"}}">
-        {{template "csrf" $page.CSRFToken}}
-        <button type="submit" class="btn btn-small btn-quiet"
-                title="{{$page.T "action.delete"}}">
-          <span aria-hidden="true">×</span>
-          <span class="visually-hidden">{{$page.T "action.delete"}}</span>
-        </button>
-      </form>
+      {{/* A client reads this row and can do nothing to it. The routes refuse
+           them, so these controls would each answer 403 - which makes a report
+           look broken rather than read-only. */}}
+      {{if not $page.IsClient}}
+        {{/* A plain link, not a background swap: correcting an entry is a
+             deliberate act that deserves a screen of its own, and a link works
+             with no script at all. */}}
+        <a class="btn btn-small btn-quiet" href="/entries/{{$e.ID}}/edit"
+           title="{{$page.T "entry.edit.title"}}">
+          <span aria-hidden="true">✎</span>
+          <span class="visually-hidden">{{$page.T "action.edit"}}</span>
+        </a>
+        <form method="post" action="/entries/{{$e.ID}}/delete" hx-post="/entries/{{$e.ID}}/delete"
+              hx-confirm="{{$page.T "entry.delete.confirm"}}">
+          {{template "csrf" $page.CSRFToken}}
+          <button type="submit" class="btn btn-small btn-quiet"
+                  title="{{$page.T "action.delete"}}">
+            <span aria-hidden="true">×</span>
+            <span class="visually-hidden">{{$page.T "action.delete"}}</span>
+          </button>
+        </form>
+      {{end}}
     </td>
   </tr>
 {{end}}

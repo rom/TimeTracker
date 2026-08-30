@@ -406,6 +406,14 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
 	}
 	data.Title = data.Printer.T("backup.title")
 
+	// The screen lists the archives on disk and offers to restore one, and
+	// listing files is not itself an authorised operation - so the screen has to
+	// ask. A client may view their customer, which is what the first call below
+	// checks, and that is not the same question.
+	if err := s.svc.AuthorizeBackup(r.Context()); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	if data.Customers, err = s.svc.Customers(r.Context(), false); err != nil {
 		s.fail(w, r, err)
 		return
@@ -426,6 +434,14 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
 
 // handleDownloadBackup streams a backup to the browser.
 func (s *Server) handleDownloadBackup(w http.ResponseWriter, r *http.Request) {
+	// Asked before a single header is set. The archive streams, so a refusal
+	// discovered inside the writer arrives after the status line and leaves the
+	// caller with a 200 and an empty file - which reads as a broken download
+	// rather than as "you may not".
+	if err := s.svc.AuthorizeBackup(r.Context()); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	opts := s.backupOptions(r)
 
 	filename := "timetracker-backup-" + s.svc.Now().Format("20060102-150405") + ".zip"

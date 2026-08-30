@@ -169,12 +169,41 @@ type BackupOptions struct {
 }
 
 // CreateBackup assembles a backup of the acting user's data.
+// AuthorizeBackup answers whether the actor may take a backup, without building
+// one.
+//
+// Separate from CreateBackup because the download route commits to a response
+// before it writes: it sets the content type and the filename, then streams. A
+// refusal discovered inside the writer arrives after the status line, so the
+// caller gets a 200 and an empty file - which reads as a broken feature rather
+// than as a refusal, and is how the first version of this refusal behaved.
+func (s *Service) AuthorizeBackup(ctx context.Context) error {
+	actor, err := auth.MustUser(ctx)
+	if err != nil {
+		return err
+	}
+	// A backup is an administrative artefact of the instance, not a report. It
+	// carries the catalogue whole - including the customer's negotiated hourly
+	// rate - and "you may back up what you can see" is the wrong rule for
+	// somebody whose whole role is defined by not seeing that
+	// (docs/adr/0008-rbac-model.md). A client's route to their own data is the
+	// export, which is narrowed.
+	//
+	// Found by a test that asked what a client actually receives, rather than by
+	// reading the check: the check below passes for a client, because a client
+	// may view their customer's time.
+	if actor.Role == domain.RoleClient {
+		return fmt.Errorf("%w: a backup is not a client report", ErrForbidden)
+	}
+	return s.authz.Can(ctx, auth.ActionView, listResource(ctx, "time_entry"))
+}
+
 func (s *Service) CreateBackup(ctx context.Context, opts BackupOptions) (Backup, error) {
 	actor, err := auth.MustUser(ctx)
 	if err != nil {
 		return Backup{}, err
 	}
-	if err := s.authz.Can(ctx, auth.ActionView, listResource(ctx, "time_entry")); err != nil {
+	if err := s.AuthorizeBackup(ctx); err != nil {
 		return Backup{}, err
 	}
 

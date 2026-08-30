@@ -12,6 +12,16 @@ the decision.
 
 ### Added
 
+* **The narrowed client projection**, which completes layer 5
+  ([ADR-0008](adr/0008-rbac-model.md)). A `client` user now sees their own
+  customer's completed work - what was done, for how long, by whom - and
+  nothing else. The internal note, the rate, the amount, the currency, the
+  rounding rule, who entered the time on whose behalf, the tags and the
+  attachment count are all removed from the value before it leaves the service
+  layer, so no template, export writer or JSON encoder is ever handed them.
+  Only confirmed, unflagged work reaches them, in the query rather than in a
+  filter afterwards, so the count behind the pager agrees with the rows.
+
 * **Budgets and burn** ([ADR-0035](adr/0035-burn-is-a-projection.md), ASR-028) —
   the last item outstanding from layer 5. A project could carry a cap in hours
   and one in money since the very first migration; nothing set them and nothing
@@ -139,6 +149,21 @@ the decision.
   the ordinary day of somebody whose evenings are routinely busy.
 
 ### Fixed
+
+* **A client could not use the application at all.** `GetUser`, the query that
+  resolves the acting user on every request, did not select
+  `client_customer_id`. Every client arrived with a customer of zero, which the
+  authoriser reads as "scoped to no customer", so the role could sign in and
+  then be refused every screen. One column, and the entire role.
+* **A client could download a backup**, which carries the catalogue whole -
+  including the customer's negotiated hourly rate. The check asked whether the
+  actor may view their customer's time, which a client may; that is not the
+  same question. Backups are now refused to the role, before the response is
+  committed to, so it is a refusal rather than a 200 carrying an empty file.
+* **A client could open the catalogue screen**, which showed that same rate in
+  a table beside forms they could not submit. The administrative screens refuse
+  the role, and the catalogue values are narrowed too - rate, notes, rounding
+  rule and budget are removed from what a client receives.
 
 * **Exports were silently truncated at 1000 entries.** The Entries screen capped
   its rows at a thousand, that cap was part of the filter, and the export handler

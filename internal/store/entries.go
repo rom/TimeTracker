@@ -274,6 +274,12 @@ type EntryFilter struct {
 	Scope Scope
 	// Statuses limits to particular workflow states; empty means all of them.
 	Statuses []domain.EntryStatus
+	// CountingOnly restricts to entries that count towards a total: confirmed,
+	// and not flagged for review. It is the SQL spelling of domain.Counts(), and
+	// exists so a caller that must not see anything provisional - a client
+	// reading their own customer's work - states that once rather than
+	// remembering two conditions.
+	CountingOnly bool
 	// BillableOnly restricts to entries marked billable.
 	BillableOnly bool
 	// Tags narrows to entries carrying all of them. All rather than any: asking
@@ -371,6 +377,11 @@ func (f EntryFilter) buildConditions() (string, []any, SearchMode, error) {
 	if f.CustomerID != 0 {
 		conditions = append(conditions, `p.customer_id = ?`)
 		args = append(args, f.CustomerID)
+	}
+	if f.CountingOnly {
+		// Written as the two conditions the rule is, rather than as a status
+		// list, so the partial indexes match it (ADR-0032).
+		conditions = append(conditions, `e.status = 'confirmed'`, `e.flagged = 0`)
 	}
 	if len(f.Statuses) > 0 {
 		// The placeholder list is built from the *count* of statuses, never from

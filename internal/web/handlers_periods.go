@@ -35,6 +35,9 @@ func (s *Server) handleWithdrawWeek(w http.ResponseWriter, r *http.Request) {
 
 // handleApprovals renders the approval queue.
 func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
+	if s.refuseClient(w, r) {
+		return
+	}
 	data, err := s.newPageData(r, "", "approvals")
 	if err != nil {
 		s.fail(w, r, err)
@@ -121,6 +124,9 @@ func (s *Server) weekParam(r *http.Request) time.Time {
 // absence of a submission rather than one in a particular state - so the cells
 // worth looking at are the ones that would otherwise be blank.
 func (s *Server) handleApprovalReport(w http.ResponseWriter, r *http.Request) {
+	if s.refuseClient(w, r) {
+		return
+	}
 	data, err := s.newPageData(r, "", "approvals")
 	if err != nil {
 		s.fail(w, r, err)
@@ -157,6 +163,9 @@ const defaultReportWeeks = 12
 // catalogue is where a project is set up, this is where somebody asks which
 // engagements are about to run out (docs/adr/0035-burn-is-a-projection.md).
 func (s *Server) handleBudgetReport(w http.ResponseWriter, r *http.Request) {
+	if s.refuseClient(w, r) {
+		return
+	}
 	data, err := s.newPageData(r, "", "approvals")
 	if err != nil {
 		s.fail(w, r, err)

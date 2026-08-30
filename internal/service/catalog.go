@@ -84,7 +84,11 @@ func (s *Service) Customers(ctx context.Context, includeArchived bool) ([]domain
 	if err != nil {
 		return nil, err
 	}
-	return s.db.ListCustomers(ctx, scope, includeArchived)
+	customers, err := s.db.ListCustomers(ctx, scope, includeArchived)
+	if err != nil {
+		return nil, err
+	}
+	return s.narrowCustomers(ctx, customers), nil
 }
 
 // Customer loads one customer.
@@ -98,7 +102,7 @@ func (s *Service) Customer(ctx context.Context, id int64) (domain.Customer, erro
 	}); err != nil {
 		return domain.Customer{}, notFoundFor(err)
 	}
-	return c, nil
+	return s.narrowCustomer(ctx, c), nil
 }
 
 // ---------------------------------------------------------------- projects --
@@ -184,7 +188,11 @@ func (s *Service) Projects(ctx context.Context, customerID int64, includeArchive
 	if err != nil {
 		return nil, err
 	}
-	return s.db.ListProjects(ctx, scope, customerID, includeArchived)
+	projects, err := s.db.ListProjects(ctx, scope, customerID, includeArchived)
+	if err != nil {
+		return nil, err
+	}
+	return s.narrowProjects(ctx, projects), nil
 }
 
 // Project loads one project.
@@ -198,7 +206,7 @@ func (s *Service) Project(ctx context.Context, id int64) (domain.Project, error)
 	}); err != nil {
 		return domain.Project{}, notFoundFor(err)
 	}
-	return p, nil
+	return s.narrowProject(ctx, p), nil
 }
 
 // ------------------------------------------------------------- assignments --

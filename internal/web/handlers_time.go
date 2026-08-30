@@ -169,6 +169,9 @@ type pageData struct {
 	// InboxCount badges the navigation, because a proposal nobody looks at is
 	// unbilled work.
 	InboxCount int
+	// IsClient trims the navigation to the one screen a client has. The data is
+	// narrowed whatever this says; hiding a link is courtesy, not enforcement.
+	IsClient bool
 }
 
 // T translates a key in the page's language. Templates call it directly, which
@@ -285,6 +288,7 @@ func (s *Server) newPageData(r *http.Request, title, active string) (pageData, e
 		Nav:             domain.NavPosition(settings.NavPosition).OrDefault(),
 		Rounding:        service.RoundingPresets(),
 		InboxCount:      inboxCount,
+		IsClient:        user.Role == domain.RoleClient,
 		Zone:            userLocation(r),
 	}, nil
 }
@@ -327,6 +331,14 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 // handleToday renders the day view, defaulting to today.
 func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
+	// A client has no timesheet of their own, so this screen has nothing to show
+	// them. Sent to the one they do have rather than refused: this is also the
+	// route "/" lands on, and answering a client's front door with 403 is a
+	// hostile way to say "your page is over there".
+	if user, ok := auth.UserFrom(r.Context()); ok && user.Role == domain.RoleClient {
+		http.Redirect(w, r, "/entries", http.StatusSeeOther)
+		return
+	}
 	date := s.dateParam(r, "date")
 
 	data, err := s.newPageData(r, "Today", "today")

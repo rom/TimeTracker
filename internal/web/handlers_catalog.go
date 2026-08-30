@@ -9,6 +9,9 @@ import (
 // handleAdmin renders the catalogue administration screen: customers, projects
 // and assignments, with their colours and icons.
 func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
+	if s.refuseClient(w, r) {
+		return
+	}
 	data, err := s.newPageData(r, "Admin", "admin")
 	if err != nil {
 		s.fail(w, r, err)

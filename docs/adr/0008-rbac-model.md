@@ -44,6 +44,30 @@ filtered view of the full record — internal notes, cost rates, and colleague
 identities are removed before the data leaves the service layer, so a template bug
 cannot leak them.
 
+**Implemented in 2026-08, and the gap between writing that paragraph and making
+it true is worth recording.** The scope existed and the role existed; the
+projection did not, and neither did any way for a client to read anything. Three
+things were found by asking what a client actually receives, rather than by
+reading the checks:
+
+* `GetUser` — the query that resolves the acting user on *every request* — did
+  not select `client_customer_id`. Every client arrived with a customer of zero,
+  which the authoriser reads as "scoped to no customer" and refuses, so the role
+  could sign in and then be refused every screen. One column, and the entire
+  role.
+* A client could **download a backup**. The check on it asked whether the actor
+  may view their customer's time, which a client may; the archive came back
+  carrying the catalogue, including the customer's negotiated hourly rate.
+* A client could open the **catalogue screen**, which showed that same rate in a
+  table, beside forms to create and archive records they could not submit.
+
+The lesson is the one the paragraph above already implies and did not enforce: a
+permission check answers the question it was asked. "May this actor view this
+customer's time" is not "may this actor have everything a backup contains". The
+projection is now applied to entries, customers and projects; a source-level test
+(`internal/service/architecture_test.go`) fails the build if a new service method
+returns entries without it.
+
 ## Consequences
 
 **Positive**
