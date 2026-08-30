@@ -17,6 +17,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -463,19 +464,36 @@ func (c Config) validate() error {
 var isWindows = func() bool { return runtime.GOOS == "windows" }
 
 // isLoopback reports whether the address binds only the loopback interface.
+//
+// This is the predicate behind the refusal that keeps an unauthenticated local
+// instance off the network, so it errs towards "no". Two cases it used to get
+// wrong, both found by a test that listed the addresses people actually type:
+//
+//   - an empty host. ":8420" is a perfectly ordinary way to write a listen
+//     address and it binds *every* interface, so answering yes to it published
+//     an unauthenticated timesheet to the whole network in local mode.
+//   - a host merely beginning "127.". The old check was a string prefix, which
+//     makes 127.0.0.1.example.com - a name somebody else can register and point
+//     wherever they like - look like loopback.
+//
+// So the host is parsed as an address rather than matched as text, and a name is
+// only accepted when it is literally localhost.
 func isLoopback(addr string) bool {
-	host := addr
-	if i := strings.LastIndex(addr, ":"); i >= 0 {
-		host = addr[:i]
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		// No port, or something malformed: treat the whole string as the host
+		// and let the checks below decide.
+		host = strings.Trim(addr, "[]")
 	}
-	host = strings.Trim(host, "[]")
-	switch host {
-	case "", "localhost", "127.0.0.1", "::1":
-		return true
-	default:
-		// Any 127.x.x.x address is loopback.
-		return strings.HasPrefix(host, "127.")
+	if host == "" {
+		return false
 	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	// A name, which could resolve anywhere. localhost is the one exception, and
+	// it is an exception because every platform pins it to the loopback address.
+	return host == "localhost"
 }
 
 // DefaultDataDir returns the conventional per-platform location for application

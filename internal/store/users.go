@@ -20,17 +20,23 @@ import (
 // hash cannot end up in a template or a JSON response by accident: the type the
 // rest of the application handles simply has no field for it.
 type Account struct {
-	User          domain.User
-	PasswordHash  string
-	OIDCSubject   string
-	OIDCIssuer    string
-	TOTPSecret    string
+	User         domain.User
+	PasswordHash string
+	OIDCSubject  string
+	OIDCIssuer   string
+	TOTPSecret   string
+	// PasswordSetAt is when the hash was last replaced. Written by
+	// CreateAccount and SetPasswordHash, and selected back with the rest of the
+	// account: a field the writes maintain and the reads never return is a trap
+	// for whoever next writes a rule about password age, since it would be
+	// empty for every account they looked at.
 	PasswordSetAt string
 }
 
 const userSelect = `
 	SELECT id, display_name, email, role, time_zone, theme, language, active, created_at,
-	       password_hash, oidc_subject, oidc_issuer, totp_secret, client_customer_id
+	       password_hash, oidc_subject, oidc_issuer, totp_secret, client_customer_id,
+	       password_set_at
 	FROM users`
 
 // AccountByEmail loads an account for a password login.
@@ -68,7 +74,8 @@ func scanAccount(row rowScanner) (Account, error) {
 	var active int
 	err := row.Scan(&a.User.ID, &a.User.DisplayName, &a.User.Email, &role,
 		&a.User.TimeZone, &a.User.Theme, &a.User.Language, &active, &createdAt,
-		&a.PasswordHash, &a.OIDCSubject, &a.OIDCIssuer, &a.TOTPSecret, &a.User.ClientCustomerID)
+		&a.PasswordHash, &a.OIDCSubject, &a.OIDCIssuer, &a.TOTPSecret, &a.User.ClientCustomerID,
+		&a.PasswordSetAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Account{}, ErrNotFound
 	}

@@ -133,9 +133,14 @@ coverage: ## Produce a coverage profile and an HTML report
 # so that a regression fails the build while ordinary work does not.
 #
 # Deliberately absent: internal/web, whose coverage is dominated by template
-# rendering that the HTTP tests exercise without the counter noticing, and
-# internal/config, which is mostly flag declarations.
-COVERAGE_FLOORS = domain:66 service:57 store:30 export:85 blob:70 auth:35 archive:75 preview:80
+# rendering that the HTTP tests exercise without the counter noticing.
+#
+# internal/config used to be absent too, on the grounds that it is mostly flag
+# declarations. It is not: it decides what the process listens on and whether it
+# will serve a login form in clear, and the tests that raised it from 14% to 92%
+# found two addresses that were treated as loopback and are not.
+COVERAGE_FLOORS = domain:66 service:57 store:48 export:85 blob:70 auth:80 \
+                  archive:75 preview:80 config:88
 
 .PHONY: coverage-check
 coverage-check: ## Fail if a critical package drops below its coverage floor

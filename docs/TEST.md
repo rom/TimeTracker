@@ -79,6 +79,9 @@ row that says "fixed a bug in exports" is a row nobody can check.
 
 | Symptom | Cause |
 |---|---|
+| `--addr=:8420` in local mode bound every interface | the loopback check answered yes to an empty host, so an unauthenticated instance was reachable from the network (`internal/config`) |
+| a host named `127.0.0.1.example.com` counted as loopback | the check was a string prefix rather than a parsed address, so a name somebody else can register looked local (`internal/config`) |
+| every account came back with an empty `PasswordSetAt` | the column was written by two statements and selected by none, so a rule about password age would have read blank for everybody (`internal/store`) |
 | a completed customer form rejected as empty | `ParseForm` does not parse a multipart body but does set `r.Form`, so `FormValue` never fell back |
 | every screen with entries returned 500 | a fragment rendered inside a `range` lost `$`, and the test logger hid the error |
 | the day view went blank | a query was not passed the actor's scope, which correctly renders as "match nothing" |
@@ -159,14 +162,32 @@ remove it.
 enforces per-package floors and runs as part of `make check`.
 
 The floors are on the packages where a gap is expensive - the domain rules, the
-service layer that enforces authorisation and audit, the store, the exporters and
-the blob store. There is deliberately **no global percentage target**: chasing one
-produces tests for trivial accessors while an authorisation branch goes
-unexercised. The floors sit below the current figures rather than at them, so
-ordinary work does not fail the build - the gap is a few points on most packages
-and closer to ten on `service` and `blob`, which means a real regression there
-can pass. Raising them to just under the current numbers is the obvious tightening
-and has not been done. Lowering one is expected to come with a note saying why.
+service layer that enforces authorisation and audit, the store, the exporters,
+the blob store, the authentication code and the configuration. There is
+deliberately **no global percentage target**: chasing one produces tests for
+trivial accessors while an authorisation branch goes unexercised. The floors sit
+below the current figures rather than at them, so ordinary work does not fail the
+build - the gap is a few points on most packages and closer to ten on `service`
+and `blob`, which means a real regression there can pass. Lowering one is
+expected to come with a note saying why.
+
+Three packages moved a long way when they were finally looked at, and each move
+found something:
+
+* `auth` 38% → 86%. The whole OIDC flow was untested - every rule in
+  `validateIDToken`, which is the difference between an ID token and an
+  unverified assertion by whoever sent it. It is now exercised against a
+  provider the test stands up and signs tokens with, including the tokens an
+  attacker would mint: `alg: none`, HS256, a forged signature under a real key
+  id, a token for another client of the same provider, an expired one, one
+  replayed from a different login.
+* `config` 14% → 93%. It had been excluded as "mostly flag declarations". It
+  decides what the process listens on: the tests found `:8420` and
+  `127.0.0.1.example.com` both treated as loopback, either of which puts an
+  unauthenticated instance on the network.
+* `store` 34% → 50%. Sessions, accounts, attachments, timesheet periods and
+  search had no store-level tests at all, which is where the SQL semantics live -
+  what a delete matches, what the prune sweeps, which columns a read selects.
 
 `internal/web` is deliberately excluded: its coverage is dominated by template
 rendering that the HTTP tests exercise thoroughly without the statement counter
