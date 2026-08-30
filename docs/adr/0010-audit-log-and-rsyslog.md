@@ -79,12 +79,19 @@ tested.
   now goes through `Service.mutate`, which takes the change as a function of the
   transaction.
 
-  What remains outside that arrangement is the set of changes that are not a
-  single database write: a restore that rebuilds the catalogue record by record,
-  a CSV or calendar import, an attachment whose bytes are already on disk. Each
-  needs an answer of its own — a restore, for instance, is already a sequence of
-  audited creates — and none of them should be quietly assumed to be atomic
-  because this ADR says mutations are.
+  The importers and attachments followed, each needing an answer of its own. A
+  CSV import prepares every row and then writes them all, with their audit rows
+  and the summary, in one transaction ([ADR-0022](0022-two-pass-csv-import.md)).
+  A calendar import does the same while keeping its per-meeting refusals, which
+  happen during preparation, before anything is written. An attachment commits
+  its row and audit entry together, with the bytes written before the
+  transaction and removed after it ([ADR-0013](0013-attachment-storage.md)).
+
+  What remains outside the arrangement is a restore, which rebuilds the
+  catalogue record by record and is already a sequence of individually audited
+  creates, and the account and timesheet paths. None of them should be quietly
+  assumed to be atomic because this ADR says mutations are; the injection test
+  in `internal/service/audit_test.go` is what settles it for any given path.
 
 ## Alternatives considered
 

@@ -211,14 +211,45 @@ type EntryInput struct {
 
 // CreateEntry records time that has already happened.
 func (s *Service) CreateEntry(ctx context.Context, in EntryInput) (domain.TimeEntry, error) {
-	actor, err := auth.MustUser(ctx)
+	entry, assignment, err := s.prepareEntry(ctx, in)
 	if err != nil {
 		return domain.TimeEntry{}, err
 	}
 
-	assignment, err := s.db.GetAssignment(ctx, in.AssignmentID)
+	var created domain.TimeEntry
+	err = s.db.InTx(ctx, func(tx *sql.Tx) error {
+		var txErr error
+		created, txErr = s.writeEntryTx(ctx, tx, entry, assignment)
+		return txErr
+	})
 	if err != nil {
 		return domain.TimeEntry{}, err
+	}
+
+	s.auditLog(ctx, "time_entry.create", "time_entry", created.ID)
+	return s.db.GetEntry(ctx, created.ID)
+}
+
+// prepareEntry does everything CreateEntry does before it writes anything.
+//
+// Split out for the importers. A CSV or a calendar writes many entries at once
+// and has to do it in one transaction - all of them or none - and that is only
+// possible if the deciding is separable from the writing. Everything here reads
+// or computes: resolve the actor and the subject, authorise, build the entry,
+// validate it, refuse a week that has been submitted, price it.
+//
+// It is also where an importer's per-row refusals come from. A meeting that
+// lands in a locked week is refused here, before the transaction opens, so an
+// importer can skip that row and still write the rest atomically.
+func (s *Service) prepareEntry(ctx context.Context, in EntryInput) (domain.TimeEntry, domain.Assignment, error) {
+	actor, err := auth.MustUser(ctx)
+	if err != nil {
+		return domain.TimeEntry{}, domain.Assignment{}, err
+	}
+
+	assignment, err := s.db.GetAssignment(ctx, in.AssignmentID)
+	if err != nil {
+		return domain.TimeEntry{}, domain.Assignment{}, err
 	}
 
 	// Whose time is this? Proxy entries name a different subject, and are subject
@@ -238,13 +269,13 @@ func (s *Service) CreateEntry(ctx context.Context, in EntryInput) (domain.TimeEn
 		Type: "time_entry", OwnerID: subjectID,
 		ProjectID: assignment.ProjectID, CustomerID: assignment.CustomerID,
 	}); err != nil {
-		return domain.TimeEntry{}, err
+		return domain.TimeEntry{}, domain.Assignment{}, err
 	}
 
 	subject := actor
 	if subjectID != actor.ID {
 		if subject, err = s.db.GetUser(ctx, subjectID); err != nil {
-			return domain.TimeEntry{}, err
+			return domain.TimeEntry{}, domain.Assignment{}, err
 		}
 	}
 
@@ -265,39 +296,44 @@ func (s *Service) CreateEntry(ctx context.Context, in EntryInput) (domain.TimeEn
 	applyEnd(&entry, in)
 
 	if err := entry.Validate(); err != nil {
-		return domain.TimeEntry{}, err
+		return domain.TimeEntry{}, domain.Assignment{}, err
 	}
 	// Adding work to a week somebody has already declared finished would change
 	// a figure that has been submitted or approved.
 	if err := s.checkPeriodOpen(ctx, entry.UserID, entry.StartedAt); err != nil {
-		return domain.TimeEntry{}, err
+		return domain.TimeEntry{}, domain.Assignment{}, err
 	}
 	if err := s.applyBillingTo(ctx, &entry); err != nil {
+		return domain.TimeEntry{}, domain.Assignment{}, err
+	}
+	return entry, assignment, nil
+}
+
+// writeEntryTx inserts a prepared entry and its audit row on the caller's
+// transaction.
+//
+// The two are one statement pair by construction rather than by convention: a
+// caller cannot write the entry without also being handed the audit write, which
+// is what ASR-006 asks for. The operational log line is the caller's to emit,
+// after the commit.
+func (s *Service) writeEntryTx(ctx context.Context, tx *sql.Tx, entry domain.TimeEntry, assignment domain.Assignment) (domain.TimeEntry, error) {
+	created, err := createEntryTx(ctx, tx, entry)
+	if err != nil {
 		return domain.TimeEntry{}, err
 	}
-
-	var created domain.TimeEntry
-	err = s.db.InTx(ctx, func(tx *sql.Tx) error {
-		var txErr error
-		if created, txErr = createEntryTx(ctx, tx, entry); txErr != nil {
-			return txErr
-		}
-		onBehalfOf := int64(0)
-		if entry.IsProxy() {
-			onBehalfOf = entry.UserID
-		}
-		return s.audit(ctx, tx, "time_entry.create", "time_entry", created.ID, onBehalfOf, map[string]any{
-			"assignment":       assignment.Label(),
-			"duration_seconds": created.DurationSeconds,
-			"status":           string(created.Status),
-		})
+	onBehalfOf := int64(0)
+	if entry.IsProxy() {
+		onBehalfOf = entry.UserID
+	}
+	err = s.audit(ctx, tx, "time_entry.create", "time_entry", created.ID, onBehalfOf, map[string]any{
+		"assignment":       assignment.Label(),
+		"duration_seconds": created.DurationSeconds,
+		"status":           string(created.Status),
 	})
 	if err != nil {
 		return domain.TimeEntry{}, err
 	}
-
-	s.auditLog(ctx, "time_entry.create", "time_entry", created.ID)
-	return s.db.GetEntry(ctx, created.ID)
+	return created, nil
 }
 
 // UpdateEntry saves an edit to an existing entry.

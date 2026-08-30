@@ -16,8 +16,20 @@ import (
 
 // CreateAttachment records an uploaded file.
 func (db *DB) CreateAttachment(ctx context.Context, a domain.Attachment) (domain.Attachment, error) {
+	return CreateAttachmentTx(ctx, db.write, a)
+}
+
+// CreateAttachmentTx records an uploaded file on the caller's executor, so the
+// row and its audit entry can commit together.
+//
+// The bytes are not part of this. They are written to the blob store first and
+// content-addressed, so a transaction that rolls back leaves a file nothing
+// references - which the orphan sweep collects, and which is harmless in the
+// meantime. The reverse order would leave a row pointing at bytes that are not
+// there, which is not harmless at all.
+func CreateAttachmentTx(ctx context.Context, db Execer, a domain.Attachment) (domain.Attachment, error) {
 	now := time.Now()
-	res, err := db.write.ExecContext(ctx, `
+	res, err := db.ExecContext(ctx, `
 		INSERT INTO attachments (owner_type, owner_id, sha256, filename, mime,
 		                         size_bytes, uploaded_by, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -99,19 +111,33 @@ func (db *DB) DeleteAttachment(ctx context.Context, id int64) (hash string, orph
 	}
 
 	err = db.InTx(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM attachments WHERE id = ?`, id); err != nil {
-			return err
-		}
-		var remaining int
-		if err := tx.QueryRowContext(ctx,
-			`SELECT COUNT(*) FROM attachments WHERE sha256 = ?`, attachment.SHA256).
-			Scan(&remaining); err != nil {
-			return err
-		}
-		orphaned = remaining == 0
-		return nil
+		orphaned, err = DeleteAttachmentTx(ctx, tx, id, attachment.SHA256)
+		return err
 	})
 	return attachment.SHA256, orphaned, err
+}
+
+// DeleteAttachmentTx removes one reference on the caller's transaction and
+// reports whether the blob is now unreferenced.
+//
+// The hash is passed in rather than read here, because the caller has already
+// loaded the attachment to authorise against its owning record - and a read
+// inside the transaction would be a second lookup of a row this is about to
+// delete.
+//
+// Whether the blob is orphaned is decided inside the transaction and acted on
+// outside it, after the commit. Removing the bytes first would leave the
+// remaining row pointing at nothing if the transaction then rolled back.
+func DeleteAttachmentTx(ctx context.Context, tx *sql.Tx, id int64, hash string) (bool, error) {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM attachments WHERE id = ?`, id); err != nil {
+		return false, err
+	}
+	var remaining int
+	if err := tx.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM attachments WHERE sha256 = ?`, hash).Scan(&remaining); err != nil {
+		return false, err
+	}
+	return remaining == 0, nil
 }
 
 // ReferencedHashes returns every blob hash still in use, for the orphan sweep.

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"strings"
@@ -294,7 +295,20 @@ func (s *Service) ImportCalendar(ctx context.Context, r io.Reader, selected map[
 		return CalendarImportResult{}, fmt.Errorf("%w: %s", ErrValidation, preview.Fatal)
 	}
 
+	// Deciding first, writing second.
+	//
+	// The per-meeting tolerance this import is built around happens here, where
+	// nothing has been written yet: a cancelled meeting, a locked week, an
+	// assignment the actor may not use are all refused by prepareEntry, and each
+	// is reported against the meeting it concerns. What is left is a list of
+	// entries that will write, and those go in together - so the audit rows and
+	// the entries commit as one, and a database failure part-way through does
+	// not leave a half-imported calendar with a summary claiming otherwise.
 	result := CalendarImportResult{}
+	prepared := make([]domain.TimeEntry, 0, len(preview.Rows))
+	assignments := make([]domain.Assignment, 0, len(preview.Rows))
+	var seconds int64
+
 	for _, row := range preview.Rows {
 		assignmentID, wanted := selected[row.UID]
 		if !wanted || assignmentID == 0 {
@@ -312,30 +326,52 @@ func (s *Service) ImportCalendar(ctx context.Context, r io.Reader, selected map[
 		if note != "" {
 			entryNote = strings.TrimSpace(note + " " + row.Summary)
 		}
-		if _, err := s.CreateEntry(ctx, EntryInput{
+		entry, assignment, prepErr := s.prepareEntry(ctx, EntryInput{
 			AssignmentID:    assignmentID,
 			StartedAt:       row.Start,
 			DurationSeconds: row.Seconds,
 			Note:            entryNote,
 			Billable:        true,
-		}); err != nil {
+		})
+		if prepErr != nil {
 			// A locked week, an archived assignment: reported against the
 			// meeting it concerns rather than failing the whole import.
 			result.Skipped = append(result.Skipped,
-				fmt.Sprintf("%s: %s", row.Summary, err.Error()))
+				fmt.Sprintf("%s: %s", row.Summary, prepErr.Error()))
 			continue
 		}
-		result.Created++
-		result.Seconds += row.Seconds
+		prepared = append(prepared, entry)
+		assignments = append(assignments, assignment)
+		seconds += row.Seconds
 	}
 
-	if err := s.recordAudit(ctx, "calendar.import", "time_entry", 0, map[string]any{
-		"created": result.Created,
-		"seconds": result.Seconds,
-		"skipped": len(result.Skipped),
-	}); err != nil {
-		return result, err
+	if len(prepared) == 0 {
+		// Nothing to write, so nothing to record. An audit row saying an import
+		// created nothing is noise in the one table that should be all signal.
+		return result, nil
 	}
+
+	err = s.db.InTx(ctx, func(tx *sql.Tx) error {
+		created := 0
+		for i, entry := range prepared {
+			if _, txErr := s.writeEntryTx(ctx, tx, entry, assignments[i]); txErr != nil {
+				return txErr
+			}
+			created++
+		}
+		return s.audit(ctx, tx, "calendar.import", "time_entry", 0, 0, map[string]any{
+			"created": created,
+			"seconds": seconds,
+			"skipped": len(result.Skipped),
+		})
+	})
+	if err != nil {
+		return CalendarImportResult{}, err
+	}
+
+	result.Created = len(prepared)
+	result.Seconds = seconds
+	s.auditLog(ctx, "calendar.import", "time_entry", 0)
 	return result, nil
 }
 

@@ -66,11 +66,20 @@ Supporting decisions:
 * All-or-nothing means one bad row blocks 399 good ones. That is the intent, and
   the preview makes the bad row easy to find, but it will frustrate someone with
   a large messy file.
-* The import runs row by row rather than in one transaction, so a failure
-  part-way through leaves earlier rows written. The preview makes this
-  vanishingly unlikely - every row was already validated - but it is not
-  impossible, and a genuine single-transaction import is the improvement this
-  design still wants.
+* ~~The import runs row by row rather than in one transaction, so a failure
+  part-way through leaves earlier rows written.~~ **Done.** Every row is prepared
+  first - which is where a refusal names a line in the user's spreadsheet - and
+  the writes then happen in one transaction, together with each row's audit
+  record and the summary row that says how many were imported. A failure part-way
+  through now leaves nothing behind, and the summary cannot claim an import that
+  did not happen. `TestAnImportThatFailsPartWayImportsNothing` injects a failure
+  against the third row of three.
+* The catalogue records created for an import are not part of that transaction.
+  Creating a customer is an audited change of its own, and nesting transactions
+  on the single write connection would deadlock. It is also the right split: they
+  are what the preview listed and the user agreed to, they are matched by name,
+  and a re-run after a failed import reuses them rather than making a second set.
+  What must never be partial is the time.
 
 ## Alternatives considered
 

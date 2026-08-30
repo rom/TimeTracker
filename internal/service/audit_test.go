@@ -150,6 +150,11 @@ func TestEveryAuditedMutationRollsBackTogether(t *testing.T) {
 	for _, mutation := range []struct {
 		name  string
 		table string
+		// setup runs before the failure is injected, for a case that needs
+		// something to exist first - an entry to attach a receipt to. It cannot
+		// be part of do, because by then every audit write fails and the setup
+		// would be the thing that failed.
+		setup func(t *testing.T, f *fixture)
 		do    func(t *testing.T, f *fixture) error
 	}{
 		{
@@ -224,9 +229,65 @@ func TestEveryAuditedMutationRollsBackTogether(t *testing.T) {
 				return f.svc.SetProjectArchived(f.ctx, 1, true)
 			},
 		},
+		{
+			// Every row of the file, or none of it. The summary row saying how
+			// many were imported is written in the same transaction as the rows
+			// it counts, which is the only way it can be true.
+			name:  "import a CSV of hours",
+			table: "time_entries",
+			do: func(t *testing.T, f *fixture) error {
+				_, err := f.svc.ImportTimeCSV(f.ctx, strings.NewReader(
+					"date,assignment,hours\n2026-03-16,Development,1.5\n2026-03-17,Development,2\n"), false)
+				return err
+			},
+		},
+		{
+			name:  "import a calendar",
+			table: "time_entries",
+			do: func(t *testing.T, f *fixture) error {
+				file := calendarFile(f.now, vevent("x", "A meeting", "080000", "090000", ""))
+				_, err := f.svc.ImportCalendar(f.ctx, strings.NewReader(file),
+					map[string]int64{"x": f.assignment.ID}, "")
+				return err
+			},
+		},
+		{
+			// The bytes are deliberately not in the transaction: they are
+			// content-addressed and written first, so a rollback leaves a file
+			// nothing references rather than a row pointing at nothing.
+			name:  "attach a receipt",
+			table: "attachments",
+			setup: func(t *testing.T, f *fixture) {
+				withBlobs(t, f)
+				mustCreate(t, f, f.now, 3600)
+			},
+			do: func(t *testing.T, f *fixture) error {
+				_, err := f.svc.Attach(f.ctx, "time_entry", 1,
+					"receipt.txt", strings.NewReader("bytes"))
+				return err
+			},
+		},
+		{
+			name:  "delete a receipt",
+			table: "attachments",
+			setup: func(t *testing.T, f *fixture) {
+				withBlobs(t, f)
+				entry := mustCreate(t, f, f.now, 3600)
+				if _, err := f.svc.Attach(f.ctx, "time_entry", entry.ID,
+					"receipt.txt", strings.NewReader("bytes")); err != nil {
+					t.Fatalf("attach: %v", err)
+				}
+			},
+			do: func(t *testing.T, f *fixture) error {
+				return f.svc.DeleteAttachment(f.ctx, 1)
+			},
+		},
 	} {
 		t.Run(mutation.name, func(t *testing.T) {
 			f := newFixture(t)
+			if mutation.setup != nil {
+				mutation.setup(t, f)
+			}
 			before := countRows(t, f, mutation.table, "")
 
 			breakInserts(t, f, "audit_events")
@@ -244,6 +305,9 @@ func TestEveryAuditedMutationRollsBackTogether(t *testing.T) {
 			// the count is not the evidence: the value is.
 			rolledBack := after == before
 			switch mutation.name {
+			case "delete a receipt":
+				// A delete that rolled back leaves the row where it was.
+				rolledBack = after == before
 			case "rename a customer":
 				rolledBack = customerName(t, f, 1) != "Renamed"
 			case "archive a customer":
@@ -414,5 +478,138 @@ func TestNothingUpdatesOrDeletesAnAuditRow(t *testing.T) {
 	}
 	if !deleted {
 		t.Error("deleting an entry left no audit row")
+	}
+}
+
+// breakInsertsWhen installs a trigger that aborts inserts into a table only for
+// the rows matching a condition, so a failure can be injected part-way through a
+// batch rather than at the start of it.
+func breakInsertsWhen(t *testing.T, f *fixture, table, when string) {
+	t.Helper()
+
+	err := f.db.InTx(context.Background(), func(tx *sql.Tx) error {
+		_, execErr := tx.ExecContext(context.Background(),
+			`CREATE TRIGGER break_`+table+`_when BEFORE INSERT ON `+table+`
+			 FOR EACH ROW WHEN `+when+`
+			 BEGIN SELECT RAISE(ABORT, 'injected failure'); END`)
+		return execErr
+	})
+	if err != nil {
+		t.Fatalf("install the conditional failure on %s: %v", table, err)
+	}
+	t.Cleanup(func() {
+		_ = f.db.InTx(context.Background(), func(tx *sql.Tx) error {
+			_, execErr := tx.ExecContext(context.Background(),
+				`DROP TRIGGER IF EXISTS break_`+table+`_when`)
+			return execErr
+		})
+	})
+}
+
+// TestAnImportThatFailsPartWayImportsNothing.
+//
+// ADR-0022 decided that a CSV import writes every valid row or none, on the
+// grounds that 340 rows of 400 leaves somebody with a reconciliation problem
+// rather than a timesheet. For a long time that was the intention rather than
+// the mechanism: the rows were written one at a time, each in its own
+// transaction, and the ADR said so in its consequences - "a genuine
+// single-transaction import is the improvement this design still wants".
+//
+// This is that improvement, asserted. The failure is injected against the third
+// row specifically, so the first two have already been written when it happens.
+func TestAnImportThatFailsPartWayImportsNothing(t *testing.T) {
+	f := newFixture(t)
+
+	const file = "date,assignment,hours,note\n" +
+		"2026-03-16,Development,1.5,first\n" +
+		"2026-03-17,Development,2,second\n" +
+		"2026-03-18,Development,1,the-one-that-fails\n"
+
+	breakInsertsWhen(t, f, "time_entries", "NEW.note = 'the-one-that-fails'")
+
+	imported, err := f.svc.ImportTimeCSV(f.ctx, strings.NewReader(file), false)
+	if err == nil {
+		t.Fatal("an import whose third row could not be written reported success")
+	}
+	if !strings.Contains(err.Error(), "injected failure") {
+		t.Fatalf("the import failed for the wrong reason: %v", err)
+	}
+	if imported != 0 {
+		t.Errorf("the import reported %d rows written after failing", imported)
+	}
+
+	if rows := countRows(t, f, "time_entries", ""); rows != 0 {
+		t.Errorf("%d of the earlier rows survived a failed import. All or nothing "+
+			"is the whole design (ADR-0022): a partial import leaves somebody "+
+			"comparing two sources row by row.", rows)
+	}
+	// And no summary row claiming an import that did not happen.
+	if rows := countRows(t, f, "audit_events", "action = ?", "time_entry.import"); rows != 0 {
+		t.Errorf("the trail records %d imports that did not happen", rows)
+	}
+}
+
+// TestAFailedAttachmentLeavesOnlyAnOrphanedFile.
+//
+// The bytes are written to the blob store before the row, deliberately: they are
+// content-addressed, so a crash between the two leaves a file nothing references
+// rather than a row pointing at nothing. That ordering means a rolled-back
+// attachment leaves the bytes on disk, and the orphan sweep is what collects
+// them - which is only true if the sweep can actually see them.
+func TestAFailedAttachmentLeavesOnlyAnOrphanedFile(t *testing.T) {
+	f := withBlobs(t, newFixture(t))
+	entry := mustCreate(t, f, f.now, 3600)
+
+	breakInserts(t, f, "audit_events")
+
+	if _, err := f.svc.Attach(f.ctx, "time_entry", entry.ID,
+		"receipt.txt", strings.NewReader("some bytes")); err == nil {
+		t.Fatal("attaching a file succeeded with the audit write failing")
+	}
+	if rows := countRows(t, f, "attachments", ""); rows != 0 {
+		t.Errorf("%d attachment rows survived a failed audit write", rows)
+	}
+
+	// The sweep is the other half of the arrangement: without it, the bytes
+	// would sit on disk forever with nothing pointing at them.
+	swept, err := f.svc.SweepBlobs(context.Background())
+	if err != nil {
+		t.Fatalf("sweep: %v", err)
+	}
+	if swept != 1 {
+		t.Errorf("the sweep collected %d files, want the one the rollback orphaned", swept)
+	}
+}
+
+// TestDeletingAnAttachmentRemovesTheBytesOnlyAfterTheRowIsGone.
+//
+// The order matters in both directions. The row and its audit entry commit
+// together; the bytes go afterwards, because removing them first would leave any
+// other row sharing that file - content addressing means several records can -
+// pointing at nothing.
+func TestDeletingAnAttachmentRemovesTheBytesOnlyAfterTheRowIsGone(t *testing.T) {
+	f := withBlobs(t, newFixture(t))
+	entry := mustCreate(t, f, f.now, 3600)
+
+	attachment, err := f.svc.Attach(f.ctx, "time_entry", entry.ID,
+		"receipt.txt", strings.NewReader("some bytes"))
+	if err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+
+	breakInserts(t, f, "audit_events")
+
+	if err := f.svc.DeleteAttachment(f.ctx, attachment.ID); err == nil {
+		t.Fatal("deleting an attachment succeeded with the audit write failing")
+	}
+	if rows := countRows(t, f, "attachments", ""); rows != 1 {
+		t.Errorf("the attachment row is gone after a failed audit write")
+	}
+
+	// The bytes are still there, which is what makes the surviving row mean
+	// something: a row pointing at a file that was already deleted would be
+	// worse than either half alone.
+	if _, _, err := f.svc.OpenAttachment(f.ctx, attachment.ID); err != nil {
+		t.Errorf("the file was removed for a deletion that rolled back: %v", err)
 	}
 }

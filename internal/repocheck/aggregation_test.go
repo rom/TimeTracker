@@ -155,8 +155,9 @@ func TestExemptAggregationsAreLive(t *testing.T) {
 var exemptGoTotals = map[string]string{
 	"ParseTimeCSV": "totals rows parsed from a file that has not been imported " +
 		"yet; they are not entries and have no status",
-	"ParseCalendar":  "as ParseTimeCSV, for a calendar being previewed",
-	"ImportCalendar": "totals what this import just created, all of it confirmed",
+	"ParseCalendar": "as ParseTimeCSV, for a calendar being previewed",
+	"ImportCalendar": "totals the meetings it is about to write, all of them " +
+		"confirmed, in the same transaction that writes them",
 	"buildTimeline": "measures what falls outside the visible window of the day " +
 		"screen, which deliberately shows provisional entries - an arrow that " +
 		"ignored them would point at empty space",
@@ -205,8 +206,14 @@ func TestEveryGoTotalExcludesUnacceptedTime(t *testing.T) {
 	}
 }
 
-// accumulatesAQuantity reports whether the body does `x.Something += y` where
-// Something is a duration or an amount.
+// accumulatesAQuantity reports whether the body adds up a duration or an amount.
+//
+// Both sides of the `+=` are looked at. `report.TotalSeconds += x` is the
+// obvious shape, but `seconds += row.Seconds` accumulates into a local and is
+// just as much a total - and that is not a hypothetical: a refactor of the
+// calendar import turned the first shape into the second, and this scan went
+// quiet about a function it had been watching until the exemption list noticed
+// it had stopped being seen at all.
 func accumulatesAQuantity(fn *ast.FuncDecl) bool {
 	var found bool
 	ast.Inspect(fn.Body, func(node ast.Node) bool {
@@ -214,8 +221,8 @@ func accumulatesAQuantity(fn *ast.FuncDecl) bool {
 		if !ok || assign.Tok.String() != "+=" {
 			return true
 		}
-		for _, target := range assign.Lhs {
-			ast.Inspect(target, func(inner ast.Node) bool {
+		for _, side := range append(append([]ast.Expr{}, assign.Lhs...), assign.Rhs...) {
+			ast.Inspect(side, func(inner ast.Node) bool {
 				if selector, ok := inner.(*ast.SelectorExpr); ok && accumulatedFields[selector.Sel.Name] {
 					found = true
 				}
