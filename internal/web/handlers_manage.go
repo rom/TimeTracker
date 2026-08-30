@@ -52,8 +52,18 @@ func (s *Server) handleUpdateCustomer(w http.ResponseWriter, r *http.Request) {
 	existing.Currency = strings.ToUpper(r.FormValue("currency"))
 	existing.ColourKey = r.FormValue("colour_key")
 	existing.Icon = r.FormValue("icon")
-	existing.Notes = r.FormValue("notes")
 	existing.RateMinor = rate
+	// Only when the form carries the field. No screen renders the internal
+	// notes today - they arrive through a restore or an import - so reading the
+	// value unconditionally meant every edit wrote an empty string over them,
+	// and correcting a spelling mistake in a customer's name silently deleted
+	// whatever had been written about that account.
+	//
+	// A form that does render the field still clears it when somebody empties
+	// it, because then the field is present and empty rather than absent.
+	if r.Form.Has("notes") {
+		existing.Notes = r.FormValue("notes")
+	}
 
 	if err := s.svc.UpdateCustomer(r.Context(), existing); err != nil {
 		s.fail(w, r, err)

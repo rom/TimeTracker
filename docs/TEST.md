@@ -91,6 +91,8 @@ row that says "fixed a bug in exports" is a row nobody can check.
 
 | Symptom | Cause |
 |---|---|
+| editing a customer deleted its internal notes | no screen renders the field, so the handler read an absent form value and wrote an empty string over it on every save (`internal/web`) |
+| the login page had no favicon | the root icon aliases were not on the public path list, so a browser asking for `/favicon.ico` before signing in got a redirect to the login page (`internal/web`) |
 | `--addr=:8420` in local mode bound every interface | the loopback check answered yes to an empty host, so an unauthenticated instance was reachable from the network (`internal/config`) |
 | a host named `127.0.0.1.example.com` counted as loopback | the check was a string prefix rather than a parsed address, so a name somebody else can register looked local (`internal/config`) |
 | every account came back with an empty `PasswordSetAt` | the column was written by two statements and selected by none, so a rule about password age would have read blank for everybody (`internal/store`) |
@@ -200,6 +202,15 @@ found something:
 * `store` 34% → 50%. Sessions, accounts, attachments, timesheet periods and
   search had no store-level tests at all, which is where the SQL semantics live -
   what a delete matches, what the prune sweeps, which columns a read selects.
+* `domain` 72% → 87%, mostly through property tests rather than more examples.
+* `web` 51% → 57%. The middleware chain runs on every request and had almost no
+  tests of its own: which address reaches the audit trail, whether a forwarded
+  protocol is believed, when HSTS is sent, that a panic cannot put a stack trace
+  in a response. One test walks the route table out of `routes.go` and asks each
+  route what an anonymous caller gets, so a new route that quietly becomes public
+  fails the build. The catalogue handlers - edit, archive and restore, favourite,
+  rename a tag, move time, correct an expense - were untested and turned up the
+  notes defect above.
 
 `internal/web` is deliberately excluded: its coverage is dominated by template
 rendering that the HTTP tests exercise thoroughly without the statement counter
