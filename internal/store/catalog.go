@@ -111,10 +111,25 @@ const customerColumns = `id, name, code, currency, colour_key, icon, notes, rate
 	         WHERE t.scope = 'customer' AND t.scope_id = customers.id),
 	archived_at, created_at`
 
+// The catalogue mutations come in pairs: a method on *DB that runs the statement
+// on its own, and a Tx function that runs it on an executor the caller supplies.
+//
+// The pair exists for ASR-006. A change and its audit row have to commit
+// together, and the audit insert takes a *sql.Tx - so the service runs both
+// inside one transaction, which it can only do if the change accepts the same
+// transaction. The plain methods stay for the callers that have no audit row to
+// write: the restore path, which rebuilds the catalogue wholesale, and the
+// store's own tests.
+
 // CreateCustomer inserts a customer.
 func (db *DB) CreateCustomer(ctx context.Context, c domain.Customer) (domain.Customer, error) {
+	return CreateCustomerTx(ctx, db.write, c)
+}
+
+// CreateCustomerTx inserts a customer using the given executor.
+func CreateCustomerTx(ctx context.Context, db Execer, c domain.Customer) (domain.Customer, error) {
 	now := time.Now()
-	res, err := db.write.ExecContext(ctx, `
+	res, err := db.ExecContext(ctx, `
 		INSERT INTO customers (name, code, currency, colour_key, icon, notes, rate_minor, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		c.Name, c.Code, c.Currency, c.ColourKey, c.Icon, c.Notes, c.RateMinor, formatTime(now))
@@ -132,7 +147,12 @@ func (db *DB) CreateCustomer(ctx context.Context, c domain.Customer) (domain.Cus
 
 // UpdateCustomer saves the editable fields of an existing customer.
 func (db *DB) UpdateCustomer(ctx context.Context, c domain.Customer) error {
-	res, err := db.write.ExecContext(ctx, `
+	return UpdateCustomerTx(ctx, db.write, c)
+}
+
+// UpdateCustomerTx is UpdateCustomer on the caller's executor.
+func UpdateCustomerTx(ctx context.Context, db Execer, c domain.Customer) error {
+	res, err := db.ExecContext(ctx, `
 		UPDATE customers SET name = ?, code = ?, currency = ?, colour_key = ?, icon = ?,
 		       notes = ?, rate_minor = ?
 		WHERE id = ?`,
@@ -146,13 +166,18 @@ func (db *DB) UpdateCustomer(ctx context.Context, c domain.Customer) error {
 // SetCustomerArchived archives or restores a customer. Customers are never
 // deleted, because deleting one would orphan invoiced history.
 func (db *DB) SetCustomerArchived(ctx context.Context, id int64, archived bool) error {
+	return SetCustomerArchivedTx(ctx, db.write, id, archived)
+}
+
+// SetCustomerArchivedTx is SetCustomerArchived on the caller's executor.
+func SetCustomerArchivedTx(ctx context.Context, db Execer, id int64, archived bool) error {
 	var res sql.Result
 	var err error
 	if archived {
-		res, err = db.write.ExecContext(ctx,
+		res, err = db.ExecContext(ctx,
 			`UPDATE customers SET archived_at = ? WHERE id = ?`, formatTime(time.Now()), id)
 	} else {
-		res, err = db.write.ExecContext(ctx,
+		res, err = db.ExecContext(ctx,
 			`UPDATE customers SET archived_at = NULL WHERE id = ?`, id)
 	}
 	if err != nil {
@@ -245,8 +270,13 @@ func scanCustomer(row rowScanner) (domain.Customer, error) {
 
 // CreateProject inserts a project.
 func (db *DB) CreateProject(ctx context.Context, p domain.Project) (domain.Project, error) {
+	return CreateProjectTx(ctx, db.write, p)
+}
+
+// CreateProjectTx inserts a project using the given executor.
+func CreateProjectTx(ctx context.Context, db Execer, p domain.Project) (domain.Project, error) {
 	now := time.Now()
-	res, err := db.write.ExecContext(ctx, `
+	res, err := db.ExecContext(ctx, `
 		INSERT INTO projects (customer_id, name, code, colour_key, icon, billable_default,
 		                      rate_minor, rounding_rule, budget_seconds, budget_minor, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -266,7 +296,12 @@ func (db *DB) CreateProject(ctx context.Context, p domain.Project) (domain.Proje
 
 // UpdateProject saves the editable fields of a project.
 func (db *DB) UpdateProject(ctx context.Context, p domain.Project) error {
-	res, err := db.write.ExecContext(ctx, `
+	return UpdateProjectTx(ctx, db.write, p)
+}
+
+// UpdateProjectTx is UpdateProject on the caller's executor.
+func UpdateProjectTx(ctx context.Context, db Execer, p domain.Project) error {
+	res, err := db.ExecContext(ctx, `
 		UPDATE projects SET customer_id = ?, name = ?, code = ?, colour_key = ?, icon = ?,
 		       billable_default = ?, rate_minor = ?, rounding_rule = ?,
 		       budget_seconds = ?, budget_minor = ?
@@ -281,13 +316,18 @@ func (db *DB) UpdateProject(ctx context.Context, p domain.Project) error {
 
 // SetProjectArchived archives or restores a project.
 func (db *DB) SetProjectArchived(ctx context.Context, id int64, archived bool) error {
+	return SetProjectArchivedTx(ctx, db.write, id, archived)
+}
+
+// SetProjectArchivedTx is SetProjectArchived on the caller's executor.
+func SetProjectArchivedTx(ctx context.Context, db Execer, id int64, archived bool) error {
 	var res sql.Result
 	var err error
 	if archived {
-		res, err = db.write.ExecContext(ctx,
+		res, err = db.ExecContext(ctx,
 			`UPDATE projects SET archived_at = ? WHERE id = ?`, formatTime(time.Now()), id)
 	} else {
-		res, err = db.write.ExecContext(ctx, `UPDATE projects SET archived_at = NULL WHERE id = ?`, id)
+		res, err = db.ExecContext(ctx, `UPDATE projects SET archived_at = NULL WHERE id = ?`, id)
 	}
 	if err != nil {
 		return err
@@ -375,8 +415,13 @@ func scanProject(row rowScanner) (domain.Project, error) {
 
 // CreateAssignment inserts an assignment.
 func (db *DB) CreateAssignment(ctx context.Context, a domain.Assignment) (domain.Assignment, error) {
+	return CreateAssignmentTx(ctx, db.write, a)
+}
+
+// CreateAssignmentTx inserts an assignment using the given executor.
+func CreateAssignmentTx(ctx context.Context, db Execer, a domain.Assignment) (domain.Assignment, error) {
 	now := time.Now()
-	res, err := db.write.ExecContext(ctx, `
+	res, err := db.ExecContext(ctx, `
 		INSERT INTO assignments (project_id, name, code, colour_key, icon, billable_default,
 		                         rate_minor, sort_order, favourite, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -396,7 +441,12 @@ func (db *DB) CreateAssignment(ctx context.Context, a domain.Assignment) (domain
 
 // UpdateAssignment saves the editable fields of an assignment.
 func (db *DB) UpdateAssignment(ctx context.Context, a domain.Assignment) error {
-	res, err := db.write.ExecContext(ctx, `
+	return UpdateAssignmentTx(ctx, db.write, a)
+}
+
+// UpdateAssignmentTx is UpdateAssignment on the caller's executor.
+func UpdateAssignmentTx(ctx context.Context, db Execer, a domain.Assignment) error {
+	res, err := db.ExecContext(ctx, `
 		UPDATE assignments SET project_id = ?, name = ?, code = ?, colour_key = ?, icon = ?,
 		       billable_default = ?, rate_minor = ?, sort_order = ?, favourite = ?
 		WHERE id = ?`,
@@ -410,13 +460,18 @@ func (db *DB) UpdateAssignment(ctx context.Context, a domain.Assignment) error {
 
 // SetAssignmentArchived archives or restores an assignment.
 func (db *DB) SetAssignmentArchived(ctx context.Context, id int64, archived bool) error {
+	return SetAssignmentArchivedTx(ctx, db.write, id, archived)
+}
+
+// SetAssignmentArchivedTx is SetAssignmentArchived on the caller's executor.
+func SetAssignmentArchivedTx(ctx context.Context, db Execer, id int64, archived bool) error {
 	var res sql.Result
 	var err error
 	if archived {
-		res, err = db.write.ExecContext(ctx,
+		res, err = db.ExecContext(ctx,
 			`UPDATE assignments SET archived_at = ? WHERE id = ?`, formatTime(time.Now()), id)
 	} else {
-		res, err = db.write.ExecContext(ctx, `UPDATE assignments SET archived_at = NULL WHERE id = ?`, id)
+		res, err = db.ExecContext(ctx, `UPDATE assignments SET archived_at = NULL WHERE id = ?`, id)
 	}
 	if err != nil {
 		return err

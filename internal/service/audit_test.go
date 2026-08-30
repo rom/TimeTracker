@@ -113,36 +113,27 @@ func TestAFailedAuditRollsBackTheChange(t *testing.T) {
 	}
 }
 
-// auditNotAtomic names the mutations that write their audit row in a *second*
-// transaction, and are therefore not atomic with the change.
+// auditNotAtomic names the mutations that still write their audit row in a
+// *second* transaction, and are therefore not atomic with the change.
 //
 // This is not an exemption in the sense the other lists in this repository are.
-// Those name things that are safe for a stated reason; this one names a real
-// gap, found by the test below, and every entry in it is a defect waiting for a
-// fix rather than a decision anybody defended.
+// Those name things that are safe for a stated reason; every entry here is a
+// real gap, found by the test below.
 //
-// The shape is the same in all of them: the store writes the record on its own
+// The shape is always the same: the store writes the record on its own
 // connection, and the service then calls recordAudit, which opens a transaction
 // of its own. If the audit insert fails, the caller is told the operation
-// failed - and the record is there anyway. A user who retries gets two
-// customers, and the trail has no row for either.
+// failed - and the record is there anyway. A user who retries gets two of
+// whatever they were creating, and the trail has no row for either.
 //
-// The entry paths, which are the ones ASR-006 is really about and the ones
-// docs/TEST.md describes, do it properly: createEntryTx and s.audit run inside
-// one InTx. Fixing the rest means giving the catalogue, settings, tag, terms and
-// account mutations transactional store methods, which is a change to the store
-// rather than to the audit code and is why it is recorded here rather than done
-// in passing.
-//
-// The list is checked in both directions. A path named here that turns out to be
-// atomic fails too - because the next person to fix one needs to be told to
-// delete the line, or the list rots into an excuse.
-var auditNotAtomic = map[string]string{
-	"add a customer": "s.db.CreateCustomer then recordAudit, in two transactions",
-	"add a project":  "as the customer path",
-	"rename a customer": "s.db.UpdateCustomer then recordAudit, so a failed audit " +
-		"reports failure over a rename that stuck",
-}
+// The list is empty. It stays here because the test checks it in both
+// directions: a path named here that turns out to be atomic fails too, so
+// whoever fixes one is told to delete the line rather than leaving a list of
+// defects that quietly includes fixed ones. What remains un-atomic elsewhere in
+// the service - the importers, the restore, an attachment whose bytes are
+// already on disk - is a change that is not a single database write, and each
+// needs its own answer rather than this one.
+var auditNotAtomic = map[string]string{}
 
 // TestEveryAuditedMutationRollsBackTogether.
 //
@@ -150,9 +141,11 @@ var auditNotAtomic = map[string]string{
 // has to be asked of each path: one method that commits the change before
 // writing the audit row leaves every other test green.
 //
-// Asking it of several at once is what turned up auditNotAtomic. The entry
-// paths, which are the ones that had ever been tested, are correct; the
-// catalogue paths are the same code shape as each other and none of them is.
+// Asking it of several at once is what turned up the catalogue: the entry paths,
+// which were the ones that had ever been tested, were correct, and none of the
+// catalogue paths were - they wrote the record on one connection and the audit
+// row on another. They go through Service.mutate now, which is the same
+// arrangement the entry paths use.
 func TestEveryAuditedMutationRollsBackTogether(t *testing.T) {
 	for _, mutation := range []struct {
 		name  string
@@ -207,6 +200,30 @@ func TestEveryAuditedMutationRollsBackTogether(t *testing.T) {
 				})
 			},
 		},
+		{
+			name:  "add an assignment",
+			table: "assignments",
+			do: func(t *testing.T, f *fixture) error {
+				_, err := f.svc.CreateAssignment(f.ctx, domain.Assignment{
+					ProjectID: 1, Name: "Rolled Back", BillableDefault: true,
+				})
+				return err
+			},
+		},
+		{
+			name:  "archive a customer",
+			table: "customers",
+			do: func(t *testing.T, f *fixture) error {
+				return f.svc.SetCustomerArchived(f.ctx, 1, true)
+			},
+		},
+		{
+			name:  "archive a project",
+			table: "projects",
+			do: func(t *testing.T, f *fixture) error {
+				return f.svc.SetProjectArchived(f.ctx, 1, true)
+			},
+		},
 	} {
 		t.Run(mutation.name, func(t *testing.T) {
 			f := newFixture(t)
@@ -223,11 +240,16 @@ func TestEveryAuditedMutationRollsBackTogether(t *testing.T) {
 			}
 
 			after := countRows(t, f, mutation.table, "")
-			// A rename changes a row rather than adding one, so the count is not
-			// the evidence; the name is.
+			// A rename and an archive change a row rather than adding one, so
+			// the count is not the evidence: the value is.
 			rolledBack := after == before
-			if mutation.name == "rename a customer" {
+			switch mutation.name {
+			case "rename a customer":
 				rolledBack = customerName(t, f, 1) != "Renamed"
+			case "archive a customer":
+				rolledBack = countRows(t, f, "customers", "archived_at IS NOT NULL") == 0
+			case "archive a project":
+				rolledBack = countRows(t, f, "projects", "archived_at IS NOT NULL") == 0
 			}
 
 			if reason, known := auditNotAtomic[mutation.name]; known {

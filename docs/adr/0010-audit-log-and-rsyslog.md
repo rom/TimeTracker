@@ -70,6 +70,21 @@ tested.
 * Append-only is a discipline enforced by code review and tests, not by SQLite —
   anyone with the database file can edit it. True immutability would need hash
   chaining or an external log; noted as a future ADR if a client ever requires it.
+* Atomicity has to be arranged at each call site, and for a long time it was not.
+  Only the time-entry paths shared a transaction; every catalogue mutation wrote
+  the record on one connection and then opened a second transaction for the audit
+  row, so a failed audit reported failure to the user over a change that had
+  already committed. Nothing failed while nothing went wrong, which is why it
+  survived until a test injected a failure into the audit insert. The catalogue
+  now goes through `Service.mutate`, which takes the change as a function of the
+  transaction.
+
+  What remains outside that arrangement is the set of changes that are not a
+  single database write: a restore that rebuilds the catalogue record by record,
+  a CSV or calendar import, an attachment whose bytes are already on disk. Each
+  needs an answer of its own — a restore, for instance, is already a sequence of
+  audited creates — and none of them should be quietly assumed to be atomic
+  because this ADR says mutations are.
 
 ## Alternatives considered
 

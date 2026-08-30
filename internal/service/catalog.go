@@ -7,6 +7,7 @@ import (
 
 	"github.com/rom/timetracker/internal/auth"
 	"github.com/rom/timetracker/internal/domain"
+	"github.com/rom/timetracker/internal/store"
 )
 
 // This file covers the catalogue: customers, projects and assignments. These are
@@ -30,13 +31,15 @@ func (s *Service) CreateCustomer(ctx context.Context, c domain.Customer) (domain
 		c.ColourKey = "slate"
 	}
 
-	created, err := s.db.CreateCustomer(ctx, c)
+	var created domain.Customer
+	err := s.mutate(ctx, "customer.create", "customer", map[string]any{
+		"name": c.Name, "currency": c.Currency,
+	}, func(tx *sql.Tx) (int64, error) {
+		var txErr error
+		created, txErr = store.CreateCustomerTx(ctx, tx, c)
+		return created.ID, txErr
+	})
 	if err != nil {
-		return domain.Customer{}, err
-	}
-	if err := s.recordAudit(ctx, "customer.create", "customer", created.ID, map[string]any{
-		"name": created.Name, "currency": created.Currency,
-	}); err != nil {
 		return domain.Customer{}, err
 	}
 	return created, nil
@@ -52,10 +55,10 @@ func (s *Service) UpdateCustomer(ctx context.Context, c domain.Customer) error {
 	if err := c.Validate(); err != nil {
 		return err
 	}
-	if err := s.db.UpdateCustomer(ctx, c); err != nil {
-		return err
-	}
-	return s.recordAudit(ctx, "customer.update", "customer", c.ID, map[string]any{"name": c.Name})
+	return s.mutate(ctx, "customer.update", "customer",
+		map[string]any{"name": c.Name}, func(tx *sql.Tx) (int64, error) {
+			return c.ID, store.UpdateCustomerTx(ctx, tx, c)
+		})
 }
 
 // SetCustomerArchived retires a customer from the pickers, or restores it.
@@ -65,14 +68,13 @@ func (s *Service) SetCustomerArchived(ctx context.Context, id int64, archived bo
 	}); err != nil {
 		return notFoundFor(err)
 	}
-	if err := s.db.SetCustomerArchived(ctx, id, archived); err != nil {
-		return err
-	}
 	action := "customer.restore"
 	if archived {
 		action = "customer.archive"
 	}
-	return s.recordAudit(ctx, action, "customer", id, nil)
+	return s.mutate(ctx, action, "customer", nil, func(tx *sql.Tx) (int64, error) {
+		return id, store.SetCustomerArchivedTx(ctx, tx, id, archived)
+	})
 }
 
 // Customers lists the customers the actor may see.
@@ -126,13 +128,15 @@ func (s *Service) CreateProject(ctx context.Context, p domain.Project) (domain.P
 		p.ColourKey = "slate"
 	}
 
-	created, err := s.db.CreateProject(ctx, p)
+	var created domain.Project
+	err := s.mutate(ctx, "project.create", "project", map[string]any{
+		"name": p.Name, "customer_id": p.CustomerID,
+	}, func(tx *sql.Tx) (int64, error) {
+		var txErr error
+		created, txErr = store.CreateProjectTx(ctx, tx, p)
+		return created.ID, txErr
+	})
 	if err != nil {
-		return domain.Project{}, err
-	}
-	if err := s.recordAudit(ctx, "project.create", "project", created.ID, map[string]any{
-		"name": created.Name, "customer_id": created.CustomerID,
-	}); err != nil {
 		return domain.Project{}, err
 	}
 	return created, nil
@@ -148,10 +152,10 @@ func (s *Service) UpdateProject(ctx context.Context, p domain.Project) error {
 	if err := p.Validate(); err != nil {
 		return err
 	}
-	if err := s.db.UpdateProject(ctx, p); err != nil {
-		return err
-	}
-	return s.recordAudit(ctx, "project.update", "project", p.ID, map[string]any{"name": p.Name})
+	return s.mutate(ctx, "project.update", "project",
+		map[string]any{"name": p.Name}, func(tx *sql.Tx) (int64, error) {
+			return p.ID, store.UpdateProjectTx(ctx, tx, p)
+		})
 }
 
 // SetProjectArchived retires a project, or restores it.
@@ -165,14 +169,13 @@ func (s *Service) SetProjectArchived(ctx context.Context, id int64, archived boo
 	}); err != nil {
 		return notFoundFor(err)
 	}
-	if err := s.db.SetProjectArchived(ctx, id, archived); err != nil {
-		return err
-	}
 	action := "project.restore"
 	if archived {
 		action = "project.archive"
 	}
-	return s.recordAudit(ctx, action, "project", id, nil)
+	return s.mutate(ctx, action, "project", nil, func(tx *sql.Tx) (int64, error) {
+		return id, store.SetProjectArchivedTx(ctx, tx, id, archived)
+	})
 }
 
 // Projects lists the projects the actor may see, optionally for one customer.
@@ -236,13 +239,15 @@ func (s *Service) CreateAssignment(ctx context.Context, a domain.Assignment) (do
 		a.Icon = project.Icon
 	}
 
-	created, err := s.db.CreateAssignment(ctx, a)
+	var created domain.Assignment
+	err = s.mutate(ctx, "assignment.create", "assignment", map[string]any{
+		"name": a.Name, "project_id": a.ProjectID,
+	}, func(tx *sql.Tx) (int64, error) {
+		var txErr error
+		created, txErr = store.CreateAssignmentTx(ctx, tx, a)
+		return created.ID, txErr
+	})
 	if err != nil {
-		return domain.Assignment{}, err
-	}
-	if err := s.recordAudit(ctx, "assignment.create", "assignment", created.ID, map[string]any{
-		"name": created.Name, "project_id": created.ProjectID,
-	}); err != nil {
 		return domain.Assignment{}, err
 	}
 	return created, nil
@@ -262,10 +267,10 @@ func (s *Service) UpdateAssignment(ctx context.Context, a domain.Assignment) err
 	if err := a.Validate(); err != nil {
 		return err
 	}
-	if err := s.db.UpdateAssignment(ctx, a); err != nil {
-		return err
-	}
-	return s.recordAudit(ctx, "assignment.update", "assignment", a.ID, map[string]any{"name": a.Name})
+	return s.mutate(ctx, "assignment.update", "assignment",
+		map[string]any{"name": a.Name}, func(tx *sql.Tx) (int64, error) {
+			return a.ID, store.UpdateAssignmentTx(ctx, tx, a)
+		})
 }
 
 // SetAssignmentArchived retires an assignment, or restores it.
@@ -279,14 +284,13 @@ func (s *Service) SetAssignmentArchived(ctx context.Context, id int64, archived 
 	}); err != nil {
 		return notFoundFor(err)
 	}
-	if err := s.db.SetAssignmentArchived(ctx, id, archived); err != nil {
-		return err
-	}
 	action := "assignment.restore"
 	if archived {
 		action = "assignment.archive"
 	}
-	return s.recordAudit(ctx, action, "assignment", id, nil)
+	return s.mutate(ctx, action, "assignment", nil, func(tx *sql.Tx) (int64, error) {
+		return id, store.SetAssignmentArchivedTx(ctx, tx, id, archived)
+	})
 }
 
 // Assignments lists the assignments the actor may see, optionally for one
@@ -346,13 +350,49 @@ func (s *Service) RecentAssignments(ctx context.Context, limit int) ([]domain.As
 
 // ------------------------------------------------------------------ shared --
 
+// mutate makes a change and records it, in one transaction.
+//
+// This is what ASR-006 means by an audited mutation: the change and the row
+// saying who made it commit together, or neither does. The change function is
+// handed the transaction and returns the id of what it touched, because a
+// create only learns its id from the insert.
+//
+// It replaced recordAudit on these paths, and the difference is the whole
+// point. recordAudit writes the audit row in a transaction of its own, *after*
+// the store has already committed the change on another connection - so a
+// failed audit insert returned an error to the caller with the change still
+// made. The user was told their edit failed, retried, and got two customers and
+// no trail for either. A test that injected a failure into the audit write
+// found it; nothing else would have, because every path succeeds when nothing
+// goes wrong.
+//
+// The log line is emitted after the commit, never inside it: a line about a
+// change that was rolled back is a lie in the operational log.
+func (s *Service) mutate(ctx context.Context, action, resourceType string, detail any, change func(tx *sql.Tx) (int64, error)) error {
+	var resourceID int64
+	err := s.db.InTx(ctx, func(tx *sql.Tx) error {
+		var txErr error
+		if resourceID, txErr = change(tx); txErr != nil {
+			return txErr
+		}
+		return s.audit(ctx, tx, action, resourceType, resourceID, 0, detail)
+	})
+	if err != nil {
+		return err
+	}
+	s.auditLog(ctx, action, resourceType, resourceID)
+	return nil
+}
+
 // recordAudit writes an audit row for a change that has already been made
 // through a store method.
 //
-// Catalogue changes are single statements, so unlike time entries they do not
-// need the change and the audit row to share a transaction with other work.
-// They do still need the record itself, so this is never optional: a failure
-// here is returned to the caller rather than swallowed.
+// It is the older arrangement and the weaker one: the audit row lands in a
+// transaction of its own, so a failure here reports failure over a change that
+// stuck. The catalogue paths use mutate instead. What is left on this are the
+// paths where the change is not a single database write to begin with - a
+// restore that rebuilds everything, an import, an attachment whose bytes are on
+// disk - and each of those needs its own answer rather than this one.
 func (s *Service) recordAudit(ctx context.Context, action, resourceType string, resourceID int64, detail any) error {
 	err := s.db.InTx(ctx, func(tx *sql.Tx) error {
 		return s.audit(ctx, tx, action, resourceType, resourceID, 0, detail)
