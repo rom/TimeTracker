@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rom/timetracker/internal/domain"
+	"github.com/rom/timetracker/internal/store"
 )
 
 // ASR-006, the half that cannot be tested by observing a successful mutation.
@@ -37,10 +39,10 @@ import (
 // what a constraint violation, a disk error or a lock timeout looks like from
 // Go: the transaction is still open and the caller decides. That makes this a
 // realistic injection rather than a special case.
-func breakInserts(t *testing.T, f *fixture, table string) {
+func breakInserts(t *testing.T, db *store.DB, table string) {
 	t.Helper()
 
-	err := f.db.InTx(context.Background(), func(tx *sql.Tx) error {
+	err := db.InTx(context.Background(), func(tx *sql.Tx) error {
 		_, execErr := tx.ExecContext(context.Background(),
 			`CREATE TRIGGER break_`+table+` BEFORE INSERT ON `+table+`
 			 BEGIN SELECT RAISE(ABORT, 'injected failure'); END`)
@@ -50,7 +52,7 @@ func breakInserts(t *testing.T, f *fixture, table string) {
 		t.Fatalf("install the failure on %s: %v", table, err)
 	}
 	t.Cleanup(func() {
-		_ = f.db.InTx(context.Background(), func(tx *sql.Tx) error {
+		_ = db.InTx(context.Background(), func(tx *sql.Tx) error {
 			_, execErr := tx.ExecContext(context.Background(), `DROP TRIGGER IF EXISTS break_`+table)
 			return execErr
 		})
@@ -59,7 +61,7 @@ func breakInserts(t *testing.T, f *fixture, table string) {
 
 // countRows counts a table directly, without going through anything that could
 // itself be filtering.
-func countRows(t *testing.T, f *fixture, table, where string, args ...any) int {
+func countRows(t *testing.T, db *store.DB, table, where string, args ...any) int {
 	t.Helper()
 
 	query := `SELECT COUNT(*) FROM ` + table
@@ -67,7 +69,7 @@ func countRows(t *testing.T, f *fixture, table, where string, args ...any) int {
 		query += ` WHERE ` + where
 	}
 	var count int
-	err := f.db.InTx(context.Background(), func(tx *sql.Tx) error {
+	err := db.InTx(context.Background(), func(tx *sql.Tx) error {
 		return tx.QueryRowContext(context.Background(), query, args...).Scan(&count)
 	})
 	if err != nil {
@@ -89,9 +91,9 @@ func countRows(t *testing.T, f *fixture, table, where string, args ...any) int {
 // drops the record has quietly become one that cannot answer "who did this".
 func TestAFailedAuditRollsBackTheChange(t *testing.T) {
 	f := newFixture(t)
-	before := countRows(t, f, "time_entries", "")
+	before := countRows(t, f.db, "time_entries", "")
 
-	breakInserts(t, f, "audit_events")
+	breakInserts(t, f.db, "audit_events")
 
 	if _, err := f.svc.StartTimer(f.ctx, f.assignment.ID, "should not survive"); err == nil {
 		t.Fatal("StartTimer succeeded with the audit write failing; the change was " +
@@ -102,7 +104,7 @@ func TestAFailedAuditRollsBackTheChange(t *testing.T) {
 		t.Fatalf("StartTimer failed for the wrong reason: %v", err)
 	}
 
-	if after := countRows(t, f, "time_entries", ""); after != before {
+	if after := countRows(t, f.db, "time_entries", ""); after != before {
 		t.Errorf("the entry survived a failed audit write: %d entries before, %d after",
 			before, after)
 	}
@@ -288,9 +290,9 @@ func TestEveryAuditedMutationRollsBackTogether(t *testing.T) {
 			if mutation.setup != nil {
 				mutation.setup(t, f)
 			}
-			before := countRows(t, f, mutation.table, "")
+			before := countRows(t, f.db, mutation.table, "")
 
-			breakInserts(t, f, "audit_events")
+			breakInserts(t, f.db, "audit_events")
 
 			err := mutation.do(t, f)
 			if err == nil {
@@ -300,7 +302,7 @@ func TestEveryAuditedMutationRollsBackTogether(t *testing.T) {
 				t.Fatalf("%s failed for the wrong reason: %v", mutation.name, err)
 			}
 
-			after := countRows(t, f, mutation.table, "")
+			after := countRows(t, f.db, mutation.table, "")
 			// A rename and an archive change a row rather than adding one, so
 			// the count is not the evidence: the value is.
 			rolledBack := after == before
@@ -311,9 +313,9 @@ func TestEveryAuditedMutationRollsBackTogether(t *testing.T) {
 			case "rename a customer":
 				rolledBack = customerName(t, f, 1) != "Renamed"
 			case "archive a customer":
-				rolledBack = countRows(t, f, "customers", "archived_at IS NOT NULL") == 0
+				rolledBack = countRows(t, f.db, "customers", "archived_at IS NOT NULL") == 0
 			case "archive a project":
-				rolledBack = countRows(t, f, "projects", "archived_at IS NOT NULL") == 0
+				rolledBack = countRows(t, f.db, "projects", "archived_at IS NOT NULL") == 0
 			}
 
 			if reason, known := auditNotAtomic[mutation.name]; known {
@@ -360,9 +362,9 @@ func customerName(t *testing.T, f *fixture, id int64) string {
 // understates. It is the one that gets read out in a dispute.
 func TestAFailedChangeLeavesNoAuditRow(t *testing.T) {
 	f := newFixture(t)
-	before := countRows(t, f, "audit_events", "")
+	before := countRows(t, f.db, "audit_events", "")
 
-	breakInserts(t, f, "time_entries")
+	breakInserts(t, f.db, "time_entries")
 
 	if _, err := f.svc.StartTimer(f.ctx, f.assignment.ID, ""); err == nil {
 		t.Fatal("StartTimer succeeded with the entry insert failing")
@@ -370,11 +372,11 @@ func TestAFailedChangeLeavesNoAuditRow(t *testing.T) {
 		t.Fatalf("StartTimer failed for the wrong reason: %v", err)
 	}
 
-	if after := countRows(t, f, "audit_events", ""); after != before {
+	if after := countRows(t, f.db, "audit_events", ""); after != before {
 		t.Errorf("%d audit rows were written for a change that never happened",
 			after-before)
 	}
-	if rows := countRows(t, f, "audit_events", "action = ?", "time_entry.start"); rows != 0 {
+	if rows := countRows(t, f.db, "audit_events", "action = ?", "time_entry.start"); rows != 0 {
 		t.Errorf("the trail claims a timer was started %d time(s); none was", rows)
 	}
 }
@@ -392,7 +394,7 @@ func TestAFailedChangeLeavesNoAuditRow(t *testing.T) {
 func TestTheInjectionItselfWorks(t *testing.T) {
 	f := newFixture(t)
 
-	breakInserts(t, f, "audit_events")
+	breakInserts(t, f.db, "audit_events")
 	if _, err := f.svc.StartTimer(f.ctx, f.assignment.ID, ""); err == nil {
 		t.Fatal("the injected trigger did not break anything")
 	}
@@ -484,10 +486,10 @@ func TestNothingUpdatesOrDeletesAnAuditRow(t *testing.T) {
 // breakInsertsWhen installs a trigger that aborts inserts into a table only for
 // the rows matching a condition, so a failure can be injected part-way through a
 // batch rather than at the start of it.
-func breakInsertsWhen(t *testing.T, f *fixture, table, when string) {
+func breakInsertsWhen(t *testing.T, db *store.DB, table, when string) {
 	t.Helper()
 
-	err := f.db.InTx(context.Background(), func(tx *sql.Tx) error {
+	err := db.InTx(context.Background(), func(tx *sql.Tx) error {
 		_, execErr := tx.ExecContext(context.Background(),
 			`CREATE TRIGGER break_`+table+`_when BEFORE INSERT ON `+table+`
 			 FOR EACH ROW WHEN `+when+`
@@ -498,7 +500,7 @@ func breakInsertsWhen(t *testing.T, f *fixture, table, when string) {
 		t.Fatalf("install the conditional failure on %s: %v", table, err)
 	}
 	t.Cleanup(func() {
-		_ = f.db.InTx(context.Background(), func(tx *sql.Tx) error {
+		_ = db.InTx(context.Background(), func(tx *sql.Tx) error {
 			_, execErr := tx.ExecContext(context.Background(),
 				`DROP TRIGGER IF EXISTS break_`+table+`_when`)
 			return execErr
@@ -525,7 +527,7 @@ func TestAnImportThatFailsPartWayImportsNothing(t *testing.T) {
 		"2026-03-17,Development,2,second\n" +
 		"2026-03-18,Development,1,the-one-that-fails\n"
 
-	breakInsertsWhen(t, f, "time_entries", "NEW.note = 'the-one-that-fails'")
+	breakInsertsWhen(t, f.db, "time_entries", "NEW.note = 'the-one-that-fails'")
 
 	imported, err := f.svc.ImportTimeCSV(f.ctx, strings.NewReader(file), false)
 	if err == nil {
@@ -538,13 +540,13 @@ func TestAnImportThatFailsPartWayImportsNothing(t *testing.T) {
 		t.Errorf("the import reported %d rows written after failing", imported)
 	}
 
-	if rows := countRows(t, f, "time_entries", ""); rows != 0 {
+	if rows := countRows(t, f.db, "time_entries", ""); rows != 0 {
 		t.Errorf("%d of the earlier rows survived a failed import. All or nothing "+
 			"is the whole design (ADR-0022): a partial import leaves somebody "+
 			"comparing two sources row by row.", rows)
 	}
 	// And no summary row claiming an import that did not happen.
-	if rows := countRows(t, f, "audit_events", "action = ?", "time_entry.import"); rows != 0 {
+	if rows := countRows(t, f.db, "audit_events", "action = ?", "time_entry.import"); rows != 0 {
 		t.Errorf("the trail records %d imports that did not happen", rows)
 	}
 }
@@ -560,13 +562,13 @@ func TestAFailedAttachmentLeavesOnlyAnOrphanedFile(t *testing.T) {
 	f := withBlobs(t, newFixture(t))
 	entry := mustCreate(t, f, f.now, 3600)
 
-	breakInserts(t, f, "audit_events")
+	breakInserts(t, f.db, "audit_events")
 
 	if _, err := f.svc.Attach(f.ctx, "time_entry", entry.ID,
 		"receipt.txt", strings.NewReader("some bytes")); err == nil {
 		t.Fatal("attaching a file succeeded with the audit write failing")
 	}
-	if rows := countRows(t, f, "attachments", ""); rows != 0 {
+	if rows := countRows(t, f.db, "attachments", ""); rows != 0 {
 		t.Errorf("%d attachment rows survived a failed audit write", rows)
 	}
 
@@ -597,12 +599,12 @@ func TestDeletingAnAttachmentRemovesTheBytesOnlyAfterTheRowIsGone(t *testing.T) 
 		t.Fatalf("attach: %v", err)
 	}
 
-	breakInserts(t, f, "audit_events")
+	breakInserts(t, f.db, "audit_events")
 
 	if err := f.svc.DeleteAttachment(f.ctx, attachment.ID); err == nil {
 		t.Fatal("deleting an attachment succeeded with the audit write failing")
 	}
-	if rows := countRows(t, f, "attachments", ""); rows != 1 {
+	if rows := countRows(t, f.db, "attachments", ""); rows != 1 {
 		t.Errorf("the attachment row is gone after a failed audit write")
 	}
 
@@ -611,5 +613,236 @@ func TestDeletingAnAttachmentRemovesTheBytesOnlyAfterTheRowIsGone(t *testing.T) 
 	// worse than either half alone.
 	if _, _, err := f.svc.OpenAttachment(f.ctx, attachment.ID); err != nil {
 		t.Errorf("the file was removed for a deletion that rolled back: %v", err)
+	}
+}
+
+// The account and timesheet paths, which need the server-mode fixture: the RBAC
+// authoriser with a real membership lookup, and the account service on top.
+//
+// These are the changes with the widest consequences in the application. A role
+// change decides what somebody can see; a password change is somebody trying to
+// end an intrusion; an approval is the figure that goes on an invoice. Each one
+// is also a change that forces a second write - a privilege change signs the
+// account out, a password change signs it out everywhere - and those belong in
+// the same transaction as the change itself, or a partial commit leaves an
+// account whose sessions and whose privileges disagree.
+
+// TestEveryAccountAndTimesheetMutationRollsBackTogether.
+func TestEveryAccountAndTimesheetMutationRollsBackTogether(t *testing.T) {
+	for _, mutation := range []struct {
+		name  string
+		table string
+		setup func(t *testing.T, f *serverFixture)
+		do    func(t *testing.T, f *serverFixture) error
+	}{
+		{
+			name:  "create a user",
+			table: "users",
+			do: func(t *testing.T, f *serverFixture) error {
+				_, err := f.accounts.CreateUser(f.ctx, NewUserInput{
+					DisplayName: "Rolled Back", Email: "rolled@example.com",
+					Password: "a-long-enough-password", Role: domain.RoleMember,
+				})
+				return err
+			},
+		},
+		{
+			name:  "add somebody to a project",
+			table: "project_members",
+			setup: func(t *testing.T, f *serverFixture) { f.team(t) },
+			do: func(t *testing.T, f *serverFixture) error {
+				return f.accounts.AddMember(f.ctx, Membership{ProjectID: 1, UserID: f.admin.ID})
+			},
+		},
+		{
+			name:  "remove somebody from a project",
+			table: "project_members",
+			setup: func(t *testing.T, f *serverFixture) { f.team(t) },
+			do: func(t *testing.T, f *serverFixture) error {
+				return f.accounts.RemoveMember(f.ctx, 1, f.admin.ID)
+			},
+		},
+		{
+			name:  "submit a week",
+			table: "timesheet_periods",
+			setup: func(t *testing.T, f *serverFixture) {
+				assignment, _ := f.team(t)
+				recordFor(t, f, assignment.ID, f.now)
+			},
+			do: func(t *testing.T, f *serverFixture) error {
+				_, err := f.svc.SubmitWeek(f.ctx, f.now)
+				return err
+			},
+		},
+	} {
+		t.Run(mutation.name, func(t *testing.T) {
+			f := newServerFixture(t)
+			if mutation.setup != nil {
+				mutation.setup(t, f)
+			}
+			before := countRows(t, f.db, mutation.table, "")
+
+			breakInserts(t, f.db, "audit_events")
+
+			err := mutation.do(t, f)
+			if err == nil {
+				t.Fatalf("%s succeeded with the audit write failing", mutation.name)
+			}
+			if !strings.Contains(err.Error(), "injected failure") {
+				t.Fatalf("%s failed for the wrong reason: %v", mutation.name, err)
+			}
+			if after := countRows(t, f.db, mutation.table, ""); after != before {
+				t.Errorf("%s survived a failed audit write: %d rows before, %d after",
+					mutation.name, before, after)
+			}
+		})
+	}
+}
+
+// TestADecisionOnAWeekRollsBackWithItsRecord.
+//
+// An approval is not a row count - the week is already there and its status
+// changes - so this is asserted on the status. It is the audit row somebody
+// reads to answer "who approved this", months later, with an invoice in front of
+// them.
+func TestADecisionOnAWeekRollsBackWithItsRecord(t *testing.T) {
+	f := newServerFixture(t)
+	assignment, colleague := f.team(t)
+
+	// The colleague records a week and submits it.
+	colleagueCtx := f.asUser(colleague)
+	if _, err := f.svc.CreateEntry(colleagueCtx, EntryInput{
+		AssignmentID: assignment.ID, StartedAt: f.now, DurationSeconds: 3600, Billable: true,
+	}); err != nil {
+		t.Fatalf("record time: %v", err)
+	}
+	if _, err := f.svc.SubmitWeek(colleagueCtx, f.now); err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+
+	weekStart := domain.WeekStartFor(f.now, 1, time.UTC)
+	breakInserts(t, f.db, "audit_events")
+
+	if err := f.svc.ApproveWeek(f.ctx, colleague.ID, weekStart); err == nil {
+		t.Fatal("approving a week succeeded with the audit write failing")
+	}
+
+	period, err := f.db.GetPeriod(context.Background(), colleague.ID, weekStart)
+	if err != nil {
+		t.Fatalf("read the period: %v", err)
+	}
+	if period.Status != domain.PeriodSubmitted {
+		t.Errorf("the week is %s after an approval that could not be recorded; an "+
+			"approval nobody can attribute is the one thing an approval must not be",
+			period.Status)
+	}
+}
+
+// TestAFailedPasswordChangeLeavesTheAccountExactlyAsItWas.
+//
+// Three writes that have to be one: the new hash, the revocation of every other
+// session, and the record of who did it. Any partial commit is its own kind of
+// wrong - a password that changed with the old sessions still live, sessions
+// revoked against a password that did not change, or either of those with
+// nothing in the trail - and this is the operation somebody performs when they
+// think an account has been taken over.
+func TestAFailedPasswordChangeLeavesTheAccountExactlyAsItWas(t *testing.T) {
+	f := newServerFixture(t)
+
+	user, err := f.accounts.CreateUser(f.ctx, NewUserInput{
+		DisplayName: "Somebody", Email: "somebody@example.com",
+		Password: "the-original-password", Role: domain.RoleMember,
+	})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	login, err := f.accounts.Login(context.Background(), LoginRequest{
+		Email: "somebody@example.com", Password: "the-original-password", IP: "203.0.113.4",
+	})
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	sessionsBefore := countRows(t, f.db, "sessions", "user_id = ?", user.ID)
+	if sessionsBefore == 0 {
+		t.Fatal("the login left no session to revoke")
+	}
+
+	breakInserts(t, f.db, "audit_events")
+
+	if err := f.accounts.SetPassword(f.ctx, user.ID, "", "a-different-password"); err == nil {
+		t.Fatal("setting a password succeeded with the audit write failing")
+	}
+
+	// The old password still works, which is the same as saying the hash was not
+	// written.
+	if _, err := f.accounts.Login(context.Background(), LoginRequest{
+		Email: "somebody@example.com", Password: "the-original-password", IP: "203.0.113.4",
+	}); err != nil {
+		t.Errorf("the original password no longer works after a password change "+
+			"that reported failure: %v", err)
+	}
+	if _, err := f.accounts.Login(context.Background(), LoginRequest{
+		Email: "somebody@example.com", Password: "a-different-password", IP: "203.0.113.4",
+	}); err == nil {
+		t.Error("the new password works after a password change that reported failure")
+	}
+
+	// And the session that existed before is still there: revoked sessions
+	// without a changed password would sign somebody out for nothing.
+	if _, _, err := f.accounts.ResolveSession(context.Background(), login.CookieValue); err != nil {
+		t.Errorf("the existing session was revoked by a password change that "+
+			"rolled back: %v", err)
+	}
+}
+
+// TestAFailedRoleChangeLeavesTheSessionsAlone.
+//
+// The other paired write. Changing a role signs the account out, because a
+// privilege change that leaves the old sessions alive has not taken effect - so
+// the two must not come apart in either direction.
+func TestAFailedRoleChangeLeavesTheSessionsAlone(t *testing.T) {
+	f := newServerFixture(t)
+
+	user, err := f.accounts.CreateUser(f.ctx, NewUserInput{
+		DisplayName: "Somebody", Email: "somebody@example.com",
+		Password: "a-long-enough-password", Role: domain.RoleMember,
+	})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if _, err := f.accounts.Login(context.Background(), LoginRequest{
+		Email: "somebody@example.com", Password: "a-long-enough-password", IP: "203.0.113.4",
+	}); err != nil {
+		t.Fatalf("login: %v", err)
+	}
+
+	breakInserts(t, f.db, "audit_events")
+
+	user.Role = domain.RoleManager
+	if err := f.accounts.UpdateUser(f.ctx, user); err == nil {
+		t.Fatal("changing a role succeeded with the audit write failing")
+	}
+
+	after, err := f.db.GetUser(context.Background(), user.ID)
+	if err != nil {
+		t.Fatalf("read the user: %v", err)
+	}
+	if after.Role != domain.RoleMember {
+		t.Errorf("the role is %s after a change that could not be recorded", after.Role)
+	}
+	if sessions := countRows(t, f.db, "sessions", "user_id = ?", user.ID); sessions != 1 {
+		t.Errorf("%d sessions after a rolled-back role change, want the one that "+
+			"existed: the sign-out and the change are one operation", sessions)
+	}
+}
+
+// recordFor records an hour against an assignment, for the fixtures above.
+func recordFor(t *testing.T, f *serverFixture, assignmentID int64, at time.Time) {
+	t.Helper()
+
+	if _, err := f.svc.CreateEntry(f.ctx, EntryInput{
+		AssignmentID: assignmentID, StartedAt: at, DurationSeconds: 3600, Billable: true,
+	}); err != nil {
+		t.Fatalf("record time: %v", err)
 	}
 }

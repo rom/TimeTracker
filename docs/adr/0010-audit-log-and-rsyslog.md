@@ -87,11 +87,20 @@ tested.
   its row and audit entry together, with the bytes written before the
   transaction and removed after it ([ADR-0013](0013-attachment-storage.md)).
 
-  What remains outside the arrangement is a restore, which rebuilds the
-  catalogue record by record and is already a sequence of individually audited
-  creates, and the account and timesheet paths. None of them should be quietly
-  assumed to be atomic because this ADR says mutations are; the injection test
-  in `internal/service/audit_test.go` is what settles it for any given path.
+  The account and timesheet paths followed, and two of them carry a second write
+  that has to go with the first: changing a role signs the account out, and
+  changing a password signs it out everywhere. A partial commit there leaves an
+  account whose privileges and whose sessions disagree, so the sign-out is inside
+  the transaction with the change and the audit row.
+
+  What remains outside the arrangement, as of this writing: expenses (create,
+  update, delete, move, accept, reject), tags, contract terms, instance
+  settings, a user's own time zone, the search reindex, and the restore — which
+  rebuilds the catalogue record by record and is already a sequence of
+  individually audited creates. None of them should be quietly assumed to be
+  atomic because this ADR says mutations are; the injection tests in
+  `internal/service/audit_test.go` are what settle it for any given path, and a
+  path with no case there has not been checked.
 
 ## Alternatives considered
 

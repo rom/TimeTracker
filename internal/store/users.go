@@ -92,8 +92,14 @@ func scanAccount(row rowScanner) (Account, error) {
 
 // CreateAccount inserts a user together with their credentials.
 func (db *DB) CreateAccount(ctx context.Context, a Account) (domain.User, error) {
+	return CreateAccountTx(ctx, db.write, a)
+}
+
+// CreateAccountTx inserts an account using the given executor, so the row and
+// its audit entry can commit together.
+func CreateAccountTx(ctx context.Context, db Execer, a Account) (domain.User, error) {
 	now := time.Now()
-	res, err := db.write.ExecContext(ctx, `
+	res, err := db.ExecContext(ctx, `
 		INSERT INTO users (display_name, email, role, time_zone, theme, language, active,
 		                   created_at, password_hash, oidc_subject, oidc_issuer, totp_secret,
 		                   password_set_at, client_customer_id)
@@ -118,7 +124,16 @@ func (db *DB) CreateAccount(ctx context.Context, a Account) (domain.User, error)
 // Callers revoke the user's other sessions afterwards: a password change that
 // leaves an attacker's existing session alive has not achieved anything.
 func (db *DB) SetPasswordHash(ctx context.Context, userID int64, hash string) error {
-	res, err := db.write.ExecContext(ctx,
+	return SetPasswordHashTx(ctx, db.write, userID, hash)
+}
+
+// SetPasswordHashTx is SetPasswordHash on the caller's executor.
+//
+// The transactional form matters more here than elsewhere: setting the hash and
+// revoking the account's other sessions are one operation, and a password change
+// that left an attacker's session alive would have achieved nothing.
+func SetPasswordHashTx(ctx context.Context, db Execer, userID int64, hash string) error {
+	res, err := db.ExecContext(ctx,
 		`UPDATE users SET password_hash = ?, password_set_at = ? WHERE id = ?`,
 		hash, formatTime(time.Now()), userID)
 	if err != nil {
@@ -147,7 +162,12 @@ func (db *DB) RecordLogin(ctx context.Context, userID int64, at time.Time) error
 
 // UpdateUserAdmin saves the fields only an administrator may change.
 func (db *DB) UpdateUserAdmin(ctx context.Context, u domain.User) error {
-	res, err := db.write.ExecContext(ctx, `
+	return UpdateUserAdminTx(ctx, db.write, u)
+}
+
+// UpdateUserAdminTx is UpdateUserAdmin on the caller's executor.
+func UpdateUserAdminTx(ctx context.Context, db Execer, u domain.User) error {
+	res, err := db.ExecContext(ctx, `
 		UPDATE users SET display_name = ?, email = ?, role = ?, active = ?, client_customer_id = ?
 		WHERE id = ?`,
 		u.DisplayName, u.Email, string(u.Role), boolToInt(u.Active), u.ClientCustomerID, u.ID)
@@ -218,7 +238,12 @@ type ProjectMember struct {
 
 // AddProjectMember attaches a user to a project, or updates the attachment.
 func (db *DB) AddProjectMember(ctx context.Context, m ProjectMember) error {
-	_, err := db.write.ExecContext(ctx, `
+	return AddProjectMemberTx(ctx, db.write, m)
+}
+
+// AddProjectMemberTx is AddProjectMember on the caller's executor.
+func AddProjectMemberTx(ctx context.Context, db Execer, m ProjectMember) error {
+	_, err := db.ExecContext(ctx, `
 		INSERT INTO project_members (project_id, user_id, role_override, rate_minor, created_at)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT (project_id, user_id)
@@ -232,7 +257,12 @@ func (db *DB) AddProjectMember(ctx context.Context, m ProjectMember) error {
 
 // RemoveProjectMember detaches a user from a project.
 func (db *DB) RemoveProjectMember(ctx context.Context, projectID, userID int64) error {
-	_, err := db.write.ExecContext(ctx,
+	return RemoveProjectMemberTx(ctx, db.write, projectID, userID)
+}
+
+// RemoveProjectMemberTx is RemoveProjectMember on the caller's executor.
+func RemoveProjectMemberTx(ctx context.Context, db Execer, projectID, userID int64) error {
+	_, err := db.ExecContext(ctx,
 		`DELETE FROM project_members WHERE project_id = ? AND user_id = ?`, projectID, userID)
 	return err
 }

@@ -46,6 +46,12 @@ func (db *DB) GetPeriod(ctx context.Context, userID int64, weekStart string) (do
 // The unique index on (user_id, week_start) is what makes this idempotent:
 // submitting twice updates one row rather than creating a second.
 func (db *DB) UpsertPeriod(ctx context.Context, p domain.TimesheetPeriod) error {
+	return UpsertPeriodTx(ctx, db.write, p)
+}
+
+// UpsertPeriodTx is UpsertPeriod on the caller's executor, so a submission or a
+// decision commits with the audit row that records who made it.
+func UpsertPeriodTx(ctx context.Context, db Execer, p domain.TimesheetPeriod) error {
 	now := formatTime(time.Now())
 
 	var submittedAt, decidedAt string
@@ -56,7 +62,7 @@ func (db *DB) UpsertPeriod(ctx context.Context, p domain.TimesheetPeriod) error 
 		decidedAt = formatTime(p.DecidedAt)
 	}
 
-	_, err := db.write.ExecContext(ctx, `
+	_, err := db.ExecContext(ctx, `
 		INSERT INTO timesheet_periods (user_id, week_start, status, submitted_at,
 		    decided_by, decided_at, note, submitted_seconds, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
