@@ -384,15 +384,17 @@ func (s *Service) mutate(ctx context.Context, action, resourceType string, detai
 	return nil
 }
 
-// recordAudit writes an audit row for a change that has already been made
-// through a store method.
+// recordAudit writes an audit row beside a change rather than with it.
 //
-// It is the older arrangement and the weaker one: the audit row lands in a
-// transaction of its own, so a failure here reports failure over a change that
-// stuck. The catalogue paths use mutate instead. What is left on this are the
-// paths where the change is not a single database write to begin with - a
-// restore that rebuilds everything, an import, an attachment whose bytes are on
-// disk - and each of those needs its own answer rather than this one.
+// It has exactly one caller left: the summary row at the end of a restore, which
+// is a record of an operation rather than of a change - see the comment there
+// for why that one is different, and why its failure is logged rather than
+// returned. Everything else in the service goes through mutate, which puts the
+// change and its record in one transaction.
+//
+// Kept rather than inlined so that a future caller has to look at this comment
+// and decide whether they really are recording an operation, or whether they
+// have a change that belongs in a transaction.
 func (s *Service) recordAudit(ctx context.Context, action, resourceType string, resourceID int64, detail any) error {
 	err := s.db.InTx(ctx, func(tx *sql.Tx) error {
 		return s.audit(ctx, tx, action, resourceType, resourceID, 0, detail)

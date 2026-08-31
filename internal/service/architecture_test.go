@@ -348,3 +348,65 @@ func callsAnyOf(fn *ast.FuncDecl, names []string) bool {
 	})
 	return found
 }
+
+// auditedBesideTheChange names the functions allowed to call recordAudit, which
+// writes an audit row in a transaction of its own rather than in the one that
+// made the change.
+//
+// One entry, and it is a considered exception rather than a gap: see
+// TestARestoreIsRecordedButNotGatedOnItsSummary and the comment at the call
+// site. Everything else that changes something goes through Service.mutate.
+var auditedBesideTheChange = map[string]string{
+	"restoreDocument": "the summary row for an operation made of individually " +
+		"audited changes; it joins no transaction and its failure does not fail " +
+		"the restore",
+}
+
+// TestEveryAuditedChangeCommitsWithItsRecord.
+//
+// ASR-006 says a change and its audit row commit together. That was true of the
+// time-entry paths and of nothing else for a long time, and the difference is
+// invisible in review: `s.db.Update(...)` followed by `s.recordAudit(...)` reads
+// exactly like the correct version and behaves identically until an audit write
+// fails, at which point the caller is told the operation failed over a change
+// that stuck.
+//
+// The injection tests prove it for the paths they cover. This covers the ones
+// nobody has written a case for yet, which is where the next one will be.
+func TestEveryAuditedChangeCommitsWithItsRecord(t *testing.T) {
+	funcs := packageFuncs(t)
+
+	found := 0
+	for name, fn := range funcs {
+		if name == "recordAudit" || !callsAnyOf(fn, []string{"recordAudit"}) {
+			continue
+		}
+		found++
+		if _, allowed := auditedBesideTheChange[name]; allowed {
+			continue
+		}
+		t.Errorf("%s writes its audit row beside the change rather than with it.\n"+
+			"Use Service.mutate, which takes the change as a function of the "+
+			"transaction, or - if this really is a record of an operation rather "+
+			"than of a change - name it in auditedBesideTheChange with the reason.",
+			name)
+	}
+
+	// A stale name would excuse the next function given it.
+	for name := range auditedBesideTheChange {
+		fn, exists := funcs[name]
+		if !exists {
+			t.Errorf("auditedBesideTheChange names %s, which no longer exists", name)
+			continue
+		}
+		if !callsAnyOf(fn, []string{"recordAudit"}) {
+			t.Errorf("auditedBesideTheChange names %s, which no longer records an "+
+				"audit row beside a change", name)
+		}
+	}
+
+	if found == 0 {
+		t.Error("no callers of recordAudit found at all; if it has been removed, " +
+			"this test and the map above should go with it")
+	}
+}

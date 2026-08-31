@@ -697,12 +697,29 @@ func (s *Service) restoreDocument(ctx context.Context, document []byte) (Restore
 		return result, err
 	}
 
+	// The one audit row in the application that is written beside the change
+	// rather than with it, and the one whose failure does not fail the caller.
+	//
+	// A restore is not a change. It is a sequence of them - every customer,
+	// project, assignment, entry and expense above goes through the ordinary
+	// audited path, each committing with its own record of who created it - and
+	// it merges into an existing instance by name, skipping what is already
+	// there, which is what makes it safe to run twice. There is no single
+	// transaction this summary could join without holding the write connection
+	// for the length of a restore of somebody's whole history.
+	//
+	// So the trail is already complete without this row: it says what the
+	// operation was, not what changed. Failing the call over it would report a
+	// failed restore to somebody whose data is in fact restored and fully
+	// recorded, which is the worse of the two lies.
 	if err := s.recordAudit(ctx, "backup.restore", "backup", 0, map[string]any{
 		"customers": result.Customers, "projects": result.Projects,
 		"assignments": result.Assignments, "entries": result.Entries,
 		"skipped": result.Skipped,
-	}); err != nil {
-		return result, err
+	}); err != nil && s.log != nil {
+		s.log.ErrorContext(ctx, "the restore summary could not be recorded",
+			"error", err.Error(),
+			"note", "the restored records are individually audited; this is the summary only")
 	}
 	return result, nil
 }

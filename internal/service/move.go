@@ -8,6 +8,7 @@ import (
 
 	"github.com/rom/timetracker/internal/auth"
 	"github.com/rom/timetracker/internal/domain"
+	"github.com/rom/timetracker/internal/store"
 )
 
 // Moving time between assignments.
@@ -169,11 +170,10 @@ func (s *Service) MoveExpenses(ctx context.Context, expenseIDs []int64, targetPr
 		}
 		expense.ApplyMarkup()
 
-		if err := s.db.UpdateExpense(ctx, expense); err != nil {
-			return result, err
-		}
-		if err := s.recordAudit(ctx, "expense.move", "expense", id, map[string]any{
+		if err := s.mutate(ctx, "expense.move", "expense", map[string]any{
 			"from": from, "to": target.CustomerName + " / " + target.Name,
+		}, func(tx *sql.Tx) (int64, error) {
+			return id, store.UpdateExpenseTx(ctx, tx, expense)
 		}); err != nil {
 			return result, err
 		}

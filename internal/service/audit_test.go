@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"strings"
@@ -267,6 +268,61 @@ func TestEveryAuditedMutationRollsBackTogether(t *testing.T) {
 				_, err := f.svc.Attach(f.ctx, "time_entry", 1,
 					"receipt.txt", strings.NewReader("bytes"))
 				return err
+			},
+		},
+		{
+			name:  "record an expense",
+			table: "expenses",
+			do: func(t *testing.T, f *fixture) error {
+				_, err := f.svc.CreateExpense(f.ctx, ExpenseInput{
+					ProjectID: 1, SpentOn: f.now.Format("2006-01-02"),
+					Description: "Taxi", Amount: "425.00", Billable: true,
+				})
+				return err
+			},
+		},
+		{
+			name:  "correct an expense",
+			table: "expenses",
+			setup: func(t *testing.T, f *fixture) {
+				if _, err := f.svc.CreateExpense(f.ctx, ExpenseInput{
+					ProjectID: 1, SpentOn: f.now.Format("2006-01-02"),
+					Description: "Taxi", Amount: "425.00", Billable: true,
+				}); err != nil {
+					t.Fatalf("create expense: %v", err)
+				}
+			},
+			do: func(t *testing.T, f *fixture) error {
+				_, err := f.svc.UpdateExpense(f.ctx, 1, ExpenseInput{
+					ProjectID: 1, SpentOn: f.now.Format("2006-01-02"),
+					Description: "Taxi", Amount: "540.00", Billable: true,
+				})
+				return err
+			},
+		},
+		{
+			name:  "withdraw an expense",
+			table: "expenses",
+			setup: func(t *testing.T, f *fixture) {
+				if _, err := f.svc.CreateExpense(f.ctx, ExpenseInput{
+					ProjectID: 1, SpentOn: f.now.Format("2006-01-02"),
+					Description: "Taxi", Amount: "425.00", Billable: true,
+				}); err != nil {
+					t.Fatalf("create expense: %v", err)
+				}
+			},
+			do: func(t *testing.T, f *fixture) error {
+				return f.svc.DeleteExpense(f.ctx, 1)
+			},
+		},
+		{
+			name:  "save contract terms",
+			table: "contract_terms",
+			do: func(t *testing.T, f *fixture) error {
+				return f.svc.SaveContractTerms(f.ctx, domain.ContractTerms{
+					Scope: domain.TermsForCustomer, ScopeID: 1,
+					EffectiveFrom: "2026-07-01", Note: "rolled back",
+				})
 			},
 		},
 		{
@@ -844,5 +900,193 @@ func recordFor(t *testing.T, f *serverFixture, assignmentID int64, at time.Time)
 		AssignmentID: assignmentID, StartedAt: at, DurationSeconds: 3600, Billable: true,
 	}); err != nil {
 		t.Fatalf("record time: %v", err)
+	}
+}
+
+// TestChangesWithNoRowToCountRollBackToo.
+//
+// The paths where a row count proves nothing, because the change is a value: a
+// rename, a status, a setting, a move. Each is asserted on what the record says
+// afterwards, which is the only evidence that means anything for these.
+func TestChangesWithNoRowToCountRollBackToo(t *testing.T) {
+	for _, change := range []struct {
+		name   string
+		setup  func(t *testing.T, f *fixture)
+		do     func(t *testing.T, f *fixture) error
+		intact func(t *testing.T, f *fixture)
+	}{
+		{
+			name: "rename a tag",
+			setup: func(t *testing.T, f *fixture) {
+				f.tagged(t, "an entry to hang a tag on", "incident")
+			},
+			do: func(t *testing.T, f *fixture) error {
+				return f.svc.UpdateTag(f.ctx, domain.Tag{ID: 1, Name: "outage", ColourKey: "red"})
+			},
+			intact: func(t *testing.T, f *fixture) {
+				tags, err := f.svc.Tags(f.ctx)
+				if err != nil {
+					t.Fatalf("list tags: %v", err)
+				}
+				if len(tags) != 1 || tags[0].Name != "incident" {
+					t.Errorf("the tag is %+v after a rename that could not be recorded", tags)
+				}
+				// The rename rebuilds the search index inside the same
+				// transaction, so a rollback has to take that with it: an index
+				// naming a tag that does not exist is a search that finds
+				// nothing for a word the user can see on screen.
+				entries, _ := f.search(t, EntryFilter{Query: "incident"})
+				if len(entries) != 1 {
+					t.Errorf("the search index no longer finds the tag that is still there")
+				}
+			},
+		},
+		{
+			name: "delete a tag",
+			setup: func(t *testing.T, f *fixture) {
+				f.tagged(t, "an entry to hang a tag on", "incident")
+			},
+			do: func(t *testing.T, f *fixture) error {
+				return f.svc.DeleteTag(f.ctx, 1)
+			},
+			intact: func(t *testing.T, f *fixture) {
+				tags, err := f.svc.Tags(f.ctx)
+				if err != nil {
+					t.Fatalf("list tags: %v", err)
+				}
+				if len(tags) != 1 {
+					t.Errorf("the tag was deleted by a change that could not be recorded")
+				}
+			},
+		},
+		{
+			name: "change the instance settings",
+			do: func(t *testing.T, f *fixture) error {
+				return f.svc.UpdateSettings(f.ctx, SettingsInput{
+					DefaultCurrency: "USD", DefaultRounding: "none",
+					DefaultRate: "0", WeekStart: 1,
+				})
+			},
+			intact: func(t *testing.T, f *fixture) {
+				settings, err := f.svc.Settings(f.ctx)
+				if err != nil {
+					t.Fatalf("settings: %v", err)
+				}
+				if settings.DefaultCurrency == "USD" {
+					t.Error("the default currency changed on a save that could not be recorded")
+				}
+			},
+		},
+		{
+			name: "change your own time zone",
+			do: func(t *testing.T, f *fixture) error {
+				return f.svc.SetTimeZone(f.ctx, "Europe/Stockholm")
+			},
+			intact: func(t *testing.T, f *fixture) {
+				user, err := f.db.GetUser(context.Background(), f.user.ID)
+				if err != nil {
+					t.Fatalf("get user: %v", err)
+				}
+				if user.TimeZone != "UTC" {
+					t.Errorf("the time zone is %q after a change that could not be "+
+						"recorded; it decides which day work lands on", user.TimeZone)
+				}
+			},
+		},
+		{
+			name: "move an expense to another project",
+			setup: func(t *testing.T, f *fixture) {
+				if _, err := f.svc.CreateExpense(f.ctx, ExpenseInput{
+					ProjectID: 1, SpentOn: f.now.Format("2006-01-02"),
+					Description: "Taxi", Amount: "425.00", Billable: true,
+				}); err != nil {
+					t.Fatalf("create expense: %v", err)
+				}
+				if _, err := f.svc.CreateProject(f.ctx, domain.Project{
+					CustomerID: 1, Name: "Somewhere Else", BillableDefault: true,
+				}); err != nil {
+					t.Fatalf("create the other project: %v", err)
+				}
+			},
+			do: func(t *testing.T, f *fixture) error {
+				_, err := f.svc.MoveExpenses(f.ctx, []int64{1}, 2)
+				return err
+			},
+			intact: func(t *testing.T, f *fixture) {
+				expense, err := f.svc.Expense(f.ctx, 1)
+				if err != nil {
+					t.Fatalf("read the expense: %v", err)
+				}
+				if expense.ProjectID != 1 {
+					t.Errorf("the expense moved to project %d on a change that could "+
+						"not be recorded", expense.ProjectID)
+				}
+			},
+		},
+	} {
+		t.Run(change.name, func(t *testing.T) {
+			f := newFixture(t)
+			if change.setup != nil {
+				change.setup(t, f)
+			}
+
+			breakInserts(t, f.db, "audit_events")
+
+			err := change.do(t, f)
+			if err == nil {
+				t.Fatalf("%s succeeded with the audit write failing", change.name)
+			}
+			if !strings.Contains(err.Error(), "injected failure") {
+				t.Fatalf("%s failed for the wrong reason: %v", change.name, err)
+			}
+			change.intact(t, f)
+		})
+	}
+}
+
+// TestARestoreIsRecordedButNotGatedOnItsSummary.
+//
+// The one deliberate exception, and the reason it is one.
+//
+// A restore is a sequence of ordinary audited changes - every customer,
+// project, entry and expense it creates commits with its own record of who
+// created it - and it merges by name, so it is safe to run again. The summary
+// row at the end says what the *operation* was, not what changed, and there is
+// no transaction it could join without holding the write connection for the
+// length of a restore of somebody's whole history.
+//
+// So its failure is logged and the restore stands. Telling somebody their
+// restore failed when their data is in fact restored and fully recorded is the
+// worse of the two available lies.
+func TestARestoreIsRecordedButNotGatedOnItsSummary(t *testing.T) {
+	source := withBlobs(t, newFixture(t))
+	mustCreate(t, source, source.now, 3600)
+
+	var archive bytes.Buffer
+	if err := source.svc.WriteArchive(source.ctx, &archive, BackupOptions{}); err != nil {
+		t.Fatalf("write the archive: %v", err)
+	}
+
+	// A fresh instance, with the summary row - and only the summary row - unable
+	// to be written before the restore runs.
+	target := withBlobs(t, newFixture(t))
+	breakInsertsWhen(t, target.db, "audit_events", "NEW.action = 'backup.restore'")
+
+	result, err := target.svc.RestoreArchive(target.ctx,
+		bytes.NewReader(archive.Bytes()), int64(archive.Len()))
+	if err != nil {
+		t.Fatalf("a restore failed because its summary row could not be written: %v", err)
+	}
+	if result.Entries == 0 && result.Customers == 0 {
+		t.Fatal("the restore created nothing, so this proves nothing")
+	}
+
+	// The individual creates are audited, which is what makes the summary
+	// dispensable rather than merely inconvenient.
+	if rows := countRows(t, target.db, "audit_events", "action = ?", "customer.create"); rows == 0 {
+		t.Error("the restored records carry no audit rows of their own")
+	}
+	if rows := countRows(t, target.db, "audit_events", "action = ?", "backup.restore"); rows != 0 {
+		t.Error("the summary row was written after all; this test is watching nothing")
 	}
 }

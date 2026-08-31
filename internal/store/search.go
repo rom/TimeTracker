@@ -214,27 +214,40 @@ func (db *DB) ReindexSearch(ctx context.Context) (int, error) {
 func (db *DB) reindexSearch(ctx context.Context) (int, error) {
 	count := 0
 	err := db.InTx(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM entry_search`); err != nil {
-			return fmt.Errorf("clear search index: %w", err)
-		}
-		res, err := tx.ExecContext(ctx, `
-			INSERT INTO entry_search (rowid, note, assignment, project, customer, tags)
-			SELECT e.id, e.note, a.name, p.name, c.name,
-			       COALESCE((SELECT group_concat(t.name, ' ') FROM entry_tags et
-			                   JOIN tags t ON t.id = et.tag_id WHERE et.entry_id = e.id), '')
-			FROM time_entries e
-			JOIN assignments a ON a.id = e.assignment_id
-			JOIN projects    p ON p.id = a.project_id
-			JOIN customers   c ON c.id = p.customer_id`)
-		if err != nil {
-			return fmt.Errorf("rebuild search index: %w", err)
-		}
-		affected, err := res.RowsAffected()
-		if err != nil {
-			return err
-		}
-		count = int(affected)
-		return nil
+		var txErr error
+		count, txErr = ReindexSearchTx(ctx, tx)
+		return txErr
 	})
 	return count, err
+}
+
+// ReindexSearchTx rebuilds the index on the caller's executor and reports how
+// many entries it wrote.
+//
+// The transactional form is what lets a tag rename rebuild the index and record
+// itself in one go. It also has to run *inside* the caller's transaction rather
+// than beside it: the rename is not visible to another connection until the
+// commit, so a rebuild on its own would index the old name and quietly undo the
+// change as far as search is concerned.
+func ReindexSearchTx(ctx context.Context, db Execer) (int, error) {
+	if _, err := db.ExecContext(ctx, `DELETE FROM entry_search`); err != nil {
+		return 0, fmt.Errorf("clear search index: %w", err)
+	}
+	res, err := db.ExecContext(ctx, `
+		INSERT INTO entry_search (rowid, note, assignment, project, customer, tags)
+		SELECT e.id, e.note, a.name, p.name, c.name,
+		       COALESCE((SELECT group_concat(t.name, ' ') FROM entry_tags et
+		                   JOIN tags t ON t.id = et.tag_id WHERE et.entry_id = e.id), '')
+		FROM time_entries e
+		JOIN assignments a ON a.id = e.assignment_id
+		JOIN projects    p ON p.id = a.project_id
+		JOIN customers   c ON c.id = p.customer_id`)
+	if err != nil {
+		return 0, fmt.Errorf("rebuild search index: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return int(affected), nil
 }

@@ -59,7 +59,12 @@ func (db *DB) FirstUser(ctx context.Context) (domain.User, error) {
 
 // UpdateUserPreferences saves the display settings a user can change themselves.
 func (db *DB) UpdateUserPreferences(ctx context.Context, id int64, theme, timeZone, language string) error {
-	_, err := db.write.ExecContext(ctx,
+	return UpdateUserPreferencesTx(ctx, db.write, id, theme, timeZone, language)
+}
+
+// UpdateUserPreferencesTx is UpdateUserPreferences on the caller's executor.
+func UpdateUserPreferencesTx(ctx context.Context, db Execer, id int64, theme, timeZone, language string) error {
+	_, err := db.ExecContext(ctx,
 		`UPDATE users SET theme = ?, time_zone = ?, language = ? WHERE id = ?`,
 		theme, timeZone, language, id)
 	return err
@@ -628,7 +633,12 @@ func (db *DB) GetSettings(ctx context.Context) (Settings, error) {
 
 // UpdateSettings saves the instance-wide defaults.
 func (db *DB) UpdateSettings(ctx context.Context, s Settings) error {
-	_, err := db.write.ExecContext(ctx, `
+	return UpdateSettingsTx(ctx, db.write, s)
+}
+
+// UpdateSettingsTx is UpdateSettings on the caller's executor.
+func UpdateSettingsTx(ctx context.Context, db Execer, s Settings) error {
+	_, err := db.ExecContext(ctx, `
 		UPDATE settings SET default_currency = ?, default_rounding = ?, default_rate_minor = ?,
 		       week_start = ?, max_timer_seconds = ?, idle_seconds = ?,
 		       reminders_enabled = ?, reminder_hour = ?,

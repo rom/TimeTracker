@@ -42,10 +42,15 @@ func termsArgs(t domain.ContractTerms) []any {
 
 // CreateContractTerms inserts one dated set of terms.
 func (db *DB) CreateContractTerms(ctx context.Context, t domain.ContractTerms) (domain.ContractTerms, error) {
+	return CreateContractTermsTx(ctx, db.write, t)
+}
+
+// CreateContractTermsTx inserts one dated set using the given executor.
+func CreateContractTermsTx(ctx context.Context, db Execer, t domain.ContractTerms) (domain.ContractTerms, error) {
 	now := time.Now()
 	args := append(termsArgs(t), formatTime(now), formatTime(now))
 
-	res, err := db.write.ExecContext(ctx, `
+	res, err := db.ExecContext(ctx, `
 		INSERT INTO contract_terms (scope, scope_id, effective_from,
 			overtime_rate_minor, overtime_multiplier_pct,
 			overtime_daily_threshold_seconds, overtime_weekly_threshold_seconds,
@@ -67,9 +72,14 @@ func (db *DB) CreateContractTerms(ctx context.Context, t domain.ContractTerms) (
 
 // UpdateContractTerms saves an edited set.
 func (db *DB) UpdateContractTerms(ctx context.Context, t domain.ContractTerms) error {
+	return UpdateContractTermsTx(ctx, db.write, t)
+}
+
+// UpdateContractTermsTx is UpdateContractTerms on the caller's executor.
+func UpdateContractTermsTx(ctx context.Context, db Execer, t domain.ContractTerms) error {
 	args := append(termsArgs(t), formatTime(time.Now()), t.ID)
 
-	res, err := db.write.ExecContext(ctx, `
+	res, err := db.ExecContext(ctx, `
 		UPDATE contract_terms SET scope = ?, scope_id = ?, effective_from = ?,
 		       overtime_rate_minor = ?, overtime_multiplier_pct = ?,
 		       overtime_daily_threshold_seconds = ?, overtime_weekly_threshold_seconds = ?,
@@ -91,7 +101,12 @@ func (db *DB) UpdateContractTerms(ctx context.Context, t domain.ContractTerms) e
 // it carries the resulting rate, frozen (ADR-0014) - so removing a set cannot
 // orphan history.
 func (db *DB) DeleteContractTerms(ctx context.Context, id int64) error {
-	res, err := db.write.ExecContext(ctx, `DELETE FROM contract_terms WHERE id = ?`, id)
+	return DeleteContractTermsTx(ctx, db.write, id)
+}
+
+// DeleteContractTermsTx is DeleteContractTerms on the caller's executor.
+func DeleteContractTermsTx(ctx context.Context, db Execer, id int64) error {
+	res, err := db.ExecContext(ctx, `DELETE FROM contract_terms WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete contract terms: %w", err)
 	}

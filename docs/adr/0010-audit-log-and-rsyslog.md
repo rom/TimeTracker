@@ -91,16 +91,24 @@ tested.
   that has to go with the first: changing a role signs the account out, and
   changing a password signs it out everywhere. A partial commit there leaves an
   account whose privileges and whose sessions disagree, so the sign-out is inside
-  the transaction with the change and the audit row.
+  the transaction with the change and the audit row. A tag rename is the same
+  shape for a different reason — it rebuilds the search index, which has to
+  happen inside the same transaction or the rebuild indexes the old name.
 
-  What remains outside the arrangement, as of this writing: expenses (create,
-  update, delete, move, accept, reject), tags, contract terms, instance
-  settings, a user's own time zone, the search reindex, and the restore — which
-  rebuilds the catalogue record by record and is already a sequence of
-  individually audited creates. None of them should be quietly assumed to be
-  atomic because this ADR says mutations are; the injection tests in
-  `internal/service/audit_test.go` are what settle it for any given path, and a
-  path with no case there has not been checked.
+  **Every mutating path in the service now works this way**, and there is one
+  stated exception: the summary row at the end of a restore. A restore is not a
+  change but a sequence of them — every record it creates commits with its own
+  audit row — and it merges by name, so it is safe to run again. There is no
+  transaction that summary could join without holding the single write
+  connection for the length of a restore of somebody's whole history, so its
+  failure is logged and the restore stands. Reporting a failed restore to
+  somebody whose data is restored and fully recorded is the worse of the two
+  available lies.
+
+  The injection tests in `internal/service/audit_test.go` are what settle this
+  for any given path, and a path with no case there has not been checked. That
+  is how each of these groups was found in turn: the tests came first, the list
+  of what was still wrong came from them, and it shrank as they were fixed.
 
 ## Alternatives considered
 

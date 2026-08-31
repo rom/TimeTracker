@@ -2,10 +2,12 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/rom/timetracker/internal/auth"
 	"github.com/rom/timetracker/internal/domain"
+	"github.com/rom/timetracker/internal/store"
 )
 
 // Tags.
@@ -48,16 +50,18 @@ func (s *Service) UpdateTag(ctx context.Context, tag domain.Tag) error {
 	}
 
 	tag.Name = name
-	if err := s.db.UpdateTag(ctx, tag); err != nil {
-		return err
-	}
-	// A rename changes the words entries are findable by, so the index has to
-	// follow it. Cheap relative to how rarely tags are renamed.
-	if _, err := s.db.ReindexSearch(ctx); err != nil {
-		return err
-	}
-	return s.recordAudit(ctx, "tag.update", "tag", tag.ID, map[string]any{
+	return s.mutate(ctx, "tag.update", "tag", map[string]any{
 		"name": name,
+	}, func(tx *sql.Tx) (int64, error) {
+		if err := store.UpdateTagTx(ctx, tx, tag); err != nil {
+			return 0, err
+		}
+		// A rename changes the words entries are findable by, so the index has
+		// to follow it - in the same transaction, because the new name is not
+		// visible to another connection until this one commits, and a rebuild
+		// beside it would index the old name.
+		_, err := store.ReindexSearchTx(ctx, tx)
+		return tag.ID, err
 	})
 }
 
@@ -83,15 +87,15 @@ func (s *Service) DeleteTag(ctx context.Context, id int64) error {
 		}
 	}
 
-	if err := s.db.DeleteTag(ctx, id); err != nil {
-		return err
-	}
-	if _, err := s.db.ReindexSearch(ctx); err != nil {
-		return err
-	}
-	return s.recordAudit(ctx, "tag.delete", "tag", id, map[string]any{
+	return s.mutate(ctx, "tag.delete", "tag", map[string]any{
 		"name":    removed.Name,
 		"entries": removed.EntryCount,
+	}, func(tx *sql.Tx) (int64, error) {
+		if err := store.DeleteTagTx(ctx, tx, id); err != nil {
+			return 0, err
+		}
+		_, err := store.ReindexSearchTx(ctx, tx)
+		return id, err
 	})
 }
 
@@ -105,14 +109,13 @@ func (s *Service) ReindexSearch(ctx context.Context) (int, error) {
 	if err := s.authz.Can(ctx, auth.ActionManage, auth.Resource{Type: "settings"}); err != nil {
 		return 0, notFoundFor(err)
 	}
-	count, err := s.db.ReindexSearch(ctx)
-	if err != nil {
-		return 0, err
-	}
-	if err := s.recordAudit(ctx, "search.reindex", "settings", 0, map[string]any{
-		"entries": count,
+	var count int
+	if err := s.mutate(ctx, "search.reindex", "settings", nil, func(tx *sql.Tx) (int64, error) {
+		var txErr error
+		count, txErr = store.ReindexSearchTx(ctx, tx)
+		return 0, txErr
 	}); err != nil {
-		return count, err
+		return 0, err
 	}
 	return count, nil
 }

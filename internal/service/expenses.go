@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -132,17 +133,18 @@ func (s *Service) CreateExpense(ctx context.Context, in ExpenseInput) (domain.Ex
 		return domain.Expense{}, err
 	}
 
-	created, err := s.db.CreateExpense(ctx, expense)
-	if err != nil {
-		return domain.Expense{}, err
-	}
-	if err := s.recordAudit(ctx, "expense.create", "expense", created.ID, map[string]any{
+	var created domain.Expense
+	if err := s.mutate(ctx, "expense.create", "expense", map[string]any{
 		"project":      project.Name,
-		"amount_minor": created.AmountMinor,
-		"currency":     created.Currency,
-		"billable":     created.Billable,
-		"reimbursable": created.Reimbursable,
-		"status":       string(created.Status),
+		"amount_minor": expense.AmountMinor,
+		"currency":     expense.Currency,
+		"billable":     expense.Billable,
+		"reimbursable": expense.Reimbursable,
+		"status":       string(expense.Status),
+	}, func(tx *sql.Tx) (int64, error) {
+		var txErr error
+		created, txErr = store.CreateExpenseTx(ctx, tx, expense)
+		return created.ID, txErr
 	}); err != nil {
 		return domain.Expense{}, err
 	}
@@ -206,13 +208,12 @@ func (s *Service) UpdateExpense(ctx context.Context, id int64, in ExpenseInput) 
 	if err := updated.Validate(); err != nil {
 		return domain.Expense{}, err
 	}
-	if err := s.db.UpdateExpense(ctx, updated); err != nil {
-		return domain.Expense{}, err
-	}
-	if err := s.recordAudit(ctx, "expense.update", "expense", id, map[string]any{
+	if err := s.mutate(ctx, "expense.update", "expense", map[string]any{
 		"amount_minor": map[string]any{"from": existing.AmountMinor, "to": updated.AmountMinor},
 		"billable":     map[string]any{"from": existing.Billable, "to": updated.Billable},
 		"reimbursable": map[string]any{"from": existing.Reimbursable, "to": updated.Reimbursable},
+	}, func(tx *sql.Tx) (int64, error) {
+		return id, store.UpdateExpenseTx(ctx, tx, updated)
 	}); err != nil {
 		return domain.Expense{}, err
 	}
@@ -233,14 +234,14 @@ func (s *Service) DeleteExpense(ctx context.Context, id int64) error {
 	}
 
 	// The receipts go with it. Removing the references here leaves the blobs
-	// unreferenced, and the sweep collects them.
-	if err := s.db.DeleteExpense(ctx, id); err != nil {
-		return err
-	}
-	return s.recordAudit(ctx, "expense.delete", "expense", id, map[string]any{
+	// unreferenced, and the sweep collects them - so nothing on disk depends on
+	// this transaction committing.
+	return s.mutate(ctx, "expense.delete", "expense", map[string]any{
 		"amount_minor": existing.AmountMinor,
 		"currency":     existing.Currency,
 		"description":  existing.Description,
+	}, func(tx *sql.Tx) (int64, error) {
+		return id, store.DeleteExpenseTx(ctx, tx, id)
 	})
 }
 
