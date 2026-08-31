@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -71,10 +72,18 @@ type ImportPreview struct {
 // because the file usually comes out of somebody else's system:
 //
 //	date                       required
-//	duration | hours | time    required, in any form ParseDuration accepts
+//	hours | minutes | duration required, in any form ParseDuration accepts
 //	customer, project, assignment
 //	note | description | comment
 //	billable
+//
+// The duration column's heading decides what a bare number in it means. Under
+// "hours", 2 is two hours; under "minutes", 2 is two minutes; under a heading
+// that does not say - "duration", "time" - a bare whole number is refused with
+// the line number, because eight hours and eight minutes are both plausible
+// readings of "8" and picking one silently is how a day of work becomes a
+// coffee break. A value that carries its own unit ("45m", "1:30", "1.5") is
+// read as written whatever the column is called.
 func (s *Service) ParseTimeCSV(ctx context.Context, r io.Reader, createMissing bool) (ImportPreview, error) {
 	actor, err := auth.MustUser(ctx)
 	if err != nil {
@@ -136,6 +145,10 @@ func (s *Service) ParseTimeCSV(ctx context.Context, r io.Reader, createMissing b
 // importColumns records which CSV column holds which field.
 type importColumns struct {
 	date, duration, customer, project, assignment, note, billable int
+	// durationUnit is what the duration column's heading said its numbers are.
+	// A file that says "hours" at the top of a column has already told us what
+	// a bare 2 in it means.
+	durationUnit domain.DurationUnit
 }
 
 // mapImportColumns reads the header row.
@@ -156,8 +169,15 @@ func mapImportColumns(header []string) (importColumns, error) {
 		switch strings.ToLower(strings.TrimSpace(name)) {
 		case "date", "datum", "day":
 			columns.date = i
-		case "duration", "hours", "time", "timmar", "varaktighet", "duration_hours":
+		case "hours", "hour", "hrs", "timmar", "duration_hours", "decimal_hours":
 			columns.duration = i
+			columns.durationUnit = domain.UnitHours
+		case "minutes", "minute", "mins", "minuter":
+			columns.duration = i
+			columns.durationUnit = domain.UnitMinutes
+		case "duration", "time", "varaktighet", "tid":
+			columns.duration = i
+			columns.durationUnit = domain.UnitUnstated
 		case "customer", "client", "kund":
 			columns.customer = i
 		case "project", "projekt":
@@ -176,7 +196,7 @@ func mapImportColumns(header []string) (importColumns, error) {
 	}
 	if columns.duration < 0 {
 		return columns, fmt.Errorf(
-			"no duration column found; expected one named duration, hours or time")
+			"no duration column found; expected one named hours, minutes, duration or time")
 	}
 	if columns.assignment < 0 && columns.project < 0 {
 		return columns, fmt.Errorf(
@@ -205,9 +225,15 @@ func parseImportRow(record []string, columns importColumns, line int, loc *time.
 	row.Date = parsed
 
 	durationText := field(columns.duration)
-	seconds, err := domain.ParseDuration(durationText)
+	seconds, err := domain.ParseDurationIn(durationText, columns.durationUnit)
 	if err != nil {
-		row.Problem = fmt.Sprintf("could not read the duration %q", durationText)
+		if errors.Is(err, domain.ErrAmbiguousDuration) {
+			row.Problem = fmt.Sprintf(
+				"%q could be hours or minutes; write it as %sh or %sm, or head the "+
+					"column hours or minutes", durationText, durationText, durationText)
+		} else {
+			row.Problem = fmt.Sprintf("could not read the duration %q", durationText)
+		}
 		return row
 	}
 	if seconds <= 0 {

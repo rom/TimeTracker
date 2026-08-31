@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -763,5 +764,134 @@ func TestNearestRoundsShortEntriesToNothing(t *testing.T) {
 	withMinimum := RoundingRule{Mode: RoundNearest, IncrementSeconds: quarterHour, MinimumSeconds: quarterHour}
 	if got := withMinimum.Apply(300); got != quarterHour {
 		t.Errorf("a minimum did not rescue a five-minute entry: %d", got)
+	}
+}
+
+// TestAColumnHeadingDecidesWhatABareNumberMeans.
+//
+// ParseDuration is written for somebody typing into a form, where "30" means
+// half an hour because nobody sits down to record thirty hours. A column in a
+// spreadsheet is a different situation: the heading has already said what the
+// numbers are, and reading "2" under a column called "hours" as two minutes is
+// not leniency, it is a confident wrong answer that lands on an invoice.
+func TestAColumnHeadingDecidesWhatABareNumberMeans(t *testing.T) {
+	for _, cell := range []struct {
+		text    string
+		unit    DurationUnit
+		seconds int64
+	}{
+		// Under a heading that names hours.
+		{"2", UnitHours, 7200},
+		{"1.5", UnitHours, 5400},
+		{"1,5", UnitHours, 5400},
+		{"0.25", UnitHours, 900},
+		{"8", UnitHours, 28800},
+		{"0", UnitHours, 0},
+
+		// Under a heading that names minutes.
+		{"2", UnitMinutes, 120},
+		{"90", UnitMinutes, 5400},
+		{"1.5", UnitMinutes, 90},
+		{"30", UnitMinutes, 1800},
+
+		// A decimal under a heading that says nothing is still hours: nobody
+		// records one and a half minutes.
+		{"1.5", UnitUnstated, 5400},
+		{"0.25", UnitUnstated, 900},
+
+		// A value carrying its own unit means what it says, whatever the column
+		// is called. This is the case that makes a mixed file work: somebody
+		// exports decimal hours and hand-corrects one row to "45m".
+		{"45m", UnitHours, 2700},
+		{"1h30", UnitHours, 5400},
+		{"1:30", UnitHours, 5400},
+		{"2h", UnitMinutes, 7200},
+		{"90m", UnitUnstated, 5400},
+		{"45s", UnitHours, 45},
+	} {
+		got, err := ParseDurationIn(cell.text, cell.unit)
+		if err != nil {
+			t.Errorf("ParseDurationIn(%q, %q): %v", cell.text, cell.unit, err)
+			continue
+		}
+		if got != cell.seconds {
+			t.Errorf("ParseDurationIn(%q, %q) = %d, want %d",
+				cell.text, cell.unit, got, cell.seconds)
+		}
+	}
+}
+
+// TestABareNumberUnderAnUnstatedHeadingIsRefused.
+//
+// The same decision ADR-0022 made about dates, for the same reason. "8" in a
+// column called "duration" is eight hours or eight minutes depending on which
+// system wrote the file. Guessing is wrong by a factor of sixty in whichever
+// direction it guesses wrongly, and the wrongness is invisible: the import
+// succeeds, the numbers look plausible, and somebody finds out at the end of the
+// month.
+func TestABareNumberUnderAnUnstatedHeadingIsRefused(t *testing.T) {
+	for _, text := range []string{"8", "2", "90", "0", "480"} {
+		seconds, err := ParseDurationIn(text, UnitUnstated)
+		if !errors.Is(err, ErrAmbiguousDuration) {
+			t.Errorf("ParseDurationIn(%q, unstated) = %d, %v; want ErrAmbiguousDuration",
+				text, seconds, err)
+		}
+		if err != nil && !strings.Contains(err.Error(), text) {
+			t.Errorf("the refusal does not name the value: %v", err)
+		}
+	}
+
+	// Nonsense is still nonsense rather than ambiguity: the message has to send
+	// somebody to the right part of their file.
+	for _, text := range []string{"", "abc", "-4", "1.2.3"} {
+		if _, err := ParseDurationIn(text, UnitUnstated); errors.Is(err, ErrAmbiguousDuration) {
+			t.Errorf("ParseDurationIn(%q) was reported as ambiguous rather than invalid", text)
+		}
+	}
+	for _, unit := range []DurationUnit{UnitHours, UnitMinutes} {
+		for _, text := range []string{"", "abc", "-4", "1.2.3"} {
+			if _, err := ParseDurationIn(text, unit); err == nil {
+				t.Errorf("ParseDurationIn(%q, %q) was accepted", text, unit)
+			}
+		}
+	}
+}
+
+// TestDecimalUnitsAreExactInBothUnits.
+//
+// The arithmetic behind the two above, and behind ParseDuration's own decimal
+// form, is now integers throughout - the tree has no float parse left at all.
+// This is the same exactness property as TestDecimalHoursAreExact, applied to
+// the unit-aware parse and to minutes.
+func TestDecimalUnitsAreExactInBothUnits(t *testing.T) {
+	for hundredths := 0; hundredths <= 2400; hundredths++ {
+		text := fmt.Sprintf("%d.%02d", hundredths/100, hundredths%100)
+
+		hours, err := ParseDurationIn(text, UnitHours)
+		if err != nil {
+			t.Fatalf("ParseDurationIn(%q, hours): %v", text, err)
+		}
+		if want := int64(math.Round(float64(hundredths) * 36)); hours != want {
+			t.Errorf("ParseDurationIn(%q, hours) = %d, want %d", text, hours, want)
+		}
+
+		minutes, err := ParseDurationIn(text, UnitMinutes)
+		if err != nil {
+			t.Fatalf("ParseDurationIn(%q, minutes): %v", text, err)
+		}
+		if want := int64(math.Round(float64(hundredths) * 0.6)); minutes != want {
+			t.Errorf("ParseDurationIn(%q, minutes) = %d, want %d", text, minutes, want)
+		}
+	}
+
+	// A spreadsheet writing a third of an hour as a long fraction. The value is
+	// truncated well past the point where another digit changes the answer,
+	// rather than overflowing the scale it is computed on.
+	third, err := ParseDurationIn("0.3333333333333333", UnitHours)
+	if err != nil {
+		t.Fatalf("a long fraction: %v", err)
+	}
+	if third != 1200 {
+		t.Errorf("a third of an hour came to %d seconds, want 1200", third)
 	}
 }

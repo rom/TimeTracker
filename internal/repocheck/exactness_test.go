@@ -158,12 +158,18 @@ func TestQuantitiesNamedForTheirUnitAreIntegers(t *testing.T) {
 
 // exemptFloatParses names the functions that may read a fraction from text, with
 // the reason each is not acquiring an inexact value.
-var exemptFloatParses = map[string]string{
-	"ParseDuration": "reads the decimal-hours shorthand people type - \"1.5\" for " +
-		"an hour and a half - and rounds it to whole seconds in the same " +
-		"expression. The float never leaves the function, and refusing the form " +
-		"would mean refusing what most people type first",
-}
+//
+// It is empty, and that is the interesting part. It had one entry:
+// domain.ParseDuration, which read the decimal-hours shorthand people type -
+// "1.5" for an hour and a half - through strconv.ParseFloat and rounded it to
+// whole seconds in the same expression. The exemption was honest and the
+// arithmetic was exact at these magnitudes, but writing it down made it obvious
+// that the same parse can be done in integers: one lot of 3600 plus five tenths
+// of one. So it is, and the tree now has no float parse at all.
+//
+// The list stays for the next one, and because the check below fails on a name
+// that no longer parses anything - which is what told us this one had gone.
+var exemptFloatParses = map[string]string{}
 
 // TestMoneyIsNeverParsedAsAFloat.
 //

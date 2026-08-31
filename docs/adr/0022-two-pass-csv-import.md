@@ -37,6 +37,21 @@ Supporting decisions:
 * **Ambiguous dates are refused, not guessed.** `03/04/2026` is 3 April or 4
   March depending on who exported it. Guessing silently puts a month of work on
   the wrong days; refusing names the value and is recoverable in a text editor.
+* **The duration column's heading decides what its numbers are**, and a heading
+  that does not say is refused on the same argument as the date. Under `hours`,
+  `2` is two hours; under `minutes`, two minutes. Under `duration` or `time`, a
+  bare `8` is eight hours or eight minutes depending on which system wrote the
+  file, so the row is refused with the line number and the two ways to fix it.
+  A fraction is still read as hours whatever the heading, because nobody records
+  one and a half minutes, and a cell that carries its own unit — `45m`, `1:30` —
+  means what it says whatever the column is called, since somebody wrote that
+  deliberately.
+
+  This was found by importing a file by hand: `hours` with a bare `2` in it was
+  being read as two minutes, because the parser behind the column is the one
+  written for the duration box on a form, where `30` sensibly means half an
+  hour. A form and a spreadsheet column are different situations, and the
+  heading is the thing that tells them apart.
 * **Missing catalogue records are created only when asked**, and the preview
   lists exactly what would be created, so nobody discovers eleven new customers
   after the fact.
