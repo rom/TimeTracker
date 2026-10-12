@@ -37,6 +37,7 @@ func newTestServer(t *testing.T) (*Server, domain.User) {
 // A zero instant means the real clock.
 func newTestServerAt(t *testing.T, now time.Time) (*Server, domain.User) {
 	t.Helper()
+	t.Helper()
 	if testing.Short() {
 		t.Skip("web tests touch the filesystem; skipped under -short")
 	}
