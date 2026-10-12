@@ -91,6 +91,16 @@ func TestSomebodyWithNoProjectsReachesNoneOfThem(t *testing.T) {
 	f := newStrangerFixture(t)
 	svc, ctx := f.svc, f.stranger
 
+	// An instance-wide archive sitting in the server's backup directory, taken
+	// by the administrator. Nobody's scope narrowed it, so it is the one file on
+	// the machine that holds every project whole - which makes a read of it by
+	// somebody on no project the sharpest form of this question.
+	backupDir := t.TempDir()
+	storedBackup, err := svc.WriteBackupFile(f.ctx, backupDir, BackupOptions{})
+	if err != nil {
+		t.Fatalf("take a backup as the administrator: %v", err)
+	}
+
 	// Each call returns what it produced, flattened to a count and a string, so
 	// one assertion covers readers of every shape: nothing, or nothing of
 	// somebody else's.
@@ -237,6 +247,17 @@ func TestSomebodyWithNoProjectsReachesNoneOfThem(t *testing.T) {
 			out, err := svc.Attachments(ctx, domain.AttachmentOwnerTimeEntry, f.theirEntry.ID)
 			return answer{len(out), ""}, err
 		},
+		"PreviewExport": func() (answer, error) {
+			preview, err := svc.PreviewExport(ctx, EntryFilter{})
+			var text []string
+			for _, group := range preview.ByCustomer {
+				text = append(text, group.Customer)
+				for _, line := range group.Projects {
+					text = append(text, line.Project)
+				}
+			}
+			return answer{preview.Entries, strings.Join(text, " ")}, err
+		},
 		"ReviewSubmission": func() (answer, error) {
 			review, err := svc.ReviewSubmission(ctx, f.theirEntry.StartedAt)
 			return answer{len(review.Week.Rows) + len(review.Expenses),
@@ -246,6 +267,10 @@ func TestSomebodyWithNoProjectsReachesNoneOfThem(t *testing.T) {
 		"CreateBackup": func() (answer, error) {
 			backup, err := svc.CreateBackup(ctx, BackupOptions{})
 			return answer{len(backup.TimeEntries), describeBackupEntries(backup)}, err
+		},
+		"PreviewBackupFile": func() (answer, error) {
+			preview, err := svc.PreviewBackupFile(ctx, backupDir, storedBackup.Name)
+			return answer{preview.Counts.Total(), strings.Join(preview.Customers, " ")}, err
 		},
 	}
 
@@ -433,6 +458,13 @@ func TestBothSweepsCoverTheSameSurface(t *testing.T) {
 		"AuthorizeBackup": true, "NeedsReceipt": true,
 		"TermsOn": true, "TermsCurrency": true,
 		"ParseQuickAdd": true, "ParseTimeCSV": true, "ParseCalendar": true,
+		// PreviewArchive is the same shape as the parsers above: the caller
+		// hands it the bytes, so it describes a file they already hold and
+		// there is nothing for a scope to withhold. Narrowing it would describe
+		// a file other than the one about to be restored. Reading one off the
+		// server's disk is a different question, and PreviewBackupFile is in
+		// the table above rather than here because of it.
+		"PreviewArchive": true,
 	}
 	// The three reads whose scoping is broken, pinned by their own test below
 	// with the reason.
@@ -502,6 +534,7 @@ var strangerReads = map[string]bool{
 	"Inbox": true, "PendingCount": true, "ProposedByMe": true,
 	"PendingIdle": true, "RunningIdle": true, "RunningTimers": true,
 	"Tags": true, "Routines": true, "ContractTerms": true, "ReviewSubmission": true,
+	"PreviewExport": true, "PreviewBackupFile": true,
 	"Attachments": true, "CreateBackup": true,
 }
 

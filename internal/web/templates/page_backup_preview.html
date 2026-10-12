@@ -1,0 +1,96 @@
+{{define "content"}}
+{{$preview := .BackupPreview}}
+<section class="backup-preview">
+
+  <header class="screen-header">
+    <div class="screen-title">
+      <h1>{{.T "backup.preview.title"}}</h1>
+      <span class="screen-subtitle">{{$preview.Name}}</span>
+    </div>
+    <nav class="date-nav">
+      <a class="btn btn-quiet" href="/backup">{{.T "backup.preview.back"}}</a>
+    </nav>
+  </header>
+
+  {{/* What it is, before what is in it: a backup of one customer restored in
+       the belief that it was everything looks exactly like a complete one
+       afterwards. */}}
+  <dl class="totals">
+    <div class="total">
+      <dt>{{.T "backup.preview.taken"}}</dt>
+      <dd class="total-value">{{.Printer.FormatDateLong $preview.CreatedAt}}</dd>
+    </div>
+    <div class="total">
+      <dt>{{.T "backup.preview.covers"}}</dt>
+      <dd class="total-value">
+        {{if $preview.Scope.Everything}}{{.T "backup.preview.everything"}}{{else}}{{$preview.Scope.Description}}{{end}}
+      </dd>
+    </div>
+    <div class="total">
+      <dt>{{.T "backup.preview.size"}}</dt>
+      <dd class="total-value">{{humanBytes $preview.SizeBytes}}</dd>
+    </div>
+  </dl>
+
+  {{if $preview.Problems}}
+    <section class="review-notes">
+      <h2 class="section-heading">{{.T "backup.preview.problems"}}</h2>
+      <ul class="note-list">
+        {{range $preview.Problems}}
+          <li class="note note-warning">
+            <span class="note-icon" aria-hidden="true">i</span>
+            <span class="note-text">{{.}}</span>
+          </li>
+        {{end}}
+      </ul>
+    </section>
+  {{end}}
+
+  {{if not $preview.Any}}
+    <p class="empty">{{.T "backup.preview.empty"}}</p>
+  {{else}}
+    <h2 class="section-heading">{{.T "backup.preview.contents"}}</h2>
+    <table class="entries">
+      <tbody>
+        <tr><th scope="row">{{.T "admin.customers"}}</th><td class="cell-number">{{$preview.Counts.Customers}}</td></tr>
+        <tr><th scope="row">{{.T "admin.projects"}}</th><td class="cell-number">{{$preview.Counts.Projects}}</td></tr>
+        <tr><th scope="row">{{.T "admin.assignments"}}</th><td class="cell-number">{{$preview.Counts.Assignments}}</td></tr>
+        <tr>
+          <th scope="row">{{.T "backup.preview.entries"}}</th>
+          <td class="cell-number">
+            {{$preview.Counts.TimeEntries}}
+            {{if gt $preview.Seconds 0}}
+              <span class="field-help">{{$.Printer.FormatDuration $preview.Seconds}}</span>
+            {{end}}
+          </td>
+        </tr>
+        <tr><th scope="row">{{.T "expenses.title"}}</th><td class="cell-number">{{$preview.Counts.Expenses}}</td></tr>
+        <tr>
+          <th scope="row">{{.T "attachments.title"}}</th>
+          <td class="cell-number">
+            {{$preview.Counts.Attachments}}
+            {{if gt $preview.Counts.AttachmentBytes 0}}
+              <span class="field-help">{{humanBytes $preview.Counts.AttachmentBytes}}</span>
+            {{end}}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    {{/* The period and the customers: "which one is this" asked two ways. */}}
+    {{if not $preview.FirstEntry.IsZero}}
+      <p class="field-help">
+        {{.T "backup.preview.period" (.Printer.FormatDate $preview.FirstEntry) (.Printer.FormatDate $preview.LastEntry)}}
+      </p>
+    {{end}}
+    {{if $preview.Customers}}
+      <p class="field-help">
+        {{.T "backup.preview.customers"}}
+        {{range $i, $c := $preview.Customers}}{{if $i}}, {{end}}{{$c}}{{end}}
+      </p>
+    {{end}}
+  {{end}}
+
+  <p class="field-help">{{.T "backup.preview.restorehint"}}</p>
+</section>
+{{end}}

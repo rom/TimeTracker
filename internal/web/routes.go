@@ -186,9 +186,17 @@ func (s *Server) routes() {
 	// Backup and restore.
 	mux.HandleFunc("GET /backup", s.handleBackup)
 	mux.HandleFunc("GET /backup/download", s.handleDownloadBackup)
+	// What one archive holds, before it is restored.
+	mux.HandleFunc("GET /backup/preview", s.handleBackupPreview)
 	mux.HandleFunc("POST /backup/create", s.handleCreateBackupFile)
 	mux.HandleFunc("POST /backup/restore", s.handleRestore)
 
-	// Exports.
+	// Exports. The preview comes first in the table because it comes first in
+	// the flow: an export is the basis of an invoice, and what it holds is
+	// worth seeing before it is a file on somebody's disk.
+	mux.HandleFunc("GET /export/preview", s.handleExportPreview)
+	// The document itself, shown rather than saved: the preview above says what
+	// a download will contain, and this says what it will look like.
+	mux.HandleFunc("GET /export/{format}/view", s.handleExportView)
 	mux.HandleFunc("GET /export/{format}", s.handleExport)
 }

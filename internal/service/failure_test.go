@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -32,7 +34,7 @@ type deadFixture struct {
 	*fixture
 	entryID, expenseID, routineID, tagID, termsID, attachmentID, idleID int64
 	customerID, projectID                                               int64
-	backupDir                                                           string
+	backupDir, backupName                                               string
 }
 
 func newDeadFixture(t *testing.T) *deadFixture {
@@ -117,6 +119,14 @@ func newDeadFixture(t *testing.T) *deadFixture {
 		t.Fatalf("read the open idle observation: %v", err)
 	}
 	dead.idleID = pending[0].Observation.ID
+
+	// A real archive in the backup directory, so a preview of it fails for want
+	// of a database rather than for want of a file.
+	dead.backupName = "timetracker-20260316-090000.zip"
+	if err := os.WriteFile(filepath.Join(dead.backupDir, dead.backupName),
+		buildArchive(t), 0o600); err != nil {
+		t.Fatalf("plant a backup: %v", err)
+	}
 
 	if err := f.db.Close(); err != nil {
 		t.Fatalf("close the database: %v", err)
@@ -225,6 +235,7 @@ func TestEveryServiceMethodReportsADeadDatabase(t *testing.T) {
 		"PendingCount":      func() error { _, err := svc.PendingCount(ctx); return err },
 		"PendingIdle":       func() error { _, err := svc.PendingIdle(ctx); return err },
 		"Period":            func() error { _, err := svc.Period(ctx, f.now); return err },
+		"PreviewExport":     func() error { _, err := svc.PreviewExport(ctx, EntryFilter{}); return err },
 		"PreviewAttachment": func() error { _, _, err := svc.PreviewAttachment(ctx, f.attachmentID); return err },
 		"Project":           func() error { _, err := svc.Project(ctx, f.projectID); return err },
 		"Projects":          func() error { _, err := svc.Projects(ctx, 0, false); return err },
@@ -248,6 +259,17 @@ func TestEveryServiceMethodReportsADeadDatabase(t *testing.T) {
 		"Restore":          func() error { _, err := svc.Restore(ctx, bytes.NewReader(archive)); return err },
 		"RestoreArchive": func() error {
 			_, err := svc.RestoreArchive(ctx, bytes.NewReader(archive), int64(len(archive)))
+			return err
+		},
+		// Both are given a real, readable archive, so a nil error here would
+		// mean the authorisation check they begin with went unasked rather than
+		// that the file was unreadable.
+		"PreviewArchive": func() error {
+			_, err := svc.PreviewArchive(ctx, bytes.NewReader(archive), int64(len(archive)))
+			return err
+		},
+		"PreviewBackupFile": func() error {
+			_, err := svc.PreviewBackupFile(ctx, f.backupDir, f.backupName)
 			return err
 		},
 		"Routines":      func() error { _, err := svc.Routines(ctx, false); return err },

@@ -84,6 +84,7 @@
           <th>{{.T "backup.when"}}</th>
           <th>{{.T "admin.name"}}</th>
           <th>{{.T "backup.size"}}</th>
+          <th><span class="visually-hidden">{{.T "backup.preview"}}</span></th>
         </tr>
       </thead>
       <tbody>
@@ -93,6 +94,14 @@
             <td>{{$page.Printer.FormatDate .CreatedAt}} {{$page.Printer.FormatTime .CreatedAt nil}}</td>
             <td>{{.Name}}</td>
             <td class="cell-time">{{humanBytes .SizeBytes}}</td>
+            {{/* A filename carries a timestamp and nothing else - not the
+                 period it covers, not whose work is in it, not whether it was
+                 taken of everything. */}}
+            <td>
+              <a class="btn btn-small btn-quiet" href="/backup/preview?file={{.Name}}">
+                {{$page.T "backup.preview"}}
+              </a>
+            </td>
           </tr>
         {{end}}
       </tbody>

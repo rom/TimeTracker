@@ -164,8 +164,12 @@ type BackupEntry struct {
 type BackupOptions struct {
 	CustomerID int64
 	ProjectID  int64
-	From       time.Time
-	To         time.Time
+	// From is inclusive and To is exclusive, matching the entry filter these
+	// are handed to - the store's bound is `started_at < ?`. Callers that take
+	// a date from somebody add a day to it, and nameScope takes one back off
+	// for the description, so the file says the day that was asked for.
+	From time.Time
+	To   time.Time
 }
 
 // CreateBackup assembles a backup of the acting user's data.
@@ -236,6 +240,9 @@ func (s *Service) CreateBackup(ctx context.Context, opts BackupOptions) (Backup,
 	if opts.CustomerID != 0 {
 		backup.Customers = filterCustomers(backup.Customers, opts.CustomerID)
 	}
+
+	// Now that the names are known, say what the scope covers in them.
+	backup.Scope = nameScope(backup.Scope, opts, backup.Customers, backup.Projects)
 
 	entries, err := s.Entries(ctx, EntryFilter{
 		From:       opts.From,
@@ -1148,33 +1155,83 @@ func (s *Service) PruneBackups(dir string, keep int) (int, error) {
 
 // --------------------------------------------------------------- helpers ----
 
+// describeScope records what a backup covers, as ids and dates.
+//
+// The readable half is nameScope's, which runs once the catalogue is in hand.
 func describeScope(opts BackupOptions) BackupScope {
 	scope := BackupScope{
 		CustomerID: opts.CustomerID,
 		ProjectID:  opts.ProjectID,
 	}
-	var parts []string
-	if opts.CustomerID != 0 {
-		parts = append(parts, fmt.Sprintf("customer %d", opts.CustomerID))
-	}
-	if opts.ProjectID != 0 {
-		parts = append(parts, fmt.Sprintf("project %d", opts.ProjectID))
-	}
 	if !opts.From.IsZero() {
 		scope.From = opts.From.Format("2006-01-02")
-		parts = append(parts, "from "+scope.From)
 	}
 	if !opts.To.IsZero() {
 		scope.To = opts.To.Format("2006-01-02")
-		parts = append(parts, "to "+scope.To)
 	}
-	if len(parts) == 0 {
-		scope.Everything = true
-		scope.Description = "everything"
-	} else {
-		scope.Description = strings.Join(parts, ", ")
-	}
+	scope.Everything = scope.CustomerID == 0 && scope.ProjectID == 0 &&
+		scope.From == "" && scope.To == ""
 	return scope
+}
+
+// nameScope writes the human-readable half of a scope, using the catalogue the
+// backup carries.
+//
+// Separate from describeScope, and called after the catalogue is read, because
+// the ids a scope is built from mean nothing to a reader: "customer 1" is not
+// an answer to "which backup is this", and the id is not even the same number
+// in the instance a backup is restored into. The names come from the document
+// itself, so a file read years later still says who it is about.
+func nameScope(scope BackupScope, opts BackupOptions,
+	customers []domain.Customer, projects []domain.Project) BackupScope {
+	if scope.Everything {
+		scope.Description = "everything"
+		return scope
+	}
+
+	var parts []string
+	if scope.CustomerID != 0 {
+		parts = append(parts, nameOrID("customer", scope.CustomerID, func() string {
+			for _, customer := range customers {
+				if customer.ID == scope.CustomerID {
+					return customer.Name
+				}
+			}
+			return ""
+		}))
+	}
+	if scope.ProjectID != 0 {
+		parts = append(parts, nameOrID("project", scope.ProjectID, func() string {
+			for _, project := range projects {
+				if project.ID == scope.ProjectID {
+					return project.Name
+				}
+			}
+			return ""
+		}))
+	}
+	if scope.From != "" {
+		parts = append(parts, "from "+scope.From)
+	}
+	if !opts.To.IsZero() {
+		// The last day the backup covers, rather than the exclusive bound the
+		// stored field holds: a backup of March that described itself as
+		// running "to 2026-04-01" was read as covering a day it does not hold.
+		// The stored value stays the bound, so a reader comparing it against an
+		// entry's date still gets the right answer.
+		parts = append(parts, "to "+opts.To.AddDate(0, 0, -1).Format("2006-01-02"))
+	}
+	scope.Description = strings.Join(parts, ", ")
+	return scope
+}
+
+// nameOrID prefers the name and falls back to the id, which is what a scope
+// naming a record the backup does not carry leaves to say.
+func nameOrID(kind string, id int64, name func() string) string {
+	if found := name(); found != "" {
+		return found
+	}
+	return fmt.Sprintf("%s %d", kind, id)
 }
 
 func filterCustomers(customers []domain.Customer, id int64) []domain.Customer {

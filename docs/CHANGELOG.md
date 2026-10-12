@@ -147,9 +147,54 @@ the decision.
   fell outside above and below the pane. The pane was hard-coded to 08:00–18:00
   and always grew, which suits somebody who works late once a month and squeezes
   the ordinary day of somebody whose evenings are routinely busy.
+* **A month overview** (`/month`): a calendar of the month with the hours on each
+  day, every square linked to its day and every week row to its week. With it, a
+  date picker on the day, week and month views - previous/today/next answers
+  "where was I in time" badly once the answer is more than a week away - and a
+  month heading between the entries wherever a listing crosses a month.
+* **Four things can be looked at before they are acted on.** Each exists because
+  the alternative is finding out afterwards:
+  * **A week before submitting it** (`/week/review`): what will be submitted,
+    and what is in the way. A locked or empty week and a missing receipt block
+    the submission; an empty day, a flagged entry, a running timer, a pending
+    proposal and a suspiciously long day are reported and do not. The figures
+    beside them are the hours that will *not* be submitted, which is the one
+    place a total deliberately counts unaccepted time.
+  * **An export before downloading it** (`/export/preview`): the rows, the
+    hours, the amount per currency and the breakdown per customer and project
+    that an invoice is written from - over the whole filter rather than the
+    fifty rows on screen, which is the discrepancy that made a download the
+    first place anybody saw the figure they were about to quote. What the
+    document leaves out is listed too: flagged, pending, running and
+    not-billable time, counted separately rather than silently dropped.
+  * **The document itself** (`/export/{format}/view`): the same report the
+    download writes, served inline so a browser displays it instead of saving
+    it. A layout, a title or a missing subtotal is noticed on screen rather
+    than after it has been sent. A DOCX is a zip that no browser displays, so
+    it is handed to the same extractor that previews an uploaded one and shown
+    as the text it holds - and named `.txt`, because a browser told to save a
+    `.docx` full of plain text writes a file no word processor opens.
+  * **A backup before restoring it** (`/backup/preview`): when it was taken,
+    what it covers, how many records of each kind, the hours they add up to,
+    the period they span, the customers they belong to, and what makes the
+    archive less than it appears - attachments it lists and does not carry, a
+    format version from the future. A filename carries a timestamp and nothing
+    else, and a partial backup restored in the belief that it was complete
+    looks exactly like a complete one afterwards. Reading an archive off the
+    server is gated on administration rather than on the backup check, which a
+    member with no project memberships passes.
 
 ### Fixed
 
+* **A backup described its own scope by database id and by the wrong day.** It
+  said "customer 1", which is no answer to "which backup is this" and is not
+  even the same number in the instance the file would be restored into; it now
+  names the customer and the project from the catalogue the backup itself
+  carries, falling back to the id only for a record the file does not hold. And
+  it reported the exclusive end of its range, so a backup of March described
+  itself as running "to 2026-04-01" - a day it does not contain. The stored
+  bound is unchanged, so anything comparing it against an entry's date still
+  gets the right answer.
 * **A client could not use the application at all.** `GetUser`, the query that
   resolves the acting user on every request, did not select
   `client_customer_id`. Every client arrived with a customer of zero, which the

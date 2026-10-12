@@ -80,7 +80,8 @@ func TestCurrentPageIsMarked(t *testing.T) {
 func TestFormControlsHaveNames(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	for _, path := range []string{"/today", "/entries", "/admin", "/month", "/week/review"} {
+	for _, path := range []string{"/today", "/entries", "/admin", "/month", "/week/review",
+		"/export/preview"} {
 		body := get(t, srv, path).Body.String()
 
 		// Every input and select must carry an aria-label, be wrapped in a

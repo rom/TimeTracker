@@ -1354,6 +1354,19 @@ input[type="text"], input[type="date"], input[type="time"], select {
 .note-warning { border-left: 3px solid var(--warning); }
 .note-text { flex: 1 1 auto; }
 
+/* The billing summary on the export preview.
+ *
+ * Projects are indented under their customer rather than given their own
+ * table, because the question being asked - "where did this figure come
+ * from" - is answered by reading down one column.
+ */
+.billing-summary .billing-customer th,
+.billing-summary .billing-customer td { font-weight: 600; }
+.billing-summary .billing-project td { color: var(--text-muted); font-size: 0.94em; }
+.billing-indent { padding-left: calc(var(--gap) * 1.5); }
+.cell-number { text-align: right; font-variant-numeric: tabular-nums; }
+.total-amount .total-value { font-variant-numeric: tabular-nums; }
+
 .review-actions {
   display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
   margin-top: calc(var(--gap) * 1.5);
