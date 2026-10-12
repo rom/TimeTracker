@@ -48,6 +48,7 @@ func (s *Server) routes() {
 	mux.HandleFunc("GET /{$}", s.handleToday)   // {$} matches only "/"
 	mux.HandleFunc("GET /today", s.handleToday) // with an optional ?date=
 	mux.HandleFunc("GET /week", s.handleWeek)
+	mux.HandleFunc("GET /month", s.handleMonth) // with ?month=YYYY-MM or ?date=
 	mux.HandleFunc("GET /entries", s.handleEntries)
 	mux.HandleFunc("GET /admin", s.handleAdmin)
 

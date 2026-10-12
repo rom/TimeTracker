@@ -280,7 +280,10 @@ func templateFuncs() template.FuncMap {
 			}
 			return t.In(loc).Format("15:04")
 		},
-		"date":     func(t time.Time) string { return t.Format("2006-01-02") },
+		"date": func(t time.Time) string { return t.Format("2006-01-02") },
+		// month renders an instant as YYYY-MM, which is both the value an
+		// <input type="month"> carries and what the month route accepts.
+		"month":    func(t time.Time) string { return t.Format("2006-01") },
 		"dateLong": func(t time.Time) string { return t.Format("Monday 2 January 2006") },
 		"weekday":  func(t time.Time) string { return t.Format("Mon") },
 		"dayNum":   func(t time.Time) string { return t.Format("2") },
@@ -303,18 +306,27 @@ func templateFuncs() template.FuncMap {
 		"isToday": func(t time.Time, now time.Time) bool {
 			return t.Year() == now.Year() && t.YearDay() == now.YearDay()
 		},
-		// barWidth caps a percentage at the width of its track. The number
-		// beside the bar is the real one and is not capped - the bar is a
-		// picture, and a picture 340% wide is a layout bug rather than
-		// emphasis.
-		"barWidth": func(percent int) int {
+		// barStep turns a percentage into the width class a bar is drawn with.
+		//
+		// A class rather than style="width: 42%", because the Content Security
+		// Policy has no 'unsafe-inline' in style-src and the browser therefore
+		// drops an inline style attribute entirely - silently, as far as the
+		// page is concerned, leaving every bar full width. That is exactly what
+		// the budget report did from the day it shipped until a screenshot of
+		// the month view showed two bars the same length for 95% and 5%.
+		//
+		// Rounded to the nearest five, which is twenty-one classes rather than
+		// a hundred and one, and invisible: a step is six pixels on a twelve-rem
+		// track. The figure printed beside the bar is never rounded - the bar is
+		// a picture, and the number is the fact.
+		"barStep": func(percent int) int {
 			if percent < 0 {
-				return 0
+				percent = 0
 			}
 			if percent > 100 {
-				return 100
+				percent = 100
 			}
-			return percent
+			return ((percent + 2) / 5) * 5
 		},
 		// money renders minor units as a decimal string.
 		"money": func(minor int64, currency string) string {

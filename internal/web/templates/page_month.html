@@ -1,0 +1,121 @@
+{{define "content"}}
+{{$month := .Month}}
+<section class="month">
+
+  <header class="screen-header">
+    <div class="screen-title">
+      <h1>{{.Printer.FormatMonth $month.Start}}</h1>
+    </div>
+    <nav class="date-nav" aria-label="{{.T "month.changemonth"}}">
+      <a class="btn btn-quiet" href="/month?month={{month $month.PreviousMonth}}"><span aria-hidden="true">‹</span> {{.T "action.previous"}}</a>
+      <a class="btn btn-quiet" href="/month">{{.T "month.thismonth"}}</a>
+      <a class="btn btn-quiet" href="/month?month={{month $month.NextMonth}}">{{.T "action.next"}} <span aria-hidden="true">›</span></a>
+      {{/* Jumping to a month directly, rather than stepping through them. A
+           month input submits YYYY-MM, which is exactly what the route reads. */}}
+      <form class="date-jump" method="get" action="/month">
+        <label>
+          <span class="visually-hidden">{{.T "month.goto.label"}}</span>
+          <input type="month" name="month" value="{{month $month.Start}}"
+                 aria-label="{{.T "month.goto.label"}}">
+        </label>
+        <button type="submit" class="btn btn-small btn-quiet">{{.T "action.goto"}}</button>
+      </form>
+    </nav>
+  </header>
+
+  {{template "totals" .}}
+
+  {{/* How much of the month has anything on it. The figure a calendar is opened
+       for as often as the total: a month with eleven recorded days out of
+       twenty-two working ones is a conversation, and the grid below shows which
+       eleven. */}}
+  <p class="month-summary">
+    {{.T "month.recorded" $month.DaysRecorded $month.DaysInMonth}}
+    {{if not $month.BusiestDay.IsZero}}
+      · {{.T "month.busiest" ($.Printer.FormatDate $month.BusiestDay)}}
+    {{end}}
+  </p>
+
+  {{/* The calendar. A table rather than a grid of divs because it is tabular:
+       the column is a weekday and the row is a week, and a screen reader should
+       be able to say so. */}}
+  <div class="grid-scroll">
+    <table class="month-grid" aria-label="{{.Printer.FormatMonth $month.Start}}">
+      <thead>
+        <tr>
+          <th scope="col" class="col-weeknum"><span class="visually-hidden">{{.T "month.week"}}</span></th>
+          {{range $month.Weekdays}}
+            <th scope="col" class="col-day">{{$.Printer.FormatWeekday .}}</th>
+          {{end}}
+          <th scope="col" class="col-total">{{.T "month.weektotal"}}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range $month.Weeks}}
+          <tr>
+            {{/* The row's own week, linked: a month view is where somebody
+                 notices a thin week, and the week view is where they fix it. */}}
+            <th scope="row" class="cell-weeknum">
+              <a href="/week?date={{date .Start}}" title="{{$.T "month.week"}}">{{.Number}}</a>
+            </th>
+            {{range .Days}}
+              {{if .InMonth}}
+                <td class="cell-month-day {{if eq .Seconds 0}}empty{{end}} {{if isToday .Date $.Now}}is-today{{end}} {{if .Flagged}}flagged{{end}}">
+                  {{/* The whole square is the link, so the target is the square
+                       rather than the four characters of the date. */}}
+                  <a href="/today?date={{date .Date}}"
+                     title="{{if gt .Seconds 0}}{{$.T "month.day.title" ($.Printer.FormatDate .Date) ($.Printer.FormatDuration .Seconds)}}{{else}}{{$.T "month.day.empty" ($.Printer.FormatDate .Date)}}{{end}}">
+                    <span class="day-num">{{dayNum .Date}}</span>
+                    {{if gt .Seconds 0}}
+                      <span class="day-hours">{{$.Printer.FormatDecimal (hours .Seconds)}}</span>
+                    {{end}}
+                    {{if .Flagged}}<span class="day-flag" aria-label="{{$.T "month.flagged"}}">!</span>{{end}}
+                  </a>
+                </td>
+              {{else}}
+                {{/* A day of a neighbouring month: drawn as a blank so the first
+                     and last rows are not ragged, and marked as not part of
+                     this table's data for anything reading it aloud. */}}
+                <td class="cell-month-day outside" aria-hidden="true"></td>
+              {{end}}
+            {{end}}
+            <td class="cell-total">{{if gt .Seconds 0}}{{$.Printer.FormatDecimal (hours .Seconds)}}{{end}}</td>
+          </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+
+  {{/* What the month went on, longest first. The answer to "where did March go",
+       which the calendar cannot give: the calendar says when, this says what. */}}
+  {{if $month.ByAssignment}}
+    <h2>{{.T "month.went"}}</h2>
+    <table class="month-breakdown">
+      <tbody>
+        {{range $month.ByAssignment}}
+          <tr>
+            <th scope="row" data-colour="{{.Assignment.ColourKey}}">
+              <span class="chip" data-colour="{{.Assignment.ColourKey}}" aria-hidden="true">
+                {{if .Assignment.Icon}}{{.Assignment.Icon}}{{else}}●{{end}}
+              </span>
+              <span class="assignment-name">{{.Assignment.Name}}</span>
+              <span class="assignment-path">{{.Assignment.CustomerName}}{{if .Assignment.ProjectName}} / {{.Assignment.ProjectName}}{{end}}</span>
+            </th>
+            <td class="cell-total">{{$.Printer.FormatDuration .Seconds}}</td>
+            <td class="cell-share">
+              {{/* The bar is a picture of the share and the number beside it is
+                   the share: a bar with no figure is unreadable to anybody who
+                   cannot see it. */}}
+              <span class="budget-bar" aria-hidden="true"><span class="budget-fill bar-step-{{barStep .Percent}}"></span></span>
+              <span class="share-figure">{{$.T "month.share" (printf "%d%%" .Percent)}}</span>
+            </td>
+          </tr>
+        {{end}}
+      </tbody>
+    </table>
+  {{else}}
+    <p class="empty">{{.T "month.empty"}}</p>
+  {{end}}
+
+</section>
+{{end}}

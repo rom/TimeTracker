@@ -62,15 +62,19 @@ type pageData struct {
 	Error       string
 
 	// Screen-specific payloads.
-	Day       *service.DayView
-	Week      *service.WeekView
-	Entries   []domain.TimeEntry
-	Totals    domain.Totals
-	Customers []domain.Customer
-	Projects  []domain.Project
-	Tags      []domain.Tag
-	Entry     *domain.TimeEntry
-	Filter    entryFilterForm
+	Day   *service.DayView
+	Week  *service.WeekView
+	Month *service.MonthView
+	// EntryGroups is the entries listing with a month heading before the first
+	// entry of each month, when the listing crosses one.
+	EntryGroups []entryGroup
+	Entries     []domain.TimeEntry
+	Totals      domain.Totals
+	Customers   []domain.Customer
+	Projects    []domain.Project
+	Tags        []domain.Tag
+	Entry       *domain.TimeEntry
+	Filter      entryFilterForm
 	// Zone is the acting user's IANA zone, for templates that render a stored
 	// instant as a wall clock time.
 	Zone *time.Location
@@ -409,6 +413,53 @@ func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleWeek renders the weekly grid.
+// handleMonth renders the month overview.
+//
+// The month is taken from a ?month=YYYY-MM parameter when there is one, because
+// that is what an <input type="month"> submits, and from ?date= otherwise so
+// that a link from the day or week screen can carry the date it was on.
+func (s *Server) handleMonth(w http.ResponseWriter, r *http.Request) {
+	// A client has no timesheet of their own to summarise, the same reasoning as
+	// the day screen.
+	if user, ok := auth.UserFrom(r.Context()); ok && user.Role == domain.RoleClient {
+		http.Redirect(w, r, "/entries", http.StatusSeeOther)
+		return
+	}
+
+	data, err := s.newPageData(r, "", "month")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	month, err := s.svc.Month(r.Context(), s.monthParam(r))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	data.Month = &month
+	data.Totals = month.Totals
+	data.Title = data.Printer.FormatMonth(month.Start)
+
+	s.render(w, r, "page_month.html", data)
+}
+
+// monthParam reads the month being asked for.
+//
+// Any day inside the month identifies it, so a ?date= from a link on the day
+// screen works as well as the ?month=YYYY-MM a month input submits. Anything
+// unparseable falls back to the current month rather than erroring: a stale
+// bookmark should land somewhere useful.
+func (s *Server) monthParam(r *http.Request) time.Time {
+	loc := userLocation(r)
+	if raw := r.URL.Query().Get("month"); raw != "" {
+		if parsed, err := time.ParseInLocation("2006-01", raw, loc); err == nil {
+			return parsed
+		}
+	}
+	return s.dateParam(r, "date")
+}
+
 func (s *Server) handleWeek(w http.ResponseWriter, r *http.Request) {
 	date := s.dateParam(r, "date")
 
@@ -513,6 +564,12 @@ func (s *Server) handleEntries(w http.ResponseWriter, r *http.Request) {
 	// Totalling the whole filter here would put a figure on screen that no
 	// visible row adds up to, which on a timesheet is worse than no figure.
 	data.Totals = s.svc.Totals(data.Entries)
+
+	// A heading at each month boundary, for a listing that crosses one. The
+	// grouping is computed here rather than in the template: deciding where a
+	// month changes is arithmetic over time zones, and the template cannot be
+	// tested.
+	data.EntryGroups = groupByMonth(data.Entries, data.Printer, data.Zone)
 
 	// The tags that exist, for the filter's suggestions.
 	if data.Tags, err = s.svc.Tags(r.Context()); err != nil {

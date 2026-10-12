@@ -171,13 +171,13 @@ func TestEveryScreenRendersInEveryLanguage(t *testing.T) {
 	post(t, srv, "/entries", url.Values{"assignment_id": {"1"}, "date": {yesterday},
 		"start": {"09:00"}, "end": {"17:00"}})
 
-	paths := []string{"/today", "/week", "/entries", "/admin", "/approvals",
+	paths := []string{"/today", "/week", "/month", "/entries", "/admin", "/approvals",
 		"/approvals/report", "/reports/budgets", "/guide", "/guide/record", "/guide/correct",
 		"/terms/customer/1", "/terms/project/1", "/routines", "/tags",
 		// The correction screen is reached by id, and the running timer started
 		// above is entry 1.
 		"/entries/1/edit",
-		"/help/today", "/help/week", "/help/entries", "/help/admin", "/help/users",
+		"/help/today", "/help/week", "/help/month", "/help/entries", "/help/admin", "/help/users",
 		"/help/approvals"}
 
 	for _, language := range i18n.Languages() {

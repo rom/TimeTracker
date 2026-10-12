@@ -10,6 +10,19 @@
       <a class="btn btn-quiet" href="/week?date={{date (addDays $week.Start -7)}}"><span aria-hidden="true">‹</span> {{.T "action.previous"}}</a>
       <a class="btn btn-quiet" href="/week">{{.T "week.thisweek"}}</a>
       <a class="btn btn-quiet" href="/week?date={{date (addDays $week.Start 7)}}">{{.T "action.next"}} <span aria-hidden="true">›</span></a>
+      {{/* Any date inside the week identifies it, so this is a date input rather
+           than a week one: week inputs are supported by about half of browsers,
+           and "the week containing the 14th" is how somebody thinks about it
+           anyway. */}}
+      <form class="date-jump" method="get" action="/week">
+        <label>
+          <span class="visually-hidden">{{.T "week.goto.label"}}</span>
+          <input type="date" name="date" value="{{date $week.Start}}"
+                 aria-label="{{.T "week.goto.label"}}">
+        </label>
+        <button type="submit" class="btn btn-small btn-quiet">{{.T "action.goto"}}</button>
+      </form>
+      <a class="btn btn-quiet" href="/month?date={{date $week.Start}}">{{.T "nav.month"}}</a>
     </nav>
   </header>
 

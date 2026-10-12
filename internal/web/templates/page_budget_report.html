@@ -72,8 +72,7 @@
                      when a project is over. aria-hidden because the percentage
                      beside it is the accessible version of the same fact. */}}
                 <span class="budget-bar" aria-hidden="true">
-                  <span class="budget-fill {{if .Overrun}}is-over{{end}}"
-                        style="width: {{barWidth .UsedPercent}}%"></span>
+                  <span class="budget-fill bar-step-{{barStep .UsedPercent}} {{if .Overrun}}is-over{{end}}"></span>
                 </span>
                 <span class="budget-percent">{{$.T "report.budget.percent" .UsedPercent}}</span>
               </td>

@@ -168,7 +168,26 @@
         </tr>
       </thead>
       <tbody>
-        {{range .Entries}}{{template "entry-row" (dict "Entry" . "Page" $ "ShowDate" true)}}{{end}}
+        {{/* A heading row wherever the month changes, which only happens when
+             the listing crosses one - see groupByMonth. It is a row inside the
+             table rather than a separate table per month, so the columns stay
+             aligned down the whole page and a screen reader keeps one table to
+             navigate. */}}
+        {{range .EntryGroups}}
+          {{if .Heading}}
+            <tr class="month-heading">
+              <th colspan="4" scope="colgroup">
+                {{.Heading}}
+                {{/* The count carries its own number: Printer.N prepends it,
+                     which is why the singular form in the catalogue has a %d in
+                     it too. */}}
+                <span class="month-heading-count">{{$.Printer.N "entries.month.rows" .Entries}}</span>
+              </th>
+              <td colspan="2" class="month-heading-total">{{$.Printer.FormatDuration .Seconds}}</td>
+            </tr>
+          {{end}}
+          {{template "entry-row" (dict "Entry" .Entry "Page" $ "ShowDate" true)}}
+        {{end}}
       </tbody>
     </table>
     {{template "pager" (dict "Page" $ "Filter" .Filter)}}
