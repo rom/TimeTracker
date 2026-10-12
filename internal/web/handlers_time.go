@@ -412,7 +412,6 @@ func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "page_today.html", data)
 }
 
-// handleWeek renders the weekly grid.
 // handleMonth renders the month overview.
 //
 // The month is taken from a ?month=YYYY-MM parameter when there is one, because
@@ -460,6 +459,7 @@ func (s *Server) monthParam(r *http.Request) time.Time {
 	return s.dateParam(r, "date")
 }
 
+// handleWeek renders the weekly grid.
 func (s *Server) handleWeek(w http.ResponseWriter, r *http.Request) {
 	date := s.dateParam(r, "date")
 

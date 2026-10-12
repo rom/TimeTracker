@@ -54,14 +54,26 @@ func newClientWith(t *testing.T, srv *Server, password string) *client {
 // would hold.
 func signInAs(t *testing.T, srv *Server, accounts *service.Accounts, email, password string) *client {
 	t.Helper()
+	c := signInAsReadOnly(t, srv, accounts, email, password)
+	c.token = csrfTokenFor(t, srv, c.cookie)
+	return c
+}
+
+// signInAsReadOnly is signInAs without fetching a CSRF token, for a role that
+// cannot open the page the token is read from. A client user is refused the
+// administration screen, which is itself the behaviour some of these tests are
+// about, so fetching a token there would fail before the test began.
+func signInAsReadOnly(t *testing.T, srv *Server, accounts *service.Accounts, email, password string) *client {
+	t.Helper()
 	login, err := accounts.Login(context.Background(), service.LoginRequest{
 		Email: email, Password: password, IP: "203.0.113.9",
 	})
 	if err != nil {
 		t.Fatalf("sign in as %s: %v", email, err)
 	}
-	cookie := &http.Cookie{Name: auth.SessionCookieName, Value: login.CookieValue}
-	return &client{srv: srv, cookie: cookie, token: csrfTokenFor(t, srv, cookie)}
+	return &client{srv: srv, cookie: &http.Cookie{
+		Name: auth.SessionCookieName, Value: login.CookieValue,
+	}}
 }
 
 // canSignIn reports whether an account's password still works, which is how the
