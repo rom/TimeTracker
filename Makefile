@@ -125,28 +125,46 @@ coverage: ## Produce a coverage profile and an HTML report
 	@go tool cover -func=coverage.out | tail -1
 	@echo "HTML report: coverage.html"
 
-# Coverage floors for the packages where a gap actually matters.
+# Coverage floors. One number, 85%, for every package that has tests.
 #
-# Not a global percentage: chasing one produces tests for trivial accessors
-# while an authorisation branch goes unexercised. These are floors that must not
-# fall, not targets to optimise, and they are set just below the current figures
-# so that a regression fails the build while ordinary work does not.
+# It was nine different numbers, each set just below whatever that package
+# happened to measure - which made the check a record of history rather than a
+# standard, and made every one of them easy to argue down. A single floor is
+# arguable only once.
 #
-# Deliberately absent: internal/web, whose coverage is dominated by template
-# rendering that the HTTP tests exercise without the counter noticing.
+# 85% rather than 100%: the last stretch in every package here is the
+# `if err != nil { return err }` line after a database call that only fails
+# when the disk does. Those are covered where it was worth doing - each of
+# store, service and web has one sweep that runs its whole surface against a
+# closed database, which is a real property and not a coverage exercise - and
+# the rest would be fault injection written to move a number.
 #
-# internal/config used to be absent too, on the grounds that it is mostly flag
-# declarations. It is not: it decides what the process listens on and whether it
-# will serve a login form in clear, and the tests that raised it from 14% to 92%
-# found two addresses that were treated as loopback and are not.
-COVERAGE_FLOORS = domain:84 service:57 store:48 export:85 blob:70 auth:80 \
-                  archive:75 preview:80 config:88
+# These are floors that must not fall, not targets to optimise. A package that
+# drops below one fails the build; raising a figure is welcome and lowering a
+# floor needs a note saying why.
+#
+# internal/web is included now. It was absent on the grounds that its coverage
+# is dominated by template rendering the HTTP tests exercise without the
+# counter noticing - true, and it was also hiding that most of the POST surface
+# had no test at all.
+#
+# internal/i18n and internal/logging are included now too. Neither had a test
+# of its own: the first decides how every number and date on every screen is
+# written, and the second is the one function standing between a password and
+# the log. Both were covered by nothing but the chance that another package
+# happened to call them.
+#
+# Not listed: internal/hardening, whose branches are per-platform syscalls that
+# cannot be exercised from a test on one machine, and internal/repocheck and
+# internal/web/icongen, which have no statements to cover.
+COVERAGE_FLOOR = 85
+COVERAGE_PKGS = archive auth blob config domain export i18n ical logging \
+                preview service store web
 
 .PHONY: coverage-check
 coverage-check: ## Fail if a critical package drops below its coverage floor
-	@failed=0; \
-	for spec in $(COVERAGE_FLOORS); do \
-		pkg=$${spec%%:*}; floor=$${spec##*:}; \
+	@failed=0; floor=$(COVERAGE_FLOOR); \
+	for pkg in $(COVERAGE_PKGS); do \
 		actual=$$(go test -cover ./internal/$$pkg/ 2>/dev/null \
 			| sed -n 's/.*coverage: \([0-9]*\)\.[0-9]*%.*/\1/p'); \
 		if [ -z "$$actual" ]; then \

@@ -177,20 +177,58 @@ remove it.
 ## 3b. Coverage
 
 `make coverage` produces a profile and an HTML report; `make coverage-check`
-enforces per-package floors and runs as part of `make check`.
+enforces a floor of **85% on every package that has tests** and runs as part of
+`make check`.
 
-The floors are on the packages where a gap is expensive - the domain rules, the
-service layer that enforces authorisation and audit, the store, the exporters,
-the blob store, the authentication code and the configuration. There is
-deliberately **no global percentage target**: chasing one produces tests for
-trivial accessors while an authorisation branch goes unexercised. The floors sit
-below the current figures rather than at them, so ordinary work does not fail the
-build - the gap is a few points on most packages and closer to ten on `service`
-and `blob`, which means a real regression there can pass. Lowering one is
-expected to come with a note saying why.
+It was nine different per-package floors, each set just below whatever that
+package happened to measure. That made the check a record of history rather
+than a standard, and made every floor easy to argue down a point at a time.
+One number is arguable only once.
 
-Three packages moved a long way when they were finally looked at, and each move
-found something:
+85% rather than 100%, because the last stretch in every package is the same
+three lines:
+
+```go
+if err != nil {
+    return err
+}
+```
+
+after a database call that only fails when the disk does. Those are covered
+where it was worth doing - `store`, `service` and `web` each have one sweep
+that runs their whole surface against a *closed* database, which is a real
+property rather than a coverage exercise, and `service` has a second that runs
+it as a user who belongs to no project. What is left would be fault injection
+written to move a number.
+
+The floors are floors, not targets: a package that drops below one fails the
+build, raising a figure is welcome, and lowering a floor is expected to come
+with a note saying why.
+
+| Package | Covered |
+| --- | --- |
+| `preview` | 94% |
+| `ical` | 93% |
+| `config` | 92% |
+| `i18n` | 90% |
+| `blob` | 90% |
+| `export` | 88% |
+| `archive` | 88% |
+| `logging` | 88% |
+| `domain` | 87% |
+| `store` | 86% |
+| `web` | 86% |
+| `auth` | 86% |
+| `service` | 85% |
+
+Not listed: `internal/hardening`, whose branches are per-platform syscalls that
+cannot be exercised from a test on one machine, and `internal/repocheck` and
+`internal/web/icongen`, which have no statements to cover.
+
+### What the moves found
+
+Several packages moved a long way when they were finally looked at, and most
+moves found something.
 
 * `auth` 38% → 86%. The whole OIDC flow was untested - every rule in
   `validateIDToken`, which is the difference between an ID token and an
@@ -203,22 +241,65 @@ found something:
   decides what the process listens on: the tests found `:8420` and
   `127.0.0.1.example.com` both treated as loopback, either of which puts an
   unauthenticated instance on the network.
-* `store` 34% → 50%. Sessions, accounts, attachments, timesheet periods and
-  search had no store-level tests at all, which is where the SQL semantics live -
-  what a delete matches, what the prune sweeps, which columns a read selects.
+* `store` 34% → 87%. Sessions, accounts, attachments, timesheet periods and
+  search had no store-level tests at all, which is where the SQL semantics live.
+  The later work covered the scopes and filters, and all 42 exported `...Tx`
+  functions against a transaction that cannot execute - the completeness of that
+  table is checked by parsing the package's own source, so a write added later
+  and not listed fails the test rather than quietly reducing what is covered.
 * `domain` 72% → 87%, mostly through property tests rather than more examples.
-* `web` 51% → 57%. The middleware chain runs on every request and had almost no
-  tests of its own: which address reaches the audit trail, whether a forwarded
-  protocol is believed, when HSTS is sent, that a panic cannot put a stack trace
-  in a response. One test walks the route table out of `routes.go` and asks each
-  route what an anonymous caller gets, so a new route that quietly becomes public
-  fails the build. The catalogue handlers - edit, archive and restore, favourite,
-  rename a tag, move time, correct an expense - were untested and turned up the
-  notes defect above.
+* `web` 51% → 86%. The middleware chain had almost no tests of its own, and
+  then it turned out most of the POST surface had none either: copying a day,
+  switching timers, dragging an entry, the two importers, contract terms,
+  account administration and the proxy inbox. One test walks the route table
+  out of `routes.go` and asks each route what an anonymous caller gets; another
+  walks the same table against a closed database. Exclusion had been justified
+  on the grounds that template rendering dominates the counter - true, and it
+  was also hiding all of the above.
+* `service` 57% → 85%. The single-sign-on provisioning rules, the session
+  lifecycle, damaged and tampered restores, the day pane's overflow, and the
+  refusals each operation makes. The scope sweep found three unscoped reads
+  (below).
+* `i18n` and `logging`, from no tests at all to 90% and 88%. The first decides
+  how every number and date on every screen is written - the two languages
+  disagree about both separators, which at four figures is a different quantity.
+  The second is the one function standing between a password and the log.
 
-`internal/web` is deliberately excluded: its coverage is dominated by template
-rendering that the HTTP tests exercise thoroughly without the statement counter
-noticing.
+### What is pinned rather than fixed
+
+Some tests record what the application does today, with the discrepancy named
+in the test, because changing it is a decision rather than a coverage task. In
+each case the test logs and returns if the behaviour changes, so a fix reads as
+a prompt to invert the test rather than as a confusing failure.
+
+* **Three reads are not scoped by project membership.**
+  `RoleAuthorizer.requireMembership` returns nil when `resource.ProjectID == 0`,
+  which is right for a resource that genuinely has no project. But
+  `entryResource` builds `auth.Resource{Type, ID, OwnerID}` with no project id,
+  and the customer and audit-trail resources carry none either - so a member
+  asking about somebody else's record falls through to a permissive check.
+  `Entry` gives another user's entry with its note and billing snapshot,
+  `Customer` gives any customer with its rate, and `AuditTrail` gives the trail
+  of any resource. The listings are unaffected: they go through
+  `effectiveScope` and are narrowed correctly, which is why this appears on no
+  screen that shows a list.
+* **Every amount is parsed as having two decimal places**, whatever the
+  currency, which ADR-0014 states as the model. The currency check accepts any
+  three letters, so an instance invoicing in JPY, KRW, ISK or CLP holds every
+  amount at a hundred times its value.
+* **`CopyDay` has no guard against a day being copied onto itself**, which
+  doubles it. The form has a "copy from" field, so it is reachable by typing
+  today's date into it.
+* **A bare `.json` backup that lists attachments reports nothing about them**,
+  although the `Attachments` field's own comment promises the restore "reports
+  rather than hides" it. The zip path does report it.
+* **Declining an expense does not cap the length of its reason**, where
+  declining a time entry or a week caps it at a thousand characters.
+* **`StopTimer`'s clamp for a backwards clock does not flag the entry**, though
+  its comment says "clamp and flag it for a human instead"; the only flag that
+  write sets is the long-timer one.
+* **A client is redirected to the entries listing from `/today` and `/month`,
+  and refused outright with 403 from `/week`.**
 
 ## 4. Practices
 
