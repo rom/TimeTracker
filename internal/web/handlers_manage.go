@@ -442,6 +442,31 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "page_backup.html", data)
 }
 
+// handleBackupPreview says what one archive in the backup directory holds.
+//
+// A restore merges, so it is not destructive - but the question in front of a
+// list of archives is "which one is this", and the filename carries a
+// timestamp and nothing else. A partial backup restored in the belief that it
+// was complete looks exactly like a complete one afterwards.
+func (s *Server) handleBackupPreview(w http.ResponseWriter, r *http.Request) {
+	data, err := s.newPageData(r, "", "backup")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	data.Title = data.Printer.T("backup.preview.title")
+
+	preview, err := s.svc.PreviewBackupFile(r.Context(), s.cfg.BackupDir,
+		r.URL.Query().Get("file"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	data.BackupPreview = &preview
+
+	s.render(w, r, "page_backup_preview.html", data)
+}
+
 // handleDownloadBackup streams a backup to the browser.
 func (s *Server) handleDownloadBackup(w http.ResponseWriter, r *http.Request) {
 	// Asked before a single header is set. The archive streams, so a refusal

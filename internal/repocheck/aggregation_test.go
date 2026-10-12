@@ -166,6 +166,11 @@ var exemptGoTotals = map[string]string{
 		"submitted. A Counts guard here would make every one of those figures " +
 		"zero, which is the opposite of what the screen is for; the week's own " +
 		"total beside them comes from WeekView, which does consult it",
+	"describeBackup": "sums the entries inside an archive file, which are not " +
+		"stored entries and whose statuses travel with them. The figure answers " +
+		"\"how much is in this file\", so a Counts guard would make it disagree " +
+		"with what a restore of that file would merge - and a backup that " +
+		"under-reported itself is the failure the preview exists to prevent",
 }
 
 // accumulatedFields are the quantities a total is made of.

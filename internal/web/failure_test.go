@@ -276,6 +276,9 @@ func TestTheRouteTableIsCoveredByTheFailureSweep(t *testing.T) {
 		// sweeping them here would write archives.
 		"GET /backup": true, "GET /backup/download": true,
 		"POST /backup/create": true, "POST /backup/restore": true,
+		// The preview reads a named archive out of that directory, so it has
+		// nothing to say until one is there; its own tests plant a file first.
+		"GET /backup/preview": true,
 		// Uploads need multipart bodies, which this sweep does not build.
 		"POST /attachments/{owner}/{id}": true,
 		"GET /attachments/{id}":          true,
@@ -366,7 +369,7 @@ func routePattern(path string) string {
 
 // literalRoutes are paths whose segments look like a wildcard's and are not.
 var literalRoutes = map[string]bool{
-	"/export/preview": true,
+	"/export/preview": true, "/backup/preview": true,
 }
 
 func isAllDigits(s string) bool {

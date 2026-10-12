@@ -72,6 +72,8 @@ type pageData struct {
 	ExportPreview *service.ExportPreview
 	// Formats are the export formats on offer, for the download links.
 	Formats []export.Format
+	// BackupPreview is what one archive on disk holds.
+	BackupPreview *service.BackupPreview
 	// EntryGroups is the entries listing with a month heading before the first
 	// entry of each month, when the listing crosses one.
 	EntryGroups []entryGroup

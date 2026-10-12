@@ -226,11 +226,26 @@ func TestABackupSaysWhatItCovers(t *testing.T) {
 		t.Fatal("a backup covering one project over two days describes itself as " +
 			"nothing, so it is indistinguishable from a complete one")
 	}
-	for _, mentioned := range []string{"project", "customer"} {
+	// By name rather than by id: the id means nothing to somebody reading a
+	// file, and is not even the same number in the instance it is restored
+	// into.
+	for _, mentioned := range []string{"acme", "migration"} {
 		if !strings.Contains(described, mentioned) {
-			t.Errorf("the scope reads %q, which does not mention the %s it was "+
+			t.Errorf("the scope reads %q, which does not name the %s it was "+
 				"narrowed to", narrowed.Scope.Description, mentioned)
 		}
+	}
+	if strings.Contains(described, "customer 1") || strings.Contains(described, "project 1") {
+		t.Errorf("the scope reads %q, which answers \"which backup is this\" "+
+			"with a database id", narrowed.Scope.Description)
+	}
+
+	// And the last day it covers, not the exclusive bound. f.now is the 16th
+	// and To is the 17th, so a backup that said "to 2026-03-17" would claim a
+	// day it does not hold.
+	if last := f.now.Format("2006-01-02"); !strings.Contains(described, "to "+last) {
+		t.Errorf("the scope reads %q, want it to end on %s - the last day it "+
+			"actually covers", narrowed.Scope.Description, last)
 	}
 }
 

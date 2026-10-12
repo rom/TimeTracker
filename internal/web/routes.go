@@ -186,6 +186,8 @@ func (s *Server) routes() {
 	// Backup and restore.
 	mux.HandleFunc("GET /backup", s.handleBackup)
 	mux.HandleFunc("GET /backup/download", s.handleDownloadBackup)
+	// What one archive holds, before it is restored.
+	mux.HandleFunc("GET /backup/preview", s.handleBackupPreview)
 	mux.HandleFunc("POST /backup/create", s.handleCreateBackupFile)
 	mux.HandleFunc("POST /backup/restore", s.handleRestore)
 
