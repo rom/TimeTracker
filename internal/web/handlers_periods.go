@@ -3,9 +3,53 @@ package web
 import (
 	"net/http"
 	"time"
+
+	"github.com/rom/timetracker/internal/domain"
 )
 
 // Weekly submit and approve.
+
+// handleReviewSubmission shows a week and everything worth knowing before it
+// is submitted.
+//
+// A GET, and the only screen between the week and the submission. Submitting
+// closes the week to changes and puts it in somebody else's queue, and the
+// refusals that enforce that fire after the button has been pressed - which is
+// the wrong moment to be told that Thursday is empty or a receipt is missing.
+func (s *Server) handleReviewSubmission(w http.ResponseWriter, r *http.Request) {
+	data, err := s.newPageData(r, "", "week")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	data.Title = data.Printer.T("submit.review.title")
+
+	review, err := s.svc.ReviewSubmission(r.Context(), s.weekParam(r))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	data.SubmitReview = &review
+	data.PeriodView = &review.Period
+
+	// The receipts the expenses carry, so a row can show what is attached
+	// rather than only that something is missing.
+	data.AttachmentsByOwner = map[int64][]domain.Attachment{}
+	for _, expense := range review.Expenses {
+		if expense.AttachmentCount == 0 {
+			continue
+		}
+		attachments, listErr := s.svc.Attachments(r.Context(),
+			domain.AttachmentOwnerExpense, expense.ID)
+		if listErr != nil {
+			s.fail(w, r, listErr)
+			return
+		}
+		data.AttachmentsByOwner[expense.ID] = attachments
+	}
+
+	s.render(w, r, "page_submit_review.html", data)
+}
 
 // handleSubmitWeek declares a week finished.
 func (s *Server) handleSubmitWeek(w http.ResponseWriter, r *http.Request) {

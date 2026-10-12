@@ -161,6 +161,11 @@ var exemptGoTotals = map[string]string{
 	"buildTimeline": "measures what falls outside the visible window of the day " +
 		"screen, which deliberately shows provisional entries - an arrow that " +
 		"ignored them would point at empty space",
+	"ReviewSubmission": "sums exactly the entries that do *not* count - flagged, " +
+		"running and pending - to say how much of the week will not be " +
+		"submitted. A Counts guard here would make every one of those figures " +
+		"zero, which is the opposite of what the screen is for; the week's own " +
+		"total beside them comes from WeekView, which does consult it",
 }
 
 // accumulatedFields are the quantities a total is made of.

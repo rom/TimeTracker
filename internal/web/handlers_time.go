@@ -65,6 +65,8 @@ type pageData struct {
 	Day   *service.DayView
 	Week  *service.WeekView
 	Month *service.MonthView
+	// SubmitReview is the pre-submission review of a week.
+	SubmitReview *service.SubmitReview
 	// EntryGroups is the entries listing with a month heading before the first
 	// entry of each month, when the listing crosses one.
 	EntryGroups []entryGroup

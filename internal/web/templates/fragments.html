@@ -405,12 +405,15 @@
       <span class="period-total">{{$page.T "period.total" ($page.Printer.FormatDuration .TotalSeconds)}}</span>
 
       {{if .CanSubmit}}
-        <form method="post" action="/week/submit" class="inline"
-              hx-post="/week/submit" hx-confirm="{{$page.T "period.submit.confirm"}}">
-          {{template "csrf" $page.CSRFToken}}
-          <input type="hidden" name="week" value="{{.Period.WeekStart}}">
-          <button type="submit" class="btn btn-primary btn-small">{{$page.T "period.submit"}}</button>
-        </form>
+        {{/* A link to the review rather than a submit button. Submitting closes
+             the week and puts it in somebody else's queue, and the things that
+             would stop it - an empty day, a missing receipt - are worth seeing
+             before the decision rather than as a refusal after it.
+             /week/submit still accepts a direct post, so nothing that already
+             knows the route breaks. */}}
+        <a class="btn btn-primary btn-small" href="/week/review?week={{.Period.WeekStart}}">
+          {{$page.T "period.review"}}
+        </a>
       {{end}}
       {{if .CanWithdraw}}
         <form method="post" action="/week/withdraw" class="inline" hx-post="/week/withdraw">
@@ -733,6 +736,64 @@
   separates them, and "Time Tracker" read as two words is a different name.
   Hence the trim markers, which are load-bearing rather than tidiness.
 */}}
+{{/* The weekly grid: one row per assignment, one column per day.
+     A fragment rather than markup in the week page, because the submission
+     review shows the same week and the two must not be able to disagree about
+     a figure - a review whose numbers differed from the screen it was reached
+     from would be worse than no review. */}}
+{{define "week-grid"}}
+{{- $page := .Page -}}
+{{- $week := .Week -}}
+  <div class="grid-scroll">
+    <table class="week-grid" aria-label="{{$page.T "week.title" ($page.Printer.FormatDate $week.Start)}}">
+      <thead>
+        <tr>
+          <th scope="col" class="col-assignment">{{$page.T "week.assignment"}}</th>
+          {{range $week.Days}}
+            <th scope="col" class="col-day {{if isToday . $page.Now}}is-today{{end}}">
+              <span class="day-name">{{$page.Printer.FormatWeekday .}}</span>
+              <span class="day-num">{{dayNum .}}</span>
+            </th>
+          {{end}}
+          <th scope="col" class="col-total">{{$page.T "week.total"}}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range $week.Rows}}
+          <tr>
+            <th scope="row" class="cell-assignment" data-colour="{{.Assignment.ColourKey}}">
+              <span class="chip" data-colour="{{.Assignment.ColourKey}}" aria-hidden="true">
+                {{if .Assignment.Icon}}{{.Assignment.Icon}}{{else}}●{{end}}
+              </span>
+              <span class="assignment-name">{{.Assignment.Name}}</span>
+              <span class="assignment-path">{{.Assignment.CustomerName}}</span>
+            </th>
+            {{$row := .}}
+            {{range $i, $d := $week.Days}}
+              {{$seconds := nth $row.Seconds $i}}
+              <td class="cell-day {{if eq $seconds 0}}empty{{end}}">
+                {{if gt $seconds 0}}{{$page.Printer.FormatDecimal (hours $seconds)}}{{end}}
+              </td>
+            {{end}}
+            <td class="cell-total">{{$page.Printer.FormatDecimal (hours .Total)}}</td>
+          </tr>
+        {{else}}
+          <tr><td colspan="9" class="empty">{{$page.T "week.empty"}}</td></tr>
+        {{end}}
+      </tbody>
+      <tfoot>
+        <tr>
+          <th scope="row">{{$page.T "week.daytotal"}}</th>
+          {{range $week.DayTotals}}
+            <td class="cell-day-total">{{if gt .SummedSeconds 0}}{{$page.Printer.FormatDecimal (hours .SummedSeconds)}}{{end}}</td>
+          {{end}}
+          <td class="cell-total">{{$page.Printer.FormatDecimal (hours $week.Totals.SummedSeconds)}}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+{{end}}
+
 {{define "wordmark"}}
   {{- /* aria-hidden: the mark is decoration beside the name it accompanies, and
          announcing "clock face TimeTracker" helps nobody. */ -}}

@@ -170,10 +170,17 @@ func TestEveryScreenRendersInEveryLanguage(t *testing.T) {
 	yesterday := srv.svc.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
 	post(t, srv, "/entries", url.Values{"assignment_id": {"1"}, "date": {yesterday},
 		"start": {"09:00"}, "end": {"17:00"}})
+	// An expense too, so the screens that only draw a cost table when there is
+	// a cost in it are actually drawn. The submission review's table was added
+	// with three keys that do not exist, and this sweep walked straight past
+	// it because the fixture had no expenses.
+	post(t, srv, "/expenses", url.Values{"project_id": {"1"}, "spent_on": {yesterday},
+		"category": {"travel"}, "description": {"Taxi"}, "amount": {"100"},
+		"billable": {"on"}})
 
-	paths := []string{"/today", "/week", "/month", "/entries", "/admin", "/approvals",
+	paths := []string{"/today", "/week", "/week/review", "/month", "/entries", "/admin", "/approvals",
 		"/approvals/report", "/reports/budgets", "/guide", "/guide/record", "/guide/correct",
-		"/terms/customer/1", "/terms/project/1", "/routines", "/tags",
+		"/terms/customer/1", "/terms/project/1", "/routines", "/tags", "/expenses",
 		// The correction screen is reached by id, and the running timer started
 		// above is entry 1.
 		"/entries/1/edit",

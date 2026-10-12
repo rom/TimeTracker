@@ -88,9 +88,11 @@ func TestSubmitAndApproveThroughHTTP(t *testing.T) {
 		t.Fatalf("member records time = %d: %s", rec.Code, rec.Body.String())
 	}
 
-	// The week view offers the submit control, and nothing else yet.
+	// The week view offers the way to submit, and nothing else yet. That way is
+	// now the review screen rather than a submit button: the things that would
+	// refuse a submission are worth seeing before the decision.
 	week := member.get(t, "/week").Body.String()
-	if !strings.Contains(week, `action="/week/submit"`) {
+	if !strings.Contains(week, "/week/review") {
 		t.Fatal("the week view offers no way to submit")
 	}
 	if strings.Contains(week, `action="/approvals/approve"`) {

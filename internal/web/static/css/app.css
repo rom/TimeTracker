@@ -1324,6 +1324,42 @@ input[type="text"], input[type="date"], input[type="time"], select {
 .banner { padding: 10px var(--gap); border-radius: var(--radius); margin-bottom: var(--gap); }
 .banner-error { background: var(--surface-sunken); border-left: 3px solid var(--danger); }
 
+.banner-ok { background: var(--surface-sunken); border-left: 3px solid var(--success); }
+.banner strong { display: block; }
+.banner span { color: var(--text-muted); font-size: 0.92em; }
+
+/* The pre-submission review.
+ *
+ * Blockers and warnings are separate lists with different markers, because a
+ * blocker and a note about an empty Friday need different things done about
+ * them - one list of "issues" makes somebody read all of it to find out which
+ * is which.
+ */
+.submit-review .section-heading { margin-top: calc(var(--gap) * 1.5); }
+.review-notes { margin-bottom: var(--gap); }
+.note-list { list-style: none; margin: 0; padding: 0; }
+.note {
+  display: flex; gap: 10px; align-items: baseline;
+  padding: 8px 10px; border-radius: var(--radius);
+  background: var(--surface-sunken); margin-bottom: 4px;
+}
+.note-icon {
+  flex: 0 0 1.4em; width: 1.4em; height: 1.4em; line-height: 1.4em;
+  text-align: center; border-radius: 50%;
+  font-size: 0.78em; font-weight: 700;
+}
+.note-blocker .note-icon { background: var(--danger); color: var(--surface); }
+.note-warning .note-icon { background: var(--warning); color: var(--text); }
+.note-blocker { border-left: 3px solid var(--danger); }
+.note-warning { border-left: 3px solid var(--warning); }
+.note-text { flex: 1 1 auto; }
+
+.review-actions {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  margin-top: calc(var(--gap) * 1.5);
+  padding-top: var(--gap); border-top: 1px solid var(--border);
+}
+
 .empty { color: var(--text-muted); font-style: italic; padding: var(--gap); }
 .hint { color: var(--text-muted); font-size: 0.88em; }
 .archived { opacity: 0.55; }

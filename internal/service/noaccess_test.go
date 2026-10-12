@@ -237,6 +237,12 @@ func TestSomebodyWithNoProjectsReachesNoneOfThem(t *testing.T) {
 			out, err := svc.Attachments(ctx, domain.AttachmentOwnerTimeEntry, f.theirEntry.ID)
 			return answer{len(out), ""}, err
 		},
+		"ReviewSubmission": func() (answer, error) {
+			review, err := svc.ReviewSubmission(ctx, f.theirEntry.StartedAt)
+			return answer{len(review.Week.Rows) + len(review.Expenses),
+				describeEntries(append(append([]domain.TimeEntry{}, review.Flagged...),
+					append(review.Pending, review.Running...)...))}, err
+		},
 		"CreateBackup": func() (answer, error) {
 			backup, err := svc.CreateBackup(ctx, BackupOptions{})
 			return answer{len(backup.TimeEntries), describeBackupEntries(backup)}, err
@@ -495,7 +501,7 @@ var strangerReads = map[string]bool{
 	"Month": true, "BudgetReportFor": true, "ApprovalReportFor": true,
 	"Inbox": true, "PendingCount": true, "ProposedByMe": true,
 	"PendingIdle": true, "RunningIdle": true, "RunningTimers": true,
-	"Tags": true, "Routines": true, "ContractTerms": true,
+	"Tags": true, "Routines": true, "ContractTerms": true, "ReviewSubmission": true,
 	"Attachments": true, "CreateBackup": true,
 }
 

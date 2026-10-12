@@ -44,7 +44,7 @@ import (
 // needs to get past its own argument parsing and as far as the database.
 var screens = []string{
 	"/", "/today", "/today?date=2026-03-16", "/week", "/week?date=2026-03-16",
-	"/month", "/month?month=2026-03", "/entries", "/entries?q=anything",
+	"/month", "/month?month=2026-03", "/week/review", "/entries", "/entries?q=anything",
 	"/admin", "/approvals", "/approvals/report", "/reports/budgets",
 	"/expenses", "/routines", "/tags", "/inbox", "/move", "/settings",
 	"/import", "/calendar", "/users",

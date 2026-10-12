@@ -132,7 +132,10 @@ func (s *Server) routes() {
 	mux.HandleFunc("POST /assignments/{id}", s.handleUpdateAssignment)
 	mux.HandleFunc("POST /assignments/{id}/favourite", s.handleToggleFavourite)
 
-	// Weekly submit and approve.
+	// Weekly submit and approve. The review is a GET between the week and the
+	// submission: the refusals that enforce a submission fire after the button
+	// has been pressed, and this asks the same questions before it.
+	mux.HandleFunc("GET /week/review", s.handleReviewSubmission)
 	mux.HandleFunc("POST /week/submit", s.handleSubmitWeek)
 	mux.HandleFunc("POST /week/withdraw", s.handleWithdrawWeek)
 	// Recording again what was recorded before.

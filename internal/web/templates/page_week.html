@@ -81,54 +81,7 @@
   {{/* The grid: one row per assignment, one column per day. It is read across
        weeks, so the row order is stable rather than reflecting the order entries
        happened to be created in. */}}
-  <div class="grid-scroll">
-    <table class="week-grid" aria-label="{{.T "week.title" ($.Printer.FormatDate $week.Start)}}">
-      <thead>
-        <tr>
-          <th scope="col" class="col-assignment">{{.T "week.assignment"}}</th>
-          {{range $week.Days}}
-            <th scope="col" class="col-day {{if isToday . $.Now}}is-today{{end}}">
-              <span class="day-name">{{$.Printer.FormatWeekday .}}</span>
-              <span class="day-num">{{dayNum .}}</span>
-            </th>
-          {{end}}
-          <th scope="col" class="col-total">{{.T "week.total"}}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {{range $week.Rows}}
-          <tr>
-            <th scope="row" class="cell-assignment" data-colour="{{.Assignment.ColourKey}}">
-              <span class="chip" data-colour="{{.Assignment.ColourKey}}" aria-hidden="true">
-                {{if .Assignment.Icon}}{{.Assignment.Icon}}{{else}}●{{end}}
-              </span>
-              <span class="assignment-name">{{.Assignment.Name}}</span>
-              <span class="assignment-path">{{.Assignment.CustomerName}}</span>
-            </th>
-            {{$row := .}}
-            {{range $i, $d := $week.Days}}
-              {{$seconds := nth $row.Seconds $i}}
-              <td class="cell-day {{if eq $seconds 0}}empty{{end}}">
-                {{if gt $seconds 0}}{{$.Printer.FormatDecimal (hours $seconds)}}{{end}}
-              </td>
-            {{end}}
-            <td class="cell-total">{{$.Printer.FormatDecimal (hours .Total)}}</td>
-          </tr>
-        {{else}}
-          <tr><td colspan="9" class="empty">{{.T "week.empty"}}</td></tr>
-        {{end}}
-      </tbody>
-      <tfoot>
-        <tr>
-          <th scope="row">{{.T "week.daytotal"}}</th>
-          {{range $week.DayTotals}}
-            <td class="cell-day-total">{{if gt .SummedSeconds 0}}{{$.Printer.FormatDecimal (hours .SummedSeconds)}}{{end}}</td>
-          {{end}}
-          <td class="cell-total">{{$.Printer.FormatDecimal (hours $week.Totals.SummedSeconds)}}</td>
-        </tr>
-      </tfoot>
-    </table>
-  </div>
+  {{template "week-grid" (dict "Page" $ "Week" $week)}}
 
 </section>
 {{end}}

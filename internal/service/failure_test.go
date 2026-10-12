@@ -237,14 +237,15 @@ func TestEveryServiceMethodReportsADeadDatabase(t *testing.T) {
 			_, err := svc.RecordIdle(ctx, f.entryID, f.now, f.now.Add(time.Minute), domain.IdleUntouched)
 			return err
 		},
-		"ReindexSearch": func() error { _, err := svc.ReindexSearch(ctx); return err },
-		"RejectEntry":   func() error { return svc.RejectEntry(ctx, f.entryID, "no") },
-		"RejectExpense": func() error { return svc.RejectExpense(ctx, f.expenseID, "no") },
-		"RejectWeek":    func() error { return svc.RejectWeek(ctx, f.user.ID, "2026-03-16", "no") },
-		"Reminders":     func() error { _, err := svc.Reminders(ctx); return err },
-		"ReopenWeek":    func() error { return svc.ReopenWeek(ctx, f.user.ID, "2026-03-16", "no") },
-		"ResolveIdle":   func() error { return svc.ResolveIdle(ctx, f.idleID, domain.IdleKeep) },
-		"Restore":       func() error { _, err := svc.Restore(ctx, bytes.NewReader(archive)); return err },
+		"ReindexSearch":    func() error { _, err := svc.ReindexSearch(ctx); return err },
+		"RejectEntry":      func() error { return svc.RejectEntry(ctx, f.entryID, "no") },
+		"RejectExpense":    func() error { return svc.RejectExpense(ctx, f.expenseID, "no") },
+		"ReviewSubmission": func() error { _, err := svc.ReviewSubmission(ctx, f.now); return err },
+		"RejectWeek":       func() error { return svc.RejectWeek(ctx, f.user.ID, "2026-03-16", "no") },
+		"Reminders":        func() error { _, err := svc.Reminders(ctx); return err },
+		"ReopenWeek":       func() error { return svc.ReopenWeek(ctx, f.user.ID, "2026-03-16", "no") },
+		"ResolveIdle":      func() error { return svc.ResolveIdle(ctx, f.idleID, domain.IdleKeep) },
+		"Restore":          func() error { _, err := svc.Restore(ctx, bytes.NewReader(archive)); return err },
 		"RestoreArchive": func() error {
 			_, err := svc.RestoreArchive(ctx, bytes.NewReader(archive), int64(len(archive)))
 			return err
