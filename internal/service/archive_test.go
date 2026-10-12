@@ -11,12 +11,18 @@ import (
 )
 
 // withBlobs gives a fixture somewhere to put attachments.
+//
+// The store is kept on the fixture as well as handed to the service, so a test
+// can reach past the service and take a file away - which is the state a
+// restore that missed the attachments leaves behind, and not something any
+// service method will produce.
 func withBlobs(t *testing.T, f *fixture) *fixture {
 	t.Helper()
 	store, err := blob.Open(t.TempDir())
 	if err != nil {
 		t.Fatalf("open blob store: %v", err)
 	}
+	f.blobs = store
 	f.svc = f.svc.WithBlobs(store)
 	return f
 }

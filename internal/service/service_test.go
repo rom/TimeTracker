@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/rom/timetracker/internal/auth"
+	"github.com/rom/timetracker/internal/blob"
 	"github.com/rom/timetracker/internal/domain"
 	"github.com/rom/timetracker/internal/store"
 )
@@ -28,6 +29,9 @@ type fixture struct {
 	assignment domain.Assignment
 	// now is the fixed instant the injected clock returns; tests advance it.
 	now time.Time
+	// blobs is set by withBlobs, for the tests that need to disturb the store
+	// directly.
+	blobs *blob.Store
 }
 
 func newFixture(t *testing.T) *fixture {
