@@ -12,6 +12,38 @@ import (
 	"github.com/rom/timetracker/internal/service"
 )
 
+// handleExportPreview says what a download of the current selection will
+// contain, before it is downloaded.
+//
+// An export is the basis of an invoice, and the screen it is taken from shows
+// fifty rows at a time while the download covers the whole filter - so the two
+// never looked alike, and the figure that reaches an invoice was first seen in
+// a spreadsheet, where it is too late for "that is not the period I meant".
+//
+// It reads the same filter the export reads, so it cannot describe a different
+// document from the one that arrives.
+func (s *Server) handleExportPreview(w http.ResponseWriter, r *http.Request) {
+	data, err := s.newPageData(r, "", "entries")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	data.Title = data.Printer.T("export.preview.title")
+
+	filter, form := s.entryFilter(r)
+	data.Filter = form
+
+	preview, err := s.svc.PreviewExport(r.Context(), filter)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	data.ExportPreview = &preview
+	data.Formats = export.Formats
+
+	s.render(w, r, "page_export_preview.html", data)
+}
+
 // handleExport renders the current entry selection in the requested format.
 //
 // The same filter drives the Entries screen and the export, so what a user
@@ -131,6 +163,12 @@ var maxCollectedExportRows = 50_000
 // exportFilename names the download.
 func exportFilename(form entryFilterForm, format export.Format) string {
 	return fmt.Sprintf("timetracker-%s-%s.%s", form.From, form.To, format)
+}
+
+// PreviewURL is the link to the preview of this filter's export, carrying the
+// whole filter so the preview describes exactly what the download would hold.
+func (f entryFilterForm) PreviewURL() template.URL {
+	return template.URL("/export/preview?" + f.exportQuery())
 }
 
 // ExportURL is the download link for one format, carrying the whole filter.

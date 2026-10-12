@@ -134,6 +134,10 @@
        covers more than the screen it was taken from is a wrong invoice. */}}
   <div class="export-bar">
     <span>{{.T "entries.export"}}</span>
+    {{/* The preview first: a download covers the filter rather than the page,
+         so what it holds is worth seeing before it is a file on somebody's
+         disk and the basis of an invoice. */}}
+    <a class="btn btn-quiet" href="{{$.Filter.PreviewURL}}">{{.T "export.preview"}}</a>
     {{range exportFormats}}
       <a class="btn btn-quiet" href="{{$.Filter.ExportURL .}}">{{.Label}}</a>
     {{end}}

@@ -1,0 +1,113 @@
+{{define "content"}}
+{{$preview := .ExportPreview}}
+<section class="export-preview">
+
+  <header class="screen-header">
+    <div class="screen-title">
+      <h1>{{.T "export.preview.title"}}</h1>
+      <span class="screen-subtitle">
+        {{.Printer.FormatDate $preview.From}} – {{.Printer.FormatDate (addDays $preview.To -1)}}
+      </span>
+    </div>
+    <nav class="date-nav">
+      <a class="btn btn-quiet" href="{{.Filter.PageURL 1}}">{{.T "export.preview.backtoentries"}}</a>
+    </nav>
+  </header>
+
+  {{if not $preview.Any}}
+    <p class="empty">{{.T "export.preview.empty"}}</p>
+  {{else}}
+
+    {{/* What the document comes to, before anything else. Somebody on this
+         screen is deciding whether to send it. */}}
+    <dl class="totals">
+      <div class="total">
+        <dt>{{.Printer.N "export.preview.rows" $preview.Entries}}</dt>
+        <dd class="total-value">{{.Printer.FormatDuration $preview.Totals.SummedSeconds}}</dd>
+      </div>
+      <div class="total">
+        <dt>{{.T "totals.billable"}}</dt>
+        <dd class="total-value">{{.Printer.FormatDuration $preview.Totals.BillableSeconds}}</dd>
+      </div>
+      {{/* One total per currency. There is no conversion anywhere here, so a
+           mixed selection shows several figures rather than one meaningless
+           one. */}}
+      {{range $currency, $amount := $preview.AmountsByCurrency}}
+        <div class="total total-amount">
+          <dt>{{$currency}}</dt>
+          <dd class="total-value">{{$.Printer.FormatMoney $amount $currency}}</dd>
+        </div>
+      {{end}}
+    </dl>
+
+    {{/* What the document will leave out, and why. A total that silently
+         omitted a flagged entry is a figure nobody can reconcile against the
+         screen it came from. */}}
+    {{if $preview.Excluded}}
+      <section class="review-notes">
+        <h2 class="section-heading">{{.T "export.preview.excluded"}}</h2>
+        <ul class="note-list">
+          {{range $preview.Excluded}}
+            <li class="note note-warning">
+              <span class="note-icon" aria-hidden="true">i</span>
+              <span class="note-text">
+                {{$.Printer.N (printf "export.excluded.%s" .Reason) .Count}}
+                {{if gt .Seconds 0}}
+                  <span class="field-help">{{$.Printer.FormatDuration .Seconds}}</span>
+                {{end}}
+              </span>
+            </li>
+          {{end}}
+        </ul>
+      </section>
+    {{end}}
+
+    {{/* The summary an invoice is written from. */}}
+    <h2 class="section-heading">{{.T "export.preview.bycustomer"}}</h2>
+    <table class="entries billing-summary">
+      <thead>
+        <tr>
+          <th scope="col">{{.T "entries.customer"}}</th>
+          <th scope="col" class="cell-number">{{.T "export.preview.recorded"}}</th>
+          <th scope="col" class="cell-number">{{.T "export.preview.billed"}}</th>
+          <th scope="col" class="cell-number">{{.T "expenses.amount"}}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range $preview.ByCustomer}}
+          <tr class="billing-customer">
+            <th scope="row">{{.Customer}}</th>
+            <td class="cell-number">{{$.Printer.FormatDuration .Seconds}}</td>
+            <td class="cell-number">{{$.Printer.FormatDuration .BillableSeconds}}</td>
+            <td class="cell-number">{{$.Printer.FormatMoney .AmountMinor .Currency}}</td>
+          </tr>
+          {{/* The projects under it, so a disputed figure can be traced to the
+               engagement it came from without opening the document. */}}
+          {{$currency := .Currency}}
+          {{range .Projects}}
+            <tr class="billing-project">
+              <td class="billing-indent">{{.Project}}</td>
+              <td class="cell-number">{{$.Printer.FormatDuration .Seconds}}</td>
+              <td class="cell-number">{{$.Printer.FormatDuration .BillableSeconds}}</td>
+              <td class="cell-number">{{$.Printer.FormatMoney .AmountMinor $currency}}</td>
+            </tr>
+          {{end}}
+        {{end}}
+      </tbody>
+    </table>
+    {{if $preview.Truncated}}
+      <p class="field-help">{{.T "export.preview.truncated"}}</p>
+    {{end}}
+
+    {{/* And the downloads themselves, each carrying the same filter this
+         preview was built from. */}}
+    <h2 class="section-heading">{{.T "export.preview.download"}}</h2>
+    <div class="review-actions">
+      {{range .Formats}}
+        <a class="btn btn-primary" href="{{$.Filter.ExportURL .}}">{{.Label}}</a>
+      {{end}}
+    </div>
+
+  {{end}}
+</section>
+{{end}}

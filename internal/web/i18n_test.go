@@ -181,6 +181,7 @@ func TestEveryScreenRendersInEveryLanguage(t *testing.T) {
 	paths := []string{"/today", "/week", "/week/review", "/month", "/entries", "/admin", "/approvals",
 		"/approvals/report", "/reports/budgets", "/guide", "/guide/record", "/guide/correct",
 		"/terms/customer/1", "/terms/project/1", "/routines", "/tags", "/expenses",
+		"/export/preview",
 		// The correction screen is reached by id, and the running timer started
 		// above is entry 1.
 		"/entries/1/edit",

@@ -50,7 +50,7 @@ var screens = []string{
 	"/import", "/calendar", "/users",
 	"/entries/1/edit", "/customers/1/edit", "/projects/1/edit", "/assignments/1/edit",
 	"/terms/customer/1", "/terms/project/1",
-	"/export/csv", "/export/json", "/export/ical",
+	"/export/preview", "/export/csv", "/export/json", "/export/ical",
 }
 
 // writes is every POST, with a form good enough to reach the database.
@@ -332,6 +332,12 @@ func routePattern(path string) string {
 	if path == "/" {
 		return "/{$}"
 	}
+	// Literal routes that sit where a wildcard otherwise would. /export/preview
+	// is its own screen and not an export format, so the segment substitution
+	// below must not turn it into /export/{format} and hide it from this check.
+	if literalRoutes[path] {
+		return path
+	}
 
 	segments := strings.Split(path, "/")
 	for i, segment := range segments {
@@ -356,6 +362,11 @@ func routePattern(path string) string {
 		}
 	}
 	return strings.Join(segments, "/")
+}
+
+// literalRoutes are paths whose segments look like a wildcard's and are not.
+var literalRoutes = map[string]bool{
+	"/export/preview": true,
 }
 
 func isAllDigits(s string) bool {

@@ -237,6 +237,17 @@ func TestSomebodyWithNoProjectsReachesNoneOfThem(t *testing.T) {
 			out, err := svc.Attachments(ctx, domain.AttachmentOwnerTimeEntry, f.theirEntry.ID)
 			return answer{len(out), ""}, err
 		},
+		"PreviewExport": func() (answer, error) {
+			preview, err := svc.PreviewExport(ctx, EntryFilter{})
+			var text []string
+			for _, group := range preview.ByCustomer {
+				text = append(text, group.Customer)
+				for _, line := range group.Projects {
+					text = append(text, line.Project)
+				}
+			}
+			return answer{preview.Entries, strings.Join(text, " ")}, err
+		},
 		"ReviewSubmission": func() (answer, error) {
 			review, err := svc.ReviewSubmission(ctx, f.theirEntry.StartedAt)
 			return answer{len(review.Week.Rows) + len(review.Expenses),
@@ -502,7 +513,8 @@ var strangerReads = map[string]bool{
 	"Inbox": true, "PendingCount": true, "ProposedByMe": true,
 	"PendingIdle": true, "RunningIdle": true, "RunningTimers": true,
 	"Tags": true, "Routines": true, "ContractTerms": true, "ReviewSubmission": true,
-	"Attachments": true, "CreateBackup": true,
+	"PreviewExport": true,
+	"Attachments":   true, "CreateBackup": true,
 }
 
 // TestReadsThatAreNotScopedByProjectMembership.

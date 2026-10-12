@@ -8,6 +8,7 @@ import (
 
 	"github.com/rom/timetracker/internal/auth"
 	"github.com/rom/timetracker/internal/domain"
+	"github.com/rom/timetracker/internal/export"
 	"github.com/rom/timetracker/internal/i18n"
 	"github.com/rom/timetracker/internal/service"
 )
@@ -67,6 +68,10 @@ type pageData struct {
 	Month *service.MonthView
 	// SubmitReview is the pre-submission review of a week.
 	SubmitReview *service.SubmitReview
+	// ExportPreview says what a download of the current selection holds.
+	ExportPreview *service.ExportPreview
+	// Formats are the export formats on offer, for the download links.
+	Formats []export.Format
 	// EntryGroups is the entries listing with a month heading before the first
 	// entry of each month, when the listing crosses one.
 	EntryGroups []entryGroup

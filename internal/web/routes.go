@@ -189,6 +189,9 @@ func (s *Server) routes() {
 	mux.HandleFunc("POST /backup/create", s.handleCreateBackupFile)
 	mux.HandleFunc("POST /backup/restore", s.handleRestore)
 
-	// Exports.
+	// Exports. The preview comes first in the table because it comes first in
+	// the flow: an export is the basis of an invoice, and what it holds is
+	// worth seeing before it is a file on somebody's disk.
+	mux.HandleFunc("GET /export/preview", s.handleExportPreview)
 	mux.HandleFunc("GET /export/{format}", s.handleExport)
 }

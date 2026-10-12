@@ -225,6 +225,7 @@ func TestEveryServiceMethodReportsADeadDatabase(t *testing.T) {
 		"PendingCount":      func() error { _, err := svc.PendingCount(ctx); return err },
 		"PendingIdle":       func() error { _, err := svc.PendingIdle(ctx); return err },
 		"Period":            func() error { _, err := svc.Period(ctx, f.now); return err },
+		"PreviewExport":     func() error { _, err := svc.PreviewExport(ctx, EntryFilter{}); return err },
 		"PreviewAttachment": func() error { _, _, err := svc.PreviewAttachment(ctx, f.attachmentID); return err },
 		"Project":           func() error { _, err := svc.Project(ctx, f.projectID); return err },
 		"Projects":          func() error { _, err := svc.Projects(ctx, 0, false); return err },
