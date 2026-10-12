@@ -28,8 +28,13 @@ const expenseSelect = `
 
 // CreateExpense inserts an expense.
 func (db *DB) CreateExpense(ctx context.Context, e domain.Expense) (domain.Expense, error) {
+	return CreateExpenseTx(ctx, db.write, e)
+}
+
+// CreateExpenseTx inserts an expense using the given executor.
+func CreateExpenseTx(ctx context.Context, db Execer, e domain.Expense) (domain.Expense, error) {
 	now := time.Now()
-	res, err := db.write.ExecContext(ctx, `
+	res, err := db.ExecContext(ctx, `
 		INSERT INTO expenses (user_id, entered_by, project_id, spent_on, category,
 		    description, amount_minor, currency, billable, reimbursable, markup_pct,
 		    billed_minor, quantity_milli, unit, unit_rate_minor,
@@ -53,7 +58,14 @@ func (db *DB) CreateExpense(ctx context.Context, e domain.Expense) (domain.Expen
 
 // UpdateExpense saves an edited expense.
 func (db *DB) UpdateExpense(ctx context.Context, e domain.Expense) error {
-	res, err := db.write.ExecContext(ctx, `
+	return UpdateExpenseTx(ctx, db.write, e)
+}
+
+// UpdateExpenseTx is UpdateExpense on the caller's executor. It is also the
+// write behind accepting, rejecting and moving one, all of which change a
+// stored expense and none of which should commit without their audit row.
+func UpdateExpenseTx(ctx context.Context, db Execer, e domain.Expense) error {
+	res, err := db.ExecContext(ctx, `
 		UPDATE expenses SET project_id = ?, spent_on = ?, category = ?, description = ?,
 		       amount_minor = ?, currency = ?, billable = ?, reimbursable = ?,
 		       markup_pct = ?, billed_minor = ?,
@@ -73,16 +85,26 @@ func (db *DB) UpdateExpense(ctx context.Context, e domain.Expense) error {
 // DeleteExpense removes an expense and any attachment references it owns.
 func (db *DB) DeleteExpense(ctx context.Context, id int64) error {
 	return db.InTx(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx,
-			`DELETE FROM attachments WHERE owner_type = 'expense' AND owner_id = ?`, id); err != nil {
-			return err
-		}
-		res, err := tx.ExecContext(ctx, `DELETE FROM expenses WHERE id = ?`, id)
-		if err != nil {
-			return fmt.Errorf("delete expense: %w", err)
-		}
-		return requireOneRow(res)
+		return DeleteExpenseTx(ctx, tx, id)
 	})
+}
+
+// DeleteExpenseTx removes an expense and its attachment references on the
+// caller's transaction.
+//
+// The receipts go with it. Removing the references leaves the blobs
+// unreferenced, and the orphan sweep collects them - which is why the bytes are
+// not touched here and a rolled-back deletion loses nothing.
+func DeleteExpenseTx(ctx context.Context, db Execer, id int64) error {
+	if _, err := db.ExecContext(ctx,
+		`DELETE FROM attachments WHERE owner_type = 'expense' AND owner_id = ?`, id); err != nil {
+		return err
+	}
+	res, err := db.ExecContext(ctx, `DELETE FROM expenses WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete expense: %w", err)
+	}
+	return requireOneRow(res)
 }
 
 // GetExpense loads one expense.

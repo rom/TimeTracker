@@ -1,0 +1,4 @@
+﻿id,date,start,end,customer,project,assignment,note,tags,user,entered_by,billable,kind,status,duration_hours,duration_seconds,billable_hours,rounding_rule,rate,amount,currency
+1,2026-03-16,2026-03-16T09:00:00Z,2026-03-16T10:00:00Z,Acme AB,Migration,Development,"Fixed ""quoting"" & <escaping> — 100% done",,Test User,Test User,true,work,confirmed,1.00,3600,1.00,,0.00,1250.00,SEK
+2,2026-03-16,2026-03-16T09:30:00Z,2026-03-16T10:30:00Z,Beta Ltd,Retainer,Support,Incident triage,,Test User,Test User,true,work,confirmed,1.00,3600,1.00,,0.00,90.00,EUR
+3,2026-03-16,2026-03-16T13:00:00Z,2026-03-16T15:00:00Z,Acme AB,Migration,Development,Proposed by a colleague,,Test User,Colleague,true,work,pending,2.00,7200,0.00,,0.00,2500.00,SEK

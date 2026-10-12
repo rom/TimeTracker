@@ -65,6 +65,14 @@ Attachment **bytes live on disk**, **metadata lives in the database**.
   gets a surprise. Documented, and the built-in backup produces one archive.
 * Deduplication means a blob is shared across records, so deletion needs
   reference counting — done in the sweep, not on the request path.
+* The ordering argument above is now the whole of the arrangement, and it works
+  in both directions. Attaching writes the bytes, then commits the row *and its
+  audit entry together*; a rollback leaves an orphan the sweep collects. Deleting
+  commits the row removal and its audit entry together and removes the bytes
+  only afterwards — the reverse would take the file away from any other record
+  sharing it if the transaction then rolled back, and it is what the code did
+  until a test asked. Before that, a failed audit write left the file deleted
+  with nothing in the trail to say who deleted it.
 * Local mode and server mode must agree on where the data directory lives per
   platform.
 

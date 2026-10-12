@@ -26,12 +26,13 @@ import (
 // Format is an output encoding.
 type Format string
 
+// The five encodings, named by who reads them.
 const (
-	FormatCSV  Format = "csv"
-	FormatJSON Format = "json"
-	FormatPDF  Format = "pdf"
-	FormatDOCX Format = "docx"
-	FormatMD   Format = "md"
+	FormatCSV  Format = "csv"  // a spreadsheet
+	FormatJSON Format = "json" // a machine
+	FormatPDF  Format = "pdf"  // a client, as a document that looks the same everywhere
+	FormatDOCX Format = "docx" // a client who will edit it
+	FormatMD   Format = "md"   // a ticket, a wiki or an email
 )
 
 // Formats lists every encoding, in the order they are offered.

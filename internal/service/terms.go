@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
 	"github.com/rom/timetracker/internal/auth"
 	"github.com/rom/timetracker/internal/domain"
+	"github.com/rom/timetracker/internal/store"
 )
 
 // Dated contract terms, per customer and per project.
@@ -154,24 +156,22 @@ func (s *Service) SaveContractTerms(ctx context.Context, terms domain.ContractTe
 	action := "contract_terms.create"
 	if terms.ID != 0 {
 		action = "contract_terms.update"
-		if err := s.db.UpdateContractTerms(ctx, terms); err != nil {
-			return err
-		}
-	} else {
-		created, createErr := s.db.CreateContractTerms(ctx, terms)
-		if createErr != nil {
-			return createErr
-		}
-		terms.ID = created.ID
 	}
 
 	// Terms decide what future work is worth, so a change to them is as
-	// audit-worthy as a change to a rate.
-	return s.recordAudit(ctx, action, "contract_terms", terms.ID, map[string]any{
+	// audit-worthy as a change to a rate - and, like a rate, it commits with the
+	// record of who changed it or not at all.
+	return s.mutate(ctx, action, "contract_terms", map[string]any{
 		"scope":          string(terms.Scope),
 		"scope_id":       terms.ScopeID,
 		"effective_from": terms.EffectiveFrom,
 		"note":           terms.Note,
+	}, func(tx *sql.Tx) (int64, error) {
+		if terms.ID != 0 {
+			return terms.ID, store.UpdateContractTermsTx(ctx, tx, terms)
+		}
+		created, err := store.CreateContractTermsTx(ctx, tx, terms)
+		return created.ID, err
 	})
 }
 
@@ -188,13 +188,12 @@ func (s *Service) DeleteContractTerms(ctx context.Context, id int64) error {
 	if err != nil {
 		return err
 	}
-	if err := s.db.DeleteContractTerms(ctx, id); err != nil {
-		return err
-	}
-	return s.recordAudit(ctx, "contract_terms.delete", "contract_terms", id, map[string]any{
+	return s.mutate(ctx, "contract_terms.delete", "contract_terms", map[string]any{
 		"scope":          string(existing.Scope),
 		"scope_id":       existing.ScopeID,
 		"effective_from": existing.EffectiveFrom,
+	}, func(tx *sql.Tx) (int64, error) {
+		return id, store.DeleteContractTermsTx(ctx, tx, id)
 	})
 }
 

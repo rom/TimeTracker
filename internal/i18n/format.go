@@ -154,6 +154,17 @@ func (p *Printer) FormatDateLong(t time.Time) string {
 	}
 }
 
+// FormatMonth renders a month and its year, for a heading over a calendar or
+// over a run of entries.
+//
+// The month name comes from the catalogue rather than from Go's own English
+// names, which is also why Swedish gets "oktober" rather than "October" - the
+// catalogue values carry the orthography, including the lower case Swedish
+// requires for month names.
+func (p *Printer) FormatMonth(t time.Time) string {
+	return fmt.Sprintf("%s %d", p.T("month."+strings.ToLower(t.Month().String())), t.Year())
+}
+
 // FormatWeekday renders an abbreviated weekday name for the week grid.
 func (p *Printer) FormatWeekday(t time.Time) string {
 	return p.T("weekday.short." + strings.ToLower(t.Weekday().String()))

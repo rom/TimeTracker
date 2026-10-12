@@ -96,6 +96,12 @@ func (s *Service) Day(ctx context.Context, date time.Time) (DayView, error) {
 		return DayView{}, err
 	}
 
+	// A client has no timesheet of their own, so this is empty for them today.
+	// It is narrowed anyway: every path that can return an entry applies the
+	// projection, and "this one happens to return nothing" is a property of the
+	// current filter rather than a guarantee.
+	entries = s.narrowEntries(ctx, entries)
+
 	view := DayView{Date: start, Location: loc, Entries: entries}
 	for _, e := range entries {
 		if e.Running() {
@@ -146,6 +152,8 @@ func (s *Service) Week(ctx context.Context, date time.Time) (WeekView, error) {
 	if err != nil {
 		return WeekView{}, err
 	}
+
+	entries = s.narrowEntries(ctx, entries)
 
 	view := WeekView{Start: start, End: end, Location: loc}
 	for i := 0; i < 7; i++ {
@@ -234,6 +242,10 @@ type EntryFilter struct {
 	UseRegexp bool
 	// Kinds limits to work, overtime or travel.
 	Kinds []domain.EntryKind
+	// CountingOnly restricts to entries that count towards a total. Set by the
+	// service for a client rather than by a caller: it is a rule about who is
+	// asking, not a choice a screen offers.
+	CountingOnly bool
 	// Offset skips rows before the page being shown. Only meaningful with a
 	// Limit, and deliberately absent from every export: a download covers what
 	// the filter matches, not the page somebody happened to be looking at.
@@ -291,9 +303,12 @@ func (s *Service) entryAudience(ctx context.Context, filter EntryFilter) (int64,
 	if err != nil {
 		return 0, store.Scope{}, err
 	}
-	if err := s.authz.Can(ctx, auth.ActionView, auth.Resource{
-		Type: "time_entry", OwnerID: actor.ID,
-	}); err != nil {
+	// A client's permission comes from their customer rather than from owning
+	// the record, so the resource has to say which customer is being asked
+	// about. Without that the authoriser is asked whether a client may read an
+	// entry belonging to nobody, and correctly refuses - which is why a client
+	// could sign in and read nothing at all before this.
+	if err := s.authz.Can(ctx, auth.ActionView, clientResource(ctx, "time_entry")); err != nil {
 		return 0, store.Scope{}, err
 	}
 
@@ -311,6 +326,12 @@ func (s *Service) entryAudience(ctx context.Context, filter EntryFilter) (int64,
 	scope, err := s.effectiveScope(ctx)
 	if err != nil {
 		return 0, store.Scope{}, err
+	}
+	if actor.Role == domain.RoleClient {
+		// A client is not asking about one person's timesheet but about all the
+		// work done for their customer, so there is no subject to narrow to.
+		// The scope - one customer - is the whole of the restriction.
+		subjectID = 0
 	}
 	return subjectID, scope, nil
 }
@@ -334,7 +355,8 @@ func (s *Service) EachEntry(ctx context.Context, filter EntryFilter) iter.Seq2[d
 			yield(domain.TimeEntry{}, err)
 			return
 		}
-		for entry, err := range s.db.EachEntry(ctx, storeFilter(subjectID, scope, filter)) {
+		rows := s.db.EachEntry(ctx, storeFilter(subjectID, scope, narrowFilter(ctx, filter)))
+		for entry, err := range s.narrowStream(ctx, rows) {
 			if !yield(entry, err) {
 				return
 			}
@@ -358,8 +380,11 @@ func (s *Service) CountEntries(ctx context.Context, filter EntryFilter) (int, er
 		// the rows behind it is the safe over-estimate.
 		filter.WithExpenses = false
 	}
-	windowless := filter
+	windowless := narrowFilter(ctx, filter)
 	windowless.Limit, windowless.Offset = 0, 0
+	// The same narrowing as the listing, so a client's "137 entries" is the
+	// number of rows they can actually be shown rather than the number that
+	// exist.
 	return s.db.CountEntries(ctx, storeFilter(subjectID, scope, windowless))
 }
 
@@ -379,6 +404,7 @@ func (s *Service) SearchEntries(ctx context.Context, filter EntryFilter) ([]doma
 // storeFilter translates a service filter into the store's.
 func storeFilter(subjectID int64, scope store.Scope, filter EntryFilter) store.EntryFilter {
 	return store.EntryFilter{
+		CountingOnly: filter.CountingOnly,
 		UserID:       subjectID,
 		Scope:        scope,
 		From:         filter.From,
@@ -398,11 +424,13 @@ func storeFilter(subjectID int64, scope store.Scope, filter EntryFilter) store.E
 
 // searchEntries is the shared query, after the permission questions are settled.
 func (s *Service) searchEntries(ctx context.Context, subjectID int64, scope store.Scope, filter EntryFilter) ([]domain.TimeEntry, store.SearchMode, error) {
+	filter = narrowFilter(ctx, filter)
 	if filter.WithExpenses {
 		entries, mode, _, err := s.searchWithExpenses(ctx, subjectID, scope, filter)
-		return entries, mode, err
+		return s.narrowEntries(ctx, entries), mode, err
 	}
-	return s.db.SearchEntries(ctx, storeFilter(subjectID, scope, filter))
+	entries, mode, err := s.db.SearchEntries(ctx, storeFilter(subjectID, scope, filter))
+	return s.narrowEntries(ctx, entries), mode, err
 }
 
 // searchPage is searchEntries with the total behind the page.
@@ -412,14 +440,17 @@ func (s *Service) searchEntries(ctx context.Context, subjectID int64, scope stor
 // the length of the slice, because the length of a page is not the size of the
 // result.
 func (s *Service) searchPage(ctx context.Context, subjectID int64, scope store.Scope, filter EntryFilter) ([]domain.TimeEntry, store.SearchMode, int, error) {
+	filter = narrowFilter(ctx, filter)
 	if filter.WithExpenses {
-		return s.searchWithExpenses(ctx, subjectID, scope, filter)
+		entries, mode, total, err := s.searchWithExpenses(ctx, subjectID, scope, filter)
+		return s.narrowEntries(ctx, entries), mode, total, err
 	}
 
 	entries, mode, err := s.db.SearchEntries(ctx, storeFilter(subjectID, scope, filter))
 	if err != nil {
 		return nil, store.SearchNone, 0, err
 	}
+	entries = s.narrowEntries(ctx, entries)
 
 	// Only when a page was asked for. An unbounded query already knows its own
 	// size, and counting it again would double the work of every export.

@@ -166,8 +166,23 @@ deliberately narrow: text in three weights, rules, filled rectangles and page
 breaks. Anything needing images or embedded fonts should reconsider the
 decision rather than extend the writer.
 
-Still outstanding from this layer: budget consumption and burn reporting, and
-the narrowed `client` projection.
+Budget consumption arrived later, and turned out to be a question about
+presentation rather than about arithmetic: the consumption is a sum, and the
+projected date beside it is a guess that renders in the same table, in the same
+tabular figures, as the hours that are facts. What makes it safe is that the
+window is stated, the arithmetic is checkable in one's head, and the estimate
+refuses to appear at all where the evidence is thin
+([ADR-0035](adr/0035-burn-is-a-projection.md), ASR-028).
+
+The `client` projection was the last of it, and it was less a feature than a
+reckoning with a paragraph. ADR-0008 had promised since layer 2 that a client
+receives a narrowed projection "before the data leaves the service layer, so a
+template bug cannot leak them". The scope existed and the role existed; the
+projection did not - and neither did any working client account, because the
+query resolving the acting user on every request did not select the column that
+scopes a client to their customer. Asking what a client actually receives, rather
+than reading the checks, also turned up a backup they could download with the
+customer's negotiated rate in it. See ADR-0008's implementation note.
 
 ## Layer 6 — Semi-automatic assistance ✅
 

@@ -70,7 +70,12 @@ func (db *DB) TouchSession(ctx context.Context, idHash string, at time.Time) err
 // DeleteSession revokes one session. This is what makes sign-out immediate,
 // rather than a client-side gesture that leaves the credential valid.
 func (db *DB) DeleteSession(ctx context.Context, idHash string) error {
-	_, err := db.write.ExecContext(ctx, `DELETE FROM sessions WHERE id_hash = ?`, idHash)
+	return DeleteSessionTx(ctx, db.write, idHash)
+}
+
+// DeleteSessionTx revokes one session on the caller's executor.
+func DeleteSessionTx(ctx context.Context, db Execer, idHash string) error {
+	_, err := db.ExecContext(ctx, `DELETE FROM sessions WHERE id_hash = ?`, idHash)
 	return err
 }
 
@@ -79,7 +84,13 @@ func (db *DB) DeleteSession(ctx context.Context, idHash string) error {
 // Used when an account is disabled, its role changes, or its password is reset:
 // a privilege change that leaves old sessions alive has not really taken effect.
 func (db *DB) DeleteUserSessions(ctx context.Context, userID int64) (int64, error) {
-	res, err := db.write.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ?`, userID)
+	return DeleteUserSessionsTx(ctx, db.write, userID)
+}
+
+// DeleteUserSessionsTx is DeleteUserSessions on the caller's executor, so a
+// privilege change and the sign-out it forces commit together.
+func DeleteUserSessionsTx(ctx context.Context, db Execer, userID int64) (int64, error) {
+	res, err := db.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ?`, userID)
 	if err != nil {
 		return 0, err
 	}

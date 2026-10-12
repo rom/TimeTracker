@@ -341,15 +341,22 @@ func (a *Accounts) RevokeOtherSessions(ctx context.Context, keep auth.Session) e
 	if err != nil {
 		return err
 	}
-	for _, s := range sessions {
-		if s.IDHash == keep.IDHash {
-			continue
+
+	// Every revocation and the record of it, together. Signing out of four
+	// devices and being told it failed - with two of them already signed out and
+	// nothing in the trail - is the worst version of this button: the user does
+	// not know which sessions are still live, and neither does anybody else.
+	return a.svc.mutate(ctx, "auth.revoke_sessions", "user", nil, func(tx *sql.Tx) (int64, error) {
+		for _, session := range sessions {
+			if session.IDHash == keep.IDHash {
+				continue
+			}
+			if err := store.DeleteSessionTx(ctx, tx, session.IDHash); err != nil {
+				return 0, err
+			}
 		}
-		if err := a.db.DeleteSession(ctx, s.IDHash); err != nil {
-			return err
-		}
-	}
-	return a.svc.recordAudit(ctx, "auth.revoke_sessions", "user", actor.ID, nil)
+		return actor.ID, nil
+	})
 }
 
 // PruneSessions removes expired sessions. Called periodically by the server.
@@ -410,24 +417,33 @@ func (a *Accounts) createUser(ctx context.Context, in NewUserInput, audit bool) 
 		timeZone = "UTC"
 	}
 
-	user, err := a.db.CreateAccount(ctx, store.Account{
+	account := store.Account{
 		User: domain.User{
 			DisplayName: strings.TrimSpace(in.DisplayName), Email: email, Role: in.Role,
 			TimeZone: timeZone, Theme: "light", Active: true,
 			ClientCustomerID: in.ClientCustomerID,
 		},
 		PasswordHash: hash,
+	}
+
+	// The bootstrap path creates the first administrator on an empty instance,
+	// where there is no actor to attribute the creation to and therefore no
+	// audit row to write. Every other path writes the account and the record of
+	// who created it in one transaction.
+	if !audit {
+		return a.db.CreateAccount(ctx, account)
+	}
+
+	var user domain.User
+	err := a.svc.mutate(ctx, "user.create", "user", map[string]any{
+		"email": email, "role": string(in.Role),
+	}, func(tx *sql.Tx) (int64, error) {
+		var txErr error
+		user, txErr = store.CreateAccountTx(ctx, tx, account)
+		return user.ID, txErr
 	})
 	if err != nil {
 		return domain.User{}, err
-	}
-
-	if audit {
-		if err := a.svc.recordAudit(ctx, "user.create", "user", user.ID, map[string]any{
-			"email": email, "role": string(in.Role),
-		}); err != nil {
-			return domain.User{}, err
-		}
 	}
 	return user, nil
 }
@@ -500,19 +516,23 @@ func (a *Accounts) UpdateUser(ctx context.Context, user domain.User) error {
 			"ask another administrator to do it", ErrValidation)
 	}
 
-	if err := a.db.UpdateUserAdmin(ctx, user); err != nil {
-		return err
-	}
-
-	if before.Role != user.Role || before.Active != user.Active {
-		if _, err := a.db.DeleteUserSessions(ctx, user.ID); err != nil {
-			return err
-		}
-	}
-
-	return a.svc.recordAudit(ctx, "user.update", "user", user.ID, map[string]any{
+	// The change, the sign-out it forces, and the record of both. A privilege
+	// change that leaves the old sessions alive has not taken effect, so the two
+	// writes are one operation - and neither should happen without the audit row
+	// naming who made the change.
+	return a.svc.mutate(ctx, "user.update", "user", map[string]any{
 		"role":   map[string]any{"from": string(before.Role), "to": string(user.Role)},
 		"active": map[string]any{"from": before.Active, "to": user.Active},
+	}, func(tx *sql.Tx) (int64, error) {
+		if err := store.UpdateUserAdminTx(ctx, tx, user); err != nil {
+			return 0, err
+		}
+		if before.Role != user.Role || before.Active != user.Active {
+			if _, err := store.DeleteUserSessionsTx(ctx, tx, user.ID); err != nil {
+				return 0, err
+			}
+		}
+		return user.ID, nil
 	})
 }
 
@@ -545,17 +565,26 @@ func (a *Accounts) SetPassword(ctx context.Context, userID int64, currentPasswor
 		}
 	}
 
+	// Hashing is deliberately slow - it is Argon2id - so it happens before the
+	// transaction opens rather than holding the write connection for the length
+	// of it.
 	hash, err := auth.HashPassword(newPassword)
 	if err != nil {
 		return fmt.Errorf("%w: %s", ErrValidation, err)
 	}
-	if err := a.db.SetPasswordHash(ctx, userID, hash); err != nil {
-		return err
-	}
-	if _, err := a.db.DeleteUserSessions(ctx, userID); err != nil {
-		return err
-	}
-	return a.svc.recordAudit(ctx, "user.set_password", "user", userID, nil)
+
+	return a.svc.mutate(ctx, "user.set_password", "user", nil, func(tx *sql.Tx) (int64, error) {
+		if err := store.SetPasswordHashTx(ctx, tx, userID, hash); err != nil {
+			return 0, err
+		}
+		// Every other session for the account goes with it. Half of this
+		// committing would be a password that changed with the old sessions
+		// still live, or sessions revoked against a password that did not.
+		if _, err := store.DeleteUserSessionsTx(ctx, tx, userID); err != nil {
+			return 0, err
+		}
+		return userID, nil
+	})
 }
 
 // ---------------------------------------------------------- memberships ----
@@ -571,11 +600,10 @@ func (a *Accounts) AddMember(ctx context.Context, m store.ProjectMember) error {
 	}); err != nil {
 		return notFoundFor(err)
 	}
-	if err := a.db.AddProjectMember(ctx, m); err != nil {
-		return err
-	}
-	return a.svc.recordAudit(ctx, "project_member.add", "project", m.ProjectID, map[string]any{
+	return a.svc.mutate(ctx, "project_member.add", "project", map[string]any{
 		"user_id": m.UserID, "rate_minor": m.RateMinor,
+	}, func(tx *sql.Tx) (int64, error) {
+		return m.ProjectID, store.AddProjectMemberTx(ctx, tx, m)
 	})
 }
 
@@ -590,11 +618,10 @@ func (a *Accounts) RemoveMember(ctx context.Context, projectID, userID int64) er
 	}); err != nil {
 		return notFoundFor(err)
 	}
-	if err := a.db.RemoveProjectMember(ctx, projectID, userID); err != nil {
-		return err
-	}
-	return a.svc.recordAudit(ctx, "project_member.remove", "project", projectID, map[string]any{
+	return a.svc.mutate(ctx, "project_member.remove", "project", map[string]any{
 		"user_id": userID,
+	}, func(tx *sql.Tx) (int64, error) {
+		return projectID, store.RemoveProjectMemberTx(ctx, tx, projectID, userID)
 	})
 }
 

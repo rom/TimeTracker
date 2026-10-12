@@ -9,6 +9,9 @@ import (
 // handleAdmin renders the catalogue administration screen: customers, projects
 // and assignments, with their colours and icons.
 func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
+	if s.refuseClient(w, r) {
+		return
+	}
 	data, err := s.newPageData(r, "Admin", "admin")
 	if err != nil {
 		s.fail(w, r, err)
@@ -83,6 +86,11 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	budgetSeconds, budgetMinor, err := parseBudget(r, r.FormValue("currency"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	_, err = s.svc.CreateProject(r.Context(), domain.Project{
 		CustomerID:      int64Param(r.FormValue("customer_id")),
 		Name:            r.FormValue("name"),
@@ -92,6 +100,8 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		BillableDefault: r.FormValue("billable") != "",
 		RateMinor:       rate,
 		RoundingRule:    r.FormValue("rounding_rule"),
+		BudgetSeconds:   budgetSeconds,
+		BudgetMinor:     budgetMinor,
 	})
 	if err != nil {
 		s.fail(w, r, err)
@@ -184,6 +194,28 @@ func (s *Server) handleSetTheme(w http.ResponseWriter, r *http.Request) {
 }
 
 // parseRate reads an hourly rate from a form field into minor units.
+// parseBudget reads a project's optional caps: hours, money, either or neither.
+//
+// A blank field means no cap rather than a cap of zero, which is the whole
+// reason these are text inputs rather than numbers that default to 0 - a
+// project with a budget of nought hours would report every row as an overrun
+// the moment anybody worked on it.
+func parseBudget(r *http.Request, currency string) (int64, int64, error) {
+	seconds, err := parseHoursAsSeconds(r.FormValue("budget_hours"))
+	if err != nil {
+		return 0, 0, domainValidation("could not read the hours budget")
+	}
+	if seconds < 0 {
+		return 0, 0, domainValidation("a budget cannot be negative")
+	}
+
+	minor, err := parseRate(r.FormValue("budget_amount"), currency)
+	if err != nil {
+		return 0, 0, domainValidation("could not read the money budget")
+	}
+	return seconds, minor, nil
+}
+
 func parseRate(raw, currency string) (int64, error) {
 	if raw == "" {
 		return 0, nil

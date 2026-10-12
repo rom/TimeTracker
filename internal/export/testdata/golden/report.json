@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "title": "Time report",
+  "generated_at": "2026-03-16T12:00:00Z",
+  "from": "2026-03-16T09:00:00Z",
+  "to": "2026-03-17T09:00:00Z",
+  "time_zone": "UTC",
+  "user": "Test User",
+  "entries": [
+    {"id":1,"date":"2026-03-16","start":"2026-03-16T09:00:00Z","end":"2026-03-16T10:00:00Z","customer":"Acme AB","project":"Migration","assignment":"Development","note":"Fixed \"quoting\" \u0026 \u003cescaping\u003e — 100% done","user":"Test User","entered_by":"Test User","billable":true,"kind":"work","status":"confirmed","duration_seconds":3600,"duration_hours":"1.00","billable_seconds":3600,"amount_minor":125000,"currency":"SEK"},
+    {"id":2,"date":"2026-03-16","start":"2026-03-16T09:30:00Z","end":"2026-03-16T10:30:00Z","customer":"Beta Ltd","project":"Retainer","assignment":"Support","note":"Incident triage","user":"Test User","entered_by":"Test User","billable":true,"kind":"work","status":"confirmed","duration_seconds":3600,"duration_hours":"1.00","billable_seconds":3600,"amount_minor":9000,"currency":"EUR"},
+    {"id":3,"date":"2026-03-16","start":"2026-03-16T13:00:00Z","end":"2026-03-16T15:00:00Z","customer":"Acme AB","project":"Migration","assignment":"Development","note":"Proposed by a colleague","user":"Test User","entered_by":"Colleague","billable":true,"kind":"work","status":"pending","duration_seconds":7200,"duration_hours":"2.00","billable_seconds":0,"amount_minor":250000,"currency":"SEK"}
+  ],
+  "totals": {"entry_count":2,"summed_seconds":7200,"summed_hours":"2.00","elapsed_seconds":5400,"overlap_seconds":1800,"billable_seconds":7200,"billable_hours":"2.00","amounts_by_currency_minor":{"EUR":9000,"SEK":125000}}
+}

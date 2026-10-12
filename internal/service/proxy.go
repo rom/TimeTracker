@@ -242,11 +242,10 @@ func (s *Service) AcceptExpense(ctx context.Context, expenseID int64) error {
 	}
 
 	expense.Status = domain.StatusConfirmed
-	if err := s.db.UpdateExpense(ctx, expense); err != nil {
-		return err
-	}
-	return s.recordAudit(ctx, "expense.accept", "expense", expenseID, map[string]any{
+	return s.mutate(ctx, "expense.accept", "expense", map[string]any{
 		"proposed_by": expense.EnteredByName,
+	}, func(tx *sql.Tx) (int64, error) {
+		return expenseID, store.UpdateExpenseTx(ctx, tx, expense)
 	})
 }
 
@@ -268,12 +267,11 @@ func (s *Service) RejectExpense(ctx context.Context, expenseID int64, reason str
 	}
 
 	expense.Status = domain.StatusRejected
-	if err := s.db.UpdateExpense(ctx, expense); err != nil {
-		return err
-	}
-	return s.recordAudit(ctx, "expense.reject", "expense", expenseID, map[string]any{
+	return s.mutate(ctx, "expense.reject", "expense", map[string]any{
 		"proposed_by": expense.EnteredByName,
 		"reason":      reason,
+	}, func(tx *sql.Tx) (int64, error) {
+		return expenseID, store.UpdateExpenseTx(ctx, tx, expense)
 	})
 }
 
@@ -305,5 +303,9 @@ func (s *Service) ProposedByMe(ctx context.Context) ([]domain.TimeEntry, error) 
 	if err != nil {
 		return nil, err
 	}
-	return s.db.ListEntriesEnteredBy(ctx, actor.ID, scope)
+	entries, err := s.db.ListEntriesEnteredBy(ctx, actor.ID, scope)
+	if err != nil {
+		return nil, err
+	}
+	return s.narrowEntries(ctx, entries), nil
 }

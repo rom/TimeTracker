@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
 	"github.com/rom/timetracker/internal/auth"
 	"github.com/rom/timetracker/internal/domain"
+	"github.com/rom/timetracker/internal/store"
 )
 
 // Weekly submit and approve.
@@ -137,13 +139,13 @@ func (s *Service) SubmitWeek(ctx context.Context, date time.Time) (domain.Timesh
 	period.DecidedBy = 0
 	period.DecidedAt = time.Time{}
 
-	if err := s.db.UpsertPeriod(ctx, period); err != nil {
-		return domain.TimesheetPeriod{}, err
-	}
-	if err := s.recordAudit(ctx, "timesheet.submit", "timesheet", 0, map[string]any{
+	err = s.mutate(ctx, "timesheet.submit", "timesheet", map[string]any{
 		"week_start": period.WeekStart,
 		"seconds":    period.SubmittedSeconds,
-	}); err != nil {
+	}, func(tx *sql.Tx) (int64, error) {
+		return 0, store.UpsertPeriodTx(ctx, tx, period)
+	})
+	if err != nil {
 		return domain.TimesheetPeriod{}, err
 	}
 	return period, nil
@@ -173,11 +175,10 @@ func (s *Service) WithdrawWeek(ctx context.Context, date time.Time) error {
 	period.SubmittedAt = time.Time{}
 	period.SubmittedSeconds = 0
 
-	if err := s.db.UpsertPeriod(ctx, period); err != nil {
-		return err
-	}
-	return s.recordAudit(ctx, "timesheet.withdraw", "timesheet", 0, map[string]any{
+	return s.mutate(ctx, "timesheet.withdraw", "timesheet", map[string]any{
 		"week_start": period.WeekStart,
+	}, func(tx *sql.Tx) (int64, error) {
+		return 0, store.UpsertPeriodTx(ctx, tx, period)
 	})
 }
 
@@ -235,14 +236,13 @@ func (s *Service) decideWeek(ctx context.Context, ownerID int64, weekStart strin
 		period.SubmittedAt = time.Time{}
 	}
 
-	if err := s.db.UpsertPeriod(ctx, period); err != nil {
-		return err
-	}
-	return s.recordAudit(ctx, "timesheet."+string(decision), "timesheet", ownerID, map[string]any{
+	return s.mutate(ctx, "timesheet."+string(decision), "timesheet", map[string]any{
 		"week_start": weekStart,
 		"user_id":    ownerID,
 		"seconds":    period.SubmittedSeconds,
 		"reason":     reason,
+	}, func(tx *sql.Tx) (int64, error) {
+		return ownerID, store.UpsertPeriodTx(ctx, tx, period)
 	})
 }
 
@@ -280,14 +280,13 @@ func (s *Service) ReopenWeek(ctx context.Context, ownerID int64, weekStart, reas
 	period.DecidedAt = s.now()
 	period.Note = reason
 
-	if err := s.db.UpsertPeriod(ctx, period); err != nil {
-		return err
-	}
-	return s.recordAudit(ctx, "timesheet.reopen", "timesheet", ownerID, map[string]any{
+	return s.mutate(ctx, "timesheet.reopen", "timesheet", map[string]any{
 		"week_start":             weekStart,
 		"user_id":                ownerID,
 		"reason":                 reason,
 		"previously_approved_by": previousDecider,
+	}, func(tx *sql.Tx) (int64, error) {
+		return ownerID, store.UpsertPeriodTx(ctx, tx, period)
 	})
 }
 

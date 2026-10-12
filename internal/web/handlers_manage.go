@@ -52,8 +52,18 @@ func (s *Server) handleUpdateCustomer(w http.ResponseWriter, r *http.Request) {
 	existing.Currency = strings.ToUpper(r.FormValue("currency"))
 	existing.ColourKey = r.FormValue("colour_key")
 	existing.Icon = r.FormValue("icon")
-	existing.Notes = r.FormValue("notes")
 	existing.RateMinor = rate
+	// Only when the form carries the field. No screen renders the internal
+	// notes today - they arrive through a restore or an import - so reading the
+	// value unconditionally meant every edit wrote an empty string over them,
+	// and correcting a spelling mistake in a customer's name silently deleted
+	// whatever had been written about that account.
+	//
+	// A form that does render the field still clears it when somebody empties
+	// it, because then the field is present and empty rather than absent.
+	if r.Form.Has("notes") {
+		existing.Notes = r.FormValue("notes")
+	}
 
 	if err := s.svc.UpdateCustomer(r.Context(), existing); err != nil {
 		s.fail(w, r, err)
@@ -104,6 +114,11 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	budgetSeconds, budgetMinor, err := parseBudget(r, existing.Currency)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 
 	existing.Name = r.FormValue("name")
 	existing.Code = r.FormValue("code")
@@ -112,6 +127,8 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	existing.BillableDefault = r.FormValue("billable") != ""
 	existing.RateMinor = rate
 	existing.RoundingRule = r.FormValue("rounding_rule")
+	existing.BudgetSeconds = budgetSeconds
+	existing.BudgetMinor = budgetMinor
 	if customerID := int64Param(r.FormValue("customer_id")); customerID != 0 {
 		existing.CustomerID = customerID
 	}
@@ -399,6 +416,14 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
 	}
 	data.Title = data.Printer.T("backup.title")
 
+	// The screen lists the archives on disk and offers to restore one, and
+	// listing files is not itself an authorised operation - so the screen has to
+	// ask. A client may view their customer, which is what the first call below
+	// checks, and that is not the same question.
+	if err := s.svc.AuthorizeBackup(r.Context()); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	if data.Customers, err = s.svc.Customers(r.Context(), false); err != nil {
 		s.fail(w, r, err)
 		return
@@ -419,6 +444,14 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
 
 // handleDownloadBackup streams a backup to the browser.
 func (s *Server) handleDownloadBackup(w http.ResponseWriter, r *http.Request) {
+	// Asked before a single header is set. The archive streams, so a refusal
+	// discovered inside the writer arrives after the status line and leaves the
+	// caller with a 200 and an empty file - which reads as a broken download
+	// rather than as "you may not".
+	if err := s.svc.AuthorizeBackup(r.Context()); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	opts := s.backupOptions(r)
 
 	filename := "timetracker-backup-" + s.svc.Now().Format("20060102-150405") + ".zip"

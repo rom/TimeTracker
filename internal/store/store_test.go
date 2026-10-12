@@ -59,6 +59,19 @@ func seed(t *testing.T, db *DB) (user domain.User, assignment domain.Assignment)
 	return user, assignment
 }
 
+// countRows counts the rows a store test expects to exist, going round the
+// store's own readers: a test that asserts "one row" through the same function
+// that wrote it cannot tell one row from two.
+func countRows(t *testing.T, db *DB, table, where string, args ...any) int {
+	t.Helper()
+	var n int
+	query := "SELECT COUNT(*) FROM " + table + " WHERE " + where
+	if err := db.read.QueryRowContext(context.Background(), query, args...).Scan(&n); err != nil {
+		t.Fatalf("count %s: %v", table, err)
+	}
+	return n
+}
+
 // TestMigrationsApply covers ASR-010: a fresh database ends up at the expected
 // version, and opening it again is a no-op rather than an error.
 func TestMigrationsApply(t *testing.T) {

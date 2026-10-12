@@ -5,6 +5,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -74,6 +75,66 @@ func TestNoFloatInPersistedTypes(t *testing.T) {
 		if strings.Contains(string(src), "ParseFloat") {
 			t.Errorf("%s parses a float: money and durations are integers "+
 				"(minor units and whole seconds) throughout", file)
+		}
+	}
+}
+
+// TestNoTemplateUsesAnInlineStyle.
+//
+// The Content Security Policy has no 'unsafe-inline' in style-src, which means
+// a browser drops a style attribute instead of applying it. Nothing breaks
+// loudly: the page renders, the element is there, and it is simply the wrong
+// size or colour. The budget report shipped with every bar at full width for
+// exactly this reason, and the bug was found by looking at a screenshot of a
+// different screen - which is not a method.
+//
+// So: no style attributes in templates at all. A value that varies gets a class
+// the stylesheet defines, which is also the only way the eight themes can
+// redefine it.
+func TestNoTemplateUsesAnInlineStyle(t *testing.T) {
+	files, err := filepath.Glob("templates/*.html")
+	if err != nil {
+		t.Fatalf("list templates: %v", err)
+	}
+	if len(files) == 0 {
+		t.Fatal("no templates found; the scan is looking in the wrong place")
+	}
+
+	for _, file := range files {
+		source, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("read %s: %v", file, err)
+		}
+		for number, line := range strings.Split(string(source), "\n") {
+			if !strings.Contains(line, "style=") {
+				continue
+			}
+			t.Errorf("%s:%d has an inline style, which the Content Security Policy "+
+				"drops:\n    %s\nUse a class the stylesheet defines - see barStep "+
+				"for the pattern when the value varies.",
+				file, number+1, strings.TrimSpace(line))
+		}
+	}
+}
+
+// TestEveryBarWidthHasAClass.
+//
+// The other half of the same guard. barStep rounds to a step, and a step with
+// no rule in the stylesheet is a bar of no width at all - which looks like
+// "nothing recorded" rather than like a missing class.
+func TestEveryBarWidthHasAClass(t *testing.T) {
+	stylesheet, err := os.ReadFile("static/css/app.css")
+	if err != nil {
+		t.Fatalf("read the stylesheet: %v", err)
+	}
+	css := string(stylesheet)
+
+	steps := templateFuncs()["barStep"].(func(int) int)
+	for percent := -20; percent <= 140; percent++ {
+		class := ".bar-step-" + strconv.Itoa(steps(percent))
+		if !strings.Contains(css, class+" ") && !strings.Contains(css, class+"{") {
+			t.Fatalf("%d%% rounds to %s, which the stylesheet does not define",
+				percent, class)
 		}
 	}
 }

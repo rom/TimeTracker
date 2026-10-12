@@ -11,6 +11,19 @@
       <a class="btn btn-quiet" href="/today?date={{date (addDays $day.Date -1)}}"><span aria-hidden="true">‹</span> {{.T "action.previous"}}</a>
       <a class="btn btn-quiet" href="/today">{{.T "day.title"}}</a>
       <a class="btn btn-quiet" href="/today?date={{date (addDays $day.Date 1)}}">{{.T "action.next"}} <span aria-hidden="true">›</span></a>
+      {{/* Going to a date directly. Stepping a day at a time is right for
+           yesterday and useless for the 3rd of last month, and a date input is
+           the browser's own calendar - no script, and the keyboard and the
+           screen reader already know how to drive it. */}}
+      <form class="date-jump" method="get" action="/today">
+        <label>
+          <span class="visually-hidden">{{.T "day.goto.label"}}</span>
+          <input type="date" name="date" value="{{date $day.Date}}"
+                 aria-label="{{.T "day.goto.label"}}">
+        </label>
+        <button type="submit" class="btn btn-small btn-quiet">{{.T "action.goto"}}</button>
+      </form>
+      <a class="btn btn-quiet" href="/month?date={{date $day.Date}}">{{.T "nav.month"}}</a>
     </nav>
   </header>
 

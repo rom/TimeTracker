@@ -1,0 +1,153 @@
+{{define "content"}}
+{{$review := .SubmitReview}}
+<section class="submit-review">
+
+  <header class="screen-header">
+    <div class="screen-title">
+      <h1>{{.T "submit.review.title"}}</h1>
+      <span class="screen-subtitle">
+        {{.Printer.FormatDate $review.Week.Start}} – {{.Printer.FormatDate (addDays $review.Week.End -1)}}
+      </span>
+    </div>
+    <nav class="date-nav" aria-label="{{.T "week.changeweek"}}">
+      <a class="btn btn-quiet" href="/week?date={{date $review.Week.Start}}">{{.T "submit.review.backtoweek"}}</a>
+    </nav>
+  </header>
+
+  {{/* The verdict first. Somebody opening this screen is asking one question,
+       and it is answered before anything they have to read. */}}
+  {{if $review.Ready}}
+    <div class="banner banner-ok" role="status">
+      <strong>{{.T "submit.review.ready"}}</strong>
+      <span>{{.T "submit.review.ready.detail" (.Printer.FormatDuration $review.Week.Totals.SummedSeconds)}}</span>
+    </div>
+  {{else}}
+    <div class="banner banner-error" role="alert">
+      <strong>{{.T "submit.review.notready"}}</strong>
+    </div>
+  {{end}}
+
+  {{/* What stops it, then what is merely worth a look. Separate lists, because
+       a blocker and a note about an empty Friday need different things done
+       about them and a single list of "issues" makes somebody read all of it
+       to find out which is which. */}}
+  {{if $review.Blockers}}
+    <section class="review-notes review-blockers">
+      <h2 class="section-heading">{{.T "submit.review.blockers"}}</h2>
+      <ul class="note-list">
+        {{range $review.Blockers}}
+          <li class="note note-blocker">
+            <span class="note-icon" aria-hidden="true">!</span>
+            <span class="note-text">{{template "submit-note" (dict "Page" $ "Note" .)}}</span>
+          </li>
+        {{end}}
+      </ul>
+    </section>
+  {{end}}
+
+  {{if $review.Warnings}}
+    <section class="review-notes review-warnings">
+      <h2 class="section-heading">{{.T "submit.review.warnings"}}</h2>
+      <ul class="note-list">
+        {{range $review.Warnings}}
+          <li class="note note-warning">
+            <span class="note-icon" aria-hidden="true">i</span>
+            <span class="note-text">{{template "submit-note" (dict "Page" $ "Note" .)}}</span>
+          </li>
+        {{end}}
+      </ul>
+    </section>
+  {{end}}
+
+  {{if not $review.Any}}
+    <p class="field-help">{{.T "submit.review.nothingtosay"}}</p>
+  {{end}}
+
+  {{/* The week itself, as the week screen draws it, so the figures here and
+       there cannot differ. */}}
+  <h2 class="section-heading">{{.T "submit.review.theweek"}}</h2>
+  {{template "week-grid" (dict "Page" $ "Week" $review.Week)}}
+
+  {{if $review.Expenses}}
+    <h2 class="section-heading">{{.T "submit.review.expenses"}}</h2>
+    <table class="entries">
+      <thead>
+        <tr>
+          <th scope="col">{{.T "expenses.date"}}</th>
+          <th scope="col">{{.T "expenses.description"}}</th>
+          <th scope="col" class="cell-number">{{.T "expenses.amount"}}</th>
+          <th scope="col">{{.T "attachments.title"}}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range $review.Expenses}}
+          <tr class="entry-row {{if index $review.NeedsReceipt .ID}}flagged{{end}}">
+            <td>{{.SpentOn}}</td>
+            <td>
+              {{.Description}}
+              <span class="entry-path">{{.CustomerName}} · {{.ProjectName}}</span>
+            </td>
+            <td class="cell-number">{{$.Printer.FormatMoney .AmountMinor .Currency}}</td>
+            <td>
+              {{if index $review.NeedsReceipt .ID}}
+                <span class="badge badge-flagged" title="{{$.T "expense.receipt.needed.title"}}">{{$.T "expense.receipt.needed"}}</span>
+                <a class="btn btn-small btn-quiet" href="/expenses?project={{.ProjectID}}">{{$.T "submit.review.attach"}}</a>
+              {{else if .AttachmentCount}}
+                {{range index $.AttachmentsByOwner .ID}}
+                  <a class="attachment-name" href="/attachments/{{.ID}}">{{.Filename}}</a>
+                {{end}}
+              {{else}}
+                <span class="field-help">{{$.T "submit.review.noreceipt"}}</span>
+              {{end}}
+            </td>
+          </tr>
+        {{end}}
+      </tbody>
+    </table>
+  {{end}}
+
+  {{/* The decision. A plain form, so it works without script, and the same
+       route the week screen posts to - there is one way to submit a week. */}}
+  <div class="review-actions">
+    {{if $review.Ready}}
+      <form method="post" action="/week/submit">
+        {{template "csrf" .CSRFToken}}
+        <input type="hidden" name="week" value="{{$review.Period.Period.WeekStart}}">
+        <button type="submit" class="btn btn-primary">{{.T "period.submit"}}</button>
+      </form>
+    {{end}}
+    {{if $review.Period.CanWithdraw}}
+      <form method="post" action="/week/withdraw">
+        {{template "csrf" .CSRFToken}}
+        <input type="hidden" name="week" value="{{$review.Period.Period.WeekStart}}">
+        <button type="submit" class="btn btn-quiet">{{.T "period.withdraw"}}</button>
+      </form>
+    {{end}}
+    <a class="btn btn-quiet" href="/week?date={{date $review.Week.Start}}">{{.T "submit.review.fixit"}}</a>
+  </div>
+
+</section>
+{{end}}
+
+{{/* One note, rendered from its code. The code comes from the service and the
+     sentence from the catalogue, so these read in the reader's own language
+     rather than being the one untranslated thing on the page. */}}
+{{define "submit-note"}}
+  {{- $page := .Page -}}
+  {{- $note := .Note -}}
+  {{- if eq $note.Code "empty_day" -}}
+    {{$page.T "submit.note.empty_day" ($page.Printer.FormatDateLong $note.Day)}}
+  {{- else if eq $note.Code "long_day" -}}
+    {{$page.T "submit.note.long_day" ($page.Printer.FormatDateLong $note.Day) ($page.Printer.FormatDuration $note.Seconds)}}
+  {{- else if eq $note.Code "receipts" -}}
+    {{$page.Printer.N "submit.note.receipts" $note.Count}}
+  {{- else if eq $note.Code "flagged" -}}
+    {{$page.Printer.N "submit.note.flagged" $note.Count}}
+  {{- else if eq $note.Code "running" -}}
+    {{$page.Printer.N "submit.note.running" $note.Count}}
+  {{- else if eq $note.Code "pending" -}}
+    {{$page.Printer.N "submit.note.pending" $note.Count}}
+  {{- else -}}
+    {{$page.T (printf "submit.note.%s" $note.Code)}}
+  {{- end -}}
+{{end}}

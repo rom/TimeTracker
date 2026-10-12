@@ -48,6 +48,7 @@ func (s *Server) routes() {
 	mux.HandleFunc("GET /{$}", s.handleToday)   // {$} matches only "/"
 	mux.HandleFunc("GET /today", s.handleToday) // with an optional ?date=
 	mux.HandleFunc("GET /week", s.handleWeek)
+	mux.HandleFunc("GET /month", s.handleMonth) // with ?month=YYYY-MM or ?date=
 	mux.HandleFunc("GET /entries", s.handleEntries)
 	mux.HandleFunc("GET /admin", s.handleAdmin)
 
@@ -131,7 +132,10 @@ func (s *Server) routes() {
 	mux.HandleFunc("POST /assignments/{id}", s.handleUpdateAssignment)
 	mux.HandleFunc("POST /assignments/{id}/favourite", s.handleToggleFavourite)
 
-	// Weekly submit and approve.
+	// Weekly submit and approve. The review is a GET between the week and the
+	// submission: the refusals that enforce a submission fire after the button
+	// has been pressed, and this asks the same questions before it.
+	mux.HandleFunc("GET /week/review", s.handleReviewSubmission)
 	mux.HandleFunc("POST /week/submit", s.handleSubmitWeek)
 	mux.HandleFunc("POST /week/withdraw", s.handleWithdrawWeek)
 	// Recording again what was recorded before.
@@ -155,6 +159,10 @@ func (s *Server) routes() {
 	mux.HandleFunc("GET /guide/{topic}", s.handleGuide)
 	mux.HandleFunc("GET /approvals", s.handleApprovals)
 	mux.HandleFunc("GET /approvals/report", s.handleApprovalReport)
+	// Budget consumption and burn. Under /reports rather than /approvals: it is
+	// about engagements rather than about timesheets, and the only thing it
+	// shares with the approval report is the audience.
+	mux.HandleFunc("GET /reports/budgets", s.handleBudgetReport)
 	mux.HandleFunc("POST /approvals/approve", s.handleApproveWeek)
 	mux.HandleFunc("POST /approvals/reject", s.handleRejectWeek)
 	mux.HandleFunc("POST /approvals/reopen", s.handleReopenWeek)

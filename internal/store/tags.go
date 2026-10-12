@@ -175,7 +175,12 @@ func (db *DB) ListTags(ctx context.Context) ([]domain.Tag, error) {
 
 // UpdateTag renames a tag or recolours it.
 func (db *DB) UpdateTag(ctx context.Context, tag domain.Tag) error {
-	res, err := db.write.ExecContext(ctx,
+	return UpdateTagTx(ctx, db.write, tag)
+}
+
+// UpdateTagTx is UpdateTag on the caller's executor.
+func UpdateTagTx(ctx context.Context, db Execer, tag domain.Tag) error {
+	res, err := db.ExecContext(ctx,
 		`UPDATE tags SET name = ?, colour_key = ? WHERE id = ?`,
 		domain.NormaliseTag(tag.Name), tag.ColourKey, tag.ID)
 	if err != nil {
@@ -190,7 +195,12 @@ func (db *DB) UpdateTag(ctx context.Context, tag domain.Tag) error {
 // so removing one loses a label rather than orphaning history. The links go
 // with it through the foreign key's cascade.
 func (db *DB) DeleteTag(ctx context.Context, id int64) error {
-	res, err := db.write.ExecContext(ctx, `DELETE FROM tags WHERE id = ?`, id)
+	return DeleteTagTx(ctx, db.write, id)
+}
+
+// DeleteTagTx is DeleteTag on the caller's executor.
+func DeleteTagTx(ctx context.Context, db Execer, id int64) error {
+	res, err := db.ExecContext(ctx, `DELETE FROM tags WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete tag: %w", err)
 	}

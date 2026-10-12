@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"github.com/rom/timetracker/internal/blob"
 	"github.com/rom/timetracker/internal/domain"
 	"github.com/rom/timetracker/internal/preview"
+	"github.com/rom/timetracker/internal/store"
 )
 
 // Attachments: files and photographs on a time entry or an expense.
@@ -69,17 +71,25 @@ func (s *Service) Attach(ctx context.Context, ownerType string, ownerID int64, f
 		SizeBytes:  size,
 		UploadedBy: actor.ID,
 	}
-	created, err := s.db.CreateAttachment(ctx, attachment)
+	// The row and the audit entry commit together. If either fails, neither
+	// happened and the bytes on disk are an orphan the sweep collects - which is
+	// the arrangement the ordering above was chosen for.
+	var created domain.Attachment
+	err = s.mutate(ctx, "attachment.create", ownerType, map[string]any{
+		"filename": attachment.Filename,
+		"mime":     attachment.MIME,
+		"bytes":    attachment.SizeBytes,
+		"sha256":   attachment.SHA256,
+	}, func(tx *sql.Tx) (int64, error) {
+		var txErr error
+		created, txErr = store.CreateAttachmentTx(ctx, tx, attachment)
+		// The audit row is filed against the record the file is attached to
+		// rather than against the attachment: "a receipt was added to this
+		// expense" is the event somebody looks for, and the attachment's own id
+		// means nothing to them.
+		return ownerID, txErr
+	})
 	if err != nil {
-		return domain.Attachment{}, err
-	}
-
-	if err := s.recordAudit(ctx, "attachment.create", ownerType, ownerID, map[string]any{
-		"filename": created.Filename,
-		"mime":     created.MIME,
-		"bytes":    created.SizeBytes,
-		"sha256":   created.SHA256,
-	}); err != nil {
 		return domain.Attachment{}, err
 	}
 	return created, nil
@@ -204,21 +214,35 @@ func (s *Service) DeleteAttachment(ctx context.Context, id int64) error {
 		return err
 	}
 
-	hash, orphaned, err := s.db.DeleteAttachment(ctx, id)
+	// The row goes with its audit entry, and the bytes go afterwards.
+	//
+	// Both halves of that matter. A failed audit write used to leave the
+	// attachment deleted with nothing in the trail to say who deleted it - and
+	// the bytes were already gone by then, because the removal happened before
+	// the audit row was written. Removing them before the delete is final would
+	// leave any other row that shares the file pointing at nothing.
+	var orphaned bool
+	err = s.mutate(ctx, "attachment.delete", attachment.OwnerType, map[string]any{
+		"filename": attachment.Filename, "sha256": attachment.SHA256,
+	}, func(tx *sql.Tx) (int64, error) {
+		var txErr error
+		orphaned, txErr = store.DeleteAttachmentTx(ctx, tx, id, attachment.SHA256)
+		return attachment.OwnerID, txErr
+	})
 	if err != nil {
 		return err
 	}
+
 	if orphaned && s.blobs != nil {
-		if err := s.blobs.Remove(hash); err != nil && s.log != nil {
+		if err := s.blobs.Remove(attachment.SHA256); err != nil && s.log != nil {
 			// A failed blob removal wastes disk but loses no data, so it is
 			// logged rather than failing the user's request. The sweep will
 			// catch it.
 			s.log.WarnContext(ctx, "could not remove an unreferenced blob",
-				"sha256", hash, "error", err.Error())
+				"sha256", attachment.SHA256, "error", err.Error())
 		}
 	}
-	return s.recordAudit(ctx, "attachment.delete", attachment.OwnerType, attachment.OwnerID,
-		map[string]any{"filename": attachment.Filename, "sha256": attachment.SHA256})
+	return nil
 }
 
 // SweepBlobs removes blobs nothing references. Run periodically.

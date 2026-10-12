@@ -60,6 +60,7 @@ Statuses: `proposed` → `accepted` → `superseded by ADR-NNNN` | `deprecated`.
 | [0032](0032-measured-before-tuned.md) | Index for the query that is written, not the one that is meant | accepted | 2026-08-19 | ASR-012 |
 | [0033](0033-idle-time-is-observed.md) | Idle time is observed, never inferred | accepted | 2026-08-20 | ASR-026 |
 | [0034](0034-reminders-are-shown-not-sent.md) | Reminders are shown, not sent | accepted | 2026-08-29 | ASR-027 |
+| [0035](0035-burn-is-a-projection.md) | A burn rate is a projection, and says so | accepted | 2026-08-30 | ASR-028 |
 
 ## Writing a new one
 

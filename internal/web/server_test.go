@@ -37,6 +37,7 @@ func newTestServer(t *testing.T) (*Server, domain.User) {
 // A zero instant means the real clock.
 func newTestServerAt(t *testing.T, now time.Time) (*Server, domain.User) {
 	t.Helper()
+	t.Helper()
 	if testing.Short() {
 		t.Skip("web tests touch the filesystem; skipped under -short")
 	}
@@ -111,7 +112,8 @@ func TestEveryScreenRenders(t *testing.T) {
 
 	for _, path := range []string{
 		"/", "/today", "/week", "/entries", "/admin", "/approvals",
-		"/approvals/report", "/guide", "/expenses", "/routines", "/tags", "/healthz",
+		"/approvals/report", "/reports/budgets", "/guide", "/expenses", "/routines",
+		"/tags", "/healthz",
 	} {
 		t.Run(path, func(t *testing.T) {
 			rec := get(t, srv, path)

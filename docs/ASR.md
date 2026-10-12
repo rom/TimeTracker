@@ -41,8 +41,15 @@ Status legend: **A** = accepted, **P** = proposed, **R** = retired.
 | [ASR-017](#asr-017) | Learnability | Deliberate but surprising behaviour is explained in context | A |
 | [ASR-018](#asr-018) | Recoverability | A user can take and restore their own backups, whole or partial | A |
 | [ASR-019](#asr-019) | Interoperability | Existing hours can be brought in from a spreadsheet | A |
+| [ASR-020](#asr-020) | Integrity | A submitted week is locked, and correcting one is deliberate | A |
+| [ASR-021](#asr-021) | Suitability / Integrity | Work is priced by the terms in force on the day it happened | A |
+| [ASR-022](#asr-022) | Learnability | Somebody who knows what they want to do can find out where to do it | A |
+| [ASR-023](#asr-023) | Suitability | Time that recurs is recorded in one action, and never invented | A |
+| [ASR-024](#asr-024) | Interoperability | Hours can be brought in from a calendar without importing what is not work | A |
+| [ASR-025](#asr-025) | Suitability | Search finds a fragment anywhere, and never answers a valid query with silence | A |
 | [ASR-026](#asr-026) | Integrity | Time is never removed from a timesheet without a person saying so | A |
 | [ASR-027](#asr-027) | Suitability | The application says what needs attention, without sending anything | A |
+| [ASR-028](#asr-028) | Suitability | An engagement's budget can be seen being consumed, before it runs out | A |
 
 ---
 
@@ -721,3 +728,36 @@ for it to be stale, and costs no daemon in a binary whose whole shape is that it
 does not need one.
 
 *Addressed by:* [ADR-0034](adr/0034-reminders-are-shown-not-sent.md)
+
+---
+
+### ASR-028
+**An engagement's budget can be seen being consumed, before it runs out.**
+
+*Quality attribute:* Functional suitability
+
+*Requirement:* A project may carry a cap in hours, in money, or both. It must be
+possible to see how much of each has been consumed and, where the evidence
+supports it, roughly when the cap will be reached - without any estimate being
+presentable as a measurement.
+
+*Fit criterion:* Consumption counts confirmed, unflagged entries, with hours
+including non-billable work and money being the billed amount. Where both caps
+are set, the reported percentage is the worse of the two and any projected date
+is the earlier. An overrun is reported as a percentage past 100 and a negative
+remainder rather than clamped. The burn rate is a mean over a stated recent
+window, averaged over the weeks that had work, and the window is named on the
+screen. There is no projection at all where there is no budget, where the budget
+is already passed, where nothing was recorded in the window, or where fewer than
+two weeks had activity - and in each case the report says which, rather than
+leaving the cell blank. The whole report is gated on the permission that governs
+commercial figures.
+
+*Rationale:* A budget that nobody can watch being consumed is one that gets
+discovered at the end. But a forecast rendered in the same table as the facts
+reads as a fact: somebody tells a client the engagement is funded to November on
+the strength of an average of four weeks of timesheets. The number is worth
+having and the honesty about what it is has to be built into how it is presented,
+not left to the reader.
+
+*Addressed by:* [ADR-0035](adr/0035-burn-is-a-projection.md)

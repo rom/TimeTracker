@@ -267,7 +267,8 @@ to the company. Receipts attach directly.
 | **Tags** | rename, recolour and tidy. Tags are created by using them, so this is not where they are defined. |
 | **Calendar import** | preview and import from an .ics export, with everything that is not work shown as such by name ([ADR-0028](adr/0028-calendar-import-is-a-conversation.md)). |
 | **Expenses** | list and entry, with receipts, billable/reimbursable flags. |
-| **Reports** | grouped totals by customer/project/assignment/person/tag over a range, billable vs non-billable, budget consumption, export in four formats. |
+| **Reports** | grouped totals by customer/project/assignment/person/tag over a range, billable vs non-billable, export in five formats. |
+| **Budgets and burn** | what each project has used of its cap in hours and money, worst first, with a burn rate and a projected date where the evidence supports one ([ADR-0035](adr/0035-burn-is-a-projection.md)). An overrun is shown as a number past 100% and a negative remainder rather than clamped. Where there is no honest projection the cell says which of the four reasons applies, because a blank in a "runs out" column reads as *never*. |
 | **Admin** | customers, projects, assignments, rates, tags; in server mode also users, roles, memberships, sessions and the audit log. |
 
 The day view opens with a **timeline**: the day as blocks against a clock, with
@@ -433,14 +434,20 @@ you are using. What it *can* do:
   week one for the last working day of the week — because a panel that is always
   there is one nobody reads. Each can be waved away for its day or week, and the
   next one asks again.
-* **Suggestions from your own history** — the assignments you usually work on this
-  weekday, ranked, so the common case is one click.
+* **Suggestions from your own history** — the assignments you have worked on
+  recently, favourites first, so the common case is one click. Ranked by
+  favourite and then by recency over a six-week window; *not* by weekday, which
+  this bullet claimed for some time and the query has never done.
 * **Long-running-timer review** — a timer past the maximum is flagged, not counted.
 
 Explicitly deferred, and requiring a separate desktop agent or an integration ADR:
-application/window activity tracking, calendar (ICS) import, git commit import. The
-suggestion pipeline is designed so those become additional *sources* of proposals
-rather than a new mechanism.
+application/window activity tracking and git commit import. The suggestion
+pipeline is designed so those become additional *sources* of proposals rather
+than a new mechanism.
+
+Calendar (ICS) import was on that list and is not deferred any more: it shipped
+in layer 10 ([ADR-0028](adr/0028-calendar-import-is-a-conversation.md)), as a
+conversation rather than a sync, which is the shape this paragraph anticipated.
 
 ## 10. Exports
 
@@ -516,6 +523,16 @@ which is what this screen used to do.
 Exports respect authorisation: a `client` user's export contains only their
 customer's confirmed entries, with internal notes and cost data removed before the
 data leaves the service layer.
+
+That removal is a transformation of the value rather than a condition in a
+template ([ADR-0008](adr/0008-rbac-model.md)). A client's screen is one screen -
+the work done for them, and the downloads of it - and what reaches it has already
+had the note, the rate, the amount, the currency, the rounding rule, the proxy
+authorship, the tags and the attachment count taken out of it. The catalogue is
+narrowed the same way, because a customer row carries a negotiated rate and a
+project row carries a budget. Nothing that is not confirmed reaches them at all,
+and that is applied in the query rather than afterwards, so the count behind the
+pager is the number of rows they can be shown.
 
 ## 10a. Backups
 

@@ -2,10 +2,12 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 
 	"github.com/rom/timetracker/internal/auth"
 	"github.com/rom/timetracker/internal/domain"
+	"github.com/rom/timetracker/internal/store"
 )
 
 // SetTheme stores the acting user's theme choice.
@@ -64,11 +66,11 @@ func (s *Service) SetTimeZone(ctx context.Context, timeZone string) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.db.UpdateUserPreferences(ctx, actor.ID, actor.Theme, timeZone, actor.Language); err != nil {
-		return err
-	}
-	return s.recordAudit(ctx, "user.set_time_zone", "user", actor.ID, map[string]any{
+	return s.mutate(ctx, "user.set_time_zone", "user", map[string]any{
 		"from": actor.TimeZone, "to": timeZone,
+	}, func(tx *sql.Tx) (int64, error) {
+		return actor.ID, store.UpdateUserPreferencesTx(ctx, tx,
+			actor.ID, actor.Theme, timeZone, actor.Language)
 	})
 }
 

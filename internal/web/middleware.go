@@ -115,6 +115,17 @@ func isPublicPath(path string) bool {
 		// identity. The list is explicit rather than pattern-based precisely so
 		// a new route cannot join it by accident.
 		return true
+
+	case "/favicon.ico", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png",
+		"/site.webmanifest":
+		// The root asset aliases. They are embedded bytes with nothing in them,
+		// and a browser asks for them before anybody has signed in - including
+		// on the login page itself, which had no icon because these redirected
+		// there. Requiring a session for an icon also puts a redirect in the log
+		// for every anonymous request a scraper makes, which is what these
+		// aliases exist to avoid.
+		return true
+
 	default:
 		return false
 	}

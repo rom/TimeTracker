@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/rom/timetracker/internal/auth"
+	"github.com/rom/timetracker/internal/domain"
 	"github.com/rom/timetracker/internal/service"
 )
 
@@ -46,4 +48,23 @@ func (s *Server) serverError(w http.ResponseWriter, r *http.Request, err error) 
 		slog.String("path", r.URL.Path))
 	http.Error(w, "Something went wrong. The details are in the server log.",
 		http.StatusInternalServerError)
+}
+
+// refuseClient stops an administrative screen short for a client user.
+//
+// The data behind these screens is narrowed for a client like everything else,
+// so this is not what keeps the rates off their screen - the projection is. What
+// it stops is a screen full of controls the role cannot use: the catalogue
+// offers forms to create and archive customers, and offering somebody a button
+// whose only possible outcome is a refusal is a worse answer than saying no.
+//
+// It returns true when the request has been answered and the handler should
+// stop.
+func (s *Server) refuseClient(w http.ResponseWriter, r *http.Request) bool {
+	user, ok := auth.UserFrom(r.Context())
+	if !ok || user.Role != domain.RoleClient {
+		return false
+	}
+	http.Error(w, "Not permitted.", http.StatusForbidden)
+	return true
 }

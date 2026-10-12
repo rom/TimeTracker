@@ -131,6 +131,7 @@ func (h *SyslogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	}
 }
 
+// WithGroup delegates to the wrapped handler; see WithAttrs above.
 func (h *SyslogHandler) WithGroup(name string) slog.Handler {
 	return &SyslogHandler{
 		inner: h.inner.WithGroup(name), cfg: h.cfg, queue: h.queue, closed: h.closed,

@@ -36,6 +36,7 @@ type helpTopic struct {
 var helpForScreen = map[string][]helpTopic{
 	"today":   {{Key: "help.today"}, {Key: "help.quickadd"}, {Key: "help.idle"}, {Key: "help.reminders"}, {Key: "help.editing"}, {Key: "help.themes"}},
 	"week":    {{Key: "help.week"}, {Key: "help.approvals"}, {Key: "help.reminders"}, {Key: "help.today"}},
+	"month":   {{Key: "help.month"}, {Key: "help.week"}, {Key: "help.today"}},
 	"entries": {{Key: "help.entries"}, {Key: "help.editing"}, {Key: "help.today"}},
 	"admin":   {{Key: "help.admin"}, {Key: "help.themes"}},
 	// Both period topics on the approvals screen, because the lock and the way

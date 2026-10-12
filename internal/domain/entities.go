@@ -150,8 +150,12 @@ type Project struct {
 	Currency     string
 }
 
+// Archived reports whether the project has been retired. Archived rather than
+// deleted: the time recorded against it still has to be readable.
 func (p Project) Archived() bool { return p.ArchivedAt != nil }
 
+// Validate checks what the database cannot: a project needs a name somebody can
+// recognise, an owner, and a rate that is not negative.
 func (p Project) Validate() error {
 	if strings.TrimSpace(p.Name) == "" {
 		return invalid("project name is required")
@@ -189,6 +193,8 @@ type Assignment struct {
 	Currency     string
 }
 
+// Archived reports whether the assignment has been retired, in the same sense
+// as Project.Archived: it stops appearing in pickers, and its history stays.
 func (a Assignment) Archived() bool { return a.ArchivedAt != nil }
 
 // Label is the human-readable path of an assignment, used in pickers, exports and
@@ -204,6 +210,7 @@ func (a Assignment) Label() string {
 	}
 }
 
+// Validate checks the same three things Project.Validate does, one level down.
 func (a Assignment) Validate() error {
 	if strings.TrimSpace(a.Name) == "" {
 		return invalid("assignment name is required")

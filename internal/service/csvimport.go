@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -70,10 +72,18 @@ type ImportPreview struct {
 // because the file usually comes out of somebody else's system:
 //
 //	date                       required
-//	duration | hours | time    required, in any form ParseDuration accepts
+//	hours | minutes | duration required, in any form ParseDuration accepts
 //	customer, project, assignment
 //	note | description | comment
 //	billable
+//
+// The duration column's heading decides what a bare number in it means. Under
+// "hours", 2 is two hours; under "minutes", 2 is two minutes; under a heading
+// that does not say - "duration", "time" - a bare whole number is refused with
+// the line number, because eight hours and eight minutes are both plausible
+// readings of "8" and picking one silently is how a day of work becomes a
+// coffee break. A value that carries its own unit ("45m", "1:30", "1.5") is
+// read as written whatever the column is called.
 func (s *Service) ParseTimeCSV(ctx context.Context, r io.Reader, createMissing bool) (ImportPreview, error) {
 	actor, err := auth.MustUser(ctx)
 	if err != nil {
@@ -135,6 +145,10 @@ func (s *Service) ParseTimeCSV(ctx context.Context, r io.Reader, createMissing b
 // importColumns records which CSV column holds which field.
 type importColumns struct {
 	date, duration, customer, project, assignment, note, billable int
+	// durationUnit is what the duration column's heading said its numbers are.
+	// A file that says "hours" at the top of a column has already told us what
+	// a bare 2 in it means.
+	durationUnit domain.DurationUnit
 }
 
 // mapImportColumns reads the header row.
@@ -155,8 +169,15 @@ func mapImportColumns(header []string) (importColumns, error) {
 		switch strings.ToLower(strings.TrimSpace(name)) {
 		case "date", "datum", "day":
 			columns.date = i
-		case "duration", "hours", "time", "timmar", "varaktighet", "duration_hours":
+		case "hours", "hour", "hrs", "timmar", "duration_hours", "decimal_hours":
 			columns.duration = i
+			columns.durationUnit = domain.UnitHours
+		case "minutes", "minute", "mins", "minuter":
+			columns.duration = i
+			columns.durationUnit = domain.UnitMinutes
+		case "duration", "time", "varaktighet", "tid":
+			columns.duration = i
+			columns.durationUnit = domain.UnitUnstated
 		case "customer", "client", "kund":
 			columns.customer = i
 		case "project", "projekt":
@@ -175,7 +196,7 @@ func mapImportColumns(header []string) (importColumns, error) {
 	}
 	if columns.duration < 0 {
 		return columns, fmt.Errorf(
-			"no duration column found; expected one named duration, hours or time")
+			"no duration column found; expected one named hours, minutes, duration or time")
 	}
 	if columns.assignment < 0 && columns.project < 0 {
 		return columns, fmt.Errorf(
@@ -204,9 +225,15 @@ func parseImportRow(record []string, columns importColumns, line int, loc *time.
 	row.Date = parsed
 
 	durationText := field(columns.duration)
-	seconds, err := domain.ParseDuration(durationText)
+	seconds, err := domain.ParseDurationIn(durationText, columns.durationUnit)
 	if err != nil {
-		row.Problem = fmt.Sprintf("could not read the duration %q", durationText)
+		if errors.Is(err, domain.ErrAmbiguousDuration) {
+			row.Problem = fmt.Sprintf(
+				"%q could be hours or minutes; write it as %sh or %sm, or head the "+
+					"column hours or minutes", durationText, durationText, durationText)
+		} else {
+			row.Problem = fmt.Sprintf("could not read the duration %q", durationText)
+		}
 		return row
 	}
 	if seconds <= 0 {
@@ -341,6 +368,10 @@ func missingCatalogue(row *ImportRow, assignments []domain.Assignment) []string 
 // reconciling two sources, which is worse than a clear failure. Rows that were
 // invalid in the preview are refused outright rather than skipped, so what is
 // imported is exactly what was shown.
+//
+// All-or-nothing is now the transaction rather than the intention. Every row is
+// prepared first - which is where a refusal names a line number - and the writes
+// then happen together, so a failure part-way through leaves nothing behind.
 func (s *Service) ImportTimeCSV(ctx context.Context, r io.Reader, createMissing bool) (int, error) {
 	actor, err := auth.MustUser(ctx)
 	if err != nil {
@@ -360,13 +391,23 @@ func (s *Service) ImportTimeCSV(ctx context.Context, r io.Reader, createMissing 
 	}
 
 	loc := locationFor(actor)
-	imported := 0
 
+	// The catalogue first, and outside the import's transaction.
+	//
+	// Creating a customer is itself an audited change in its own transaction,
+	// and nesting one inside another on the single write connection would
+	// deadlock. It is also the right split: the records created here are what
+	// the preview listed and the user agreed to, they are matched by name, so a
+	// re-run after a failed import reuses them rather than making a second set.
+	// What must not be partial is the time, and that is what the transaction
+	// below covers.
+	prepared := make([]domain.TimeEntry, 0, len(preview.Rows))
+	assignments := make([]domain.Assignment, 0, len(preview.Rows))
 	for _, row := range preview.Rows {
 		assignmentID := row.AssignmentID
 		if assignmentID == 0 {
 			if assignmentID, err = s.ensureCatalogue(ctx, row); err != nil {
-				return imported, err
+				return 0, err
 			}
 		}
 
@@ -377,24 +418,48 @@ func (s *Service) ImportTimeCSV(ctx context.Context, r io.Reader, createMissing 
 		// fabricating detail the file does not contain.
 		started := time.Date(row.Date.Year(), row.Date.Month(), row.Date.Day(), 9, 0, 0, 0, loc)
 
-		if _, err := s.CreateEntry(ctx, EntryInput{
+		entry, assignment, prepErr := s.prepareEntry(ctx, EntryInput{
 			AssignmentID:    assignmentID,
 			StartedAt:       started,
 			DurationSeconds: row.Seconds,
 			Note:            row.Note,
 			Billable:        row.Billable,
-		}); err != nil {
-			return imported, fmt.Errorf("importing row %d: %w", row.Line, err)
+		})
+		if prepErr != nil {
+			// Nothing has been written, so this is a clean refusal naming the
+			// line in the user's spreadsheet.
+			return 0, fmt.Errorf("importing row %d: %w", row.Line, prepErr)
 		}
-		imported++
+		prepared = append(prepared, entry)
+		assignments = append(assignments, assignment)
 	}
 
-	if err := s.recordAudit(ctx, "time_entry.import", "time_entry", 0, map[string]any{
-		"rows":    imported,
-		"seconds": preview.TotalSeconds,
-	}); err != nil {
-		return imported, err
+	// Every row, every row's audit record, and the summary, in one transaction.
+	//
+	// This is what ADR-0022 promised and the row-by-row loop did not deliver:
+	// the import either happened or did not. A failure part-way used to leave
+	// the earlier rows written, and the summary row - which said how many rows
+	// had been imported - was written afterwards in a transaction of its own, so
+	// it could fail over an import that had already happened, or claim one that
+	// had partly not.
+	var imported int
+	err = s.db.InTx(ctx, func(tx *sql.Tx) error {
+		for i, entry := range prepared {
+			if _, txErr := s.writeEntryTx(ctx, tx, entry, assignments[i]); txErr != nil {
+				return fmt.Errorf("importing row %d: %w", preview.Rows[i].Line, txErr)
+			}
+			imported++
+		}
+		return s.audit(ctx, tx, "time_entry.import", "time_entry", 0, 0, map[string]any{
+			"rows":    imported,
+			"seconds": preview.TotalSeconds,
+		})
+	})
+	if err != nil {
+		return 0, err
 	}
+
+	s.auditLog(ctx, "time_entry.import", "time_entry", 0)
 	return imported, nil
 }
 

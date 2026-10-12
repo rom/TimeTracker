@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/rom/timetracker/internal/auth"
@@ -164,15 +165,11 @@ func (s *Service) UpdateSettings(ctx context.Context, in SettingsInput) error {
 		DayOverflow:      string(domain.DayOverflow(in.DayOverflow).OrDefault()),
 		BackupPassword:   backupPassword,
 	}
-	if err := s.db.UpdateSettings(ctx, updated); err != nil {
-		return err
-	}
-
 	// Audited: a rounding or rate default changes what future work is worth, so
 	// a later question about a figure needs to find when it changed. The entry
 	// records *that* the backup password changed, never what it became - an
 	// audit log is read by more people than the settings form is.
-	return s.recordAudit(ctx, "settings.update", "settings", 1, map[string]any{
+	return s.mutate(ctx, "settings.update", "settings", map[string]any{
 		"default_currency": map[string]any{"from": existing.DefaultCurrency, "to": currency},
 		"default_rounding": map[string]any{"from": existing.DefaultRounding, "to": rounding},
 		"default_rate":     map[string]any{"from": existing.DefaultRateMinor, "to": rate.Minor},
@@ -180,6 +177,8 @@ func (s *Service) UpdateSettings(ctx context.Context, in SettingsInput) error {
 		"backup_encrypted": map[string]any{
 			"from": existing.BackupPassword != "", "to": backupPassword != "",
 		},
+	}, func(tx *sql.Tx) (int64, error) {
+		return 1, store.UpdateSettingsTx(ctx, tx, updated)
 	})
 }
 

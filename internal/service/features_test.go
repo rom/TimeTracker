@@ -601,3 +601,107 @@ func TestSettingsValidation(t *testing.T) {
 		t.Errorf("max timer = %d, want 36000", settings.MaxTimerSeconds)
 	}
 }
+
+// TestTheDurationColumnsHeadingDecidesItsUnit.
+//
+// A CSV of hours is somebody else's export, and the heading is the only thing
+// in the file that says what the numbers are. Reading a bare 2 under a column
+// called "hours" as two minutes was the behaviour until this test: the import
+// succeeded, the row appeared, and the figure was wrong by a factor of sixty in
+// the direction nobody checks.
+func TestTheDurationColumnsHeadingDecidesItsUnit(t *testing.T) {
+	for _, file := range []struct {
+		name    string
+		csv     string
+		seconds int64
+	}{
+		{
+			name:    "hours",
+			csv:     "date,hours,assignment\n2026-03-16,2,Development\n",
+			seconds: 7200,
+		},
+		{
+			name:    "decimal hours",
+			csv:     "date,hours,assignment\n2026-03-16,1.5,Development\n",
+			seconds: 5400,
+		},
+		{
+			name:    "Swedish hours",
+			csv:     "date,timmar,assignment\n2026-03-16,2,Development\n",
+			seconds: 7200,
+		},
+		{
+			name:    "minutes",
+			csv:     "date,minutes,assignment\n2026-03-16,90,Development\n",
+			seconds: 5400,
+		},
+		{
+			// The cell is more specific than the heading, and somebody wrote it
+			// deliberately - a hand-corrected row in a decimal export.
+			name:    "an explicit unit under an hours heading",
+			csv:     "date,hours,assignment\n2026-03-16,45m,Development\n",
+			seconds: 2700,
+		},
+		{
+			// A heading that does not name a unit still reads a fraction as
+			// hours, because nobody records one and a half minutes.
+			name:    "a fraction under an unstated heading",
+			csv:     "date,duration,assignment\n2026-03-16,1.5,Development\n",
+			seconds: 5400,
+		},
+	} {
+		t.Run(file.name, func(t *testing.T) {
+			f := newFixture(t)
+			preview, err := f.svc.ParseTimeCSV(f.ctx, strings.NewReader(file.csv), false)
+			if err != nil {
+				t.Fatalf("preview: %v", err)
+			}
+			if preview.Valid != 1 {
+				t.Fatalf("the row was refused: %+v", preview.Rows)
+			}
+			if preview.TotalSeconds != file.seconds {
+				t.Errorf("the preview reads it as %d seconds, want %d",
+					preview.TotalSeconds, file.seconds)
+			}
+		})
+	}
+}
+
+// TestAnAmbiguousDurationIsRefusedRatherThanGuessed.
+//
+// The same decision as the ambiguous date, for the same reason (ADR-0022). "8"
+// under a heading that says "duration" is eight hours or eight minutes depending
+// on which system wrote the file, and the preview is the right place to find
+// that out - nothing has been written, and the message names the line and the
+// two ways to fix it.
+func TestAnAmbiguousDurationIsRefusedRatherThanGuessed(t *testing.T) {
+	f := newFixture(t)
+
+	csv := "date,duration,assignment\n" +
+		"2026-03-16,1.5,Development\n" +
+		"2026-03-17,8,Development\n"
+
+	preview, err := f.svc.ParseTimeCSV(f.ctx, strings.NewReader(csv), false)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	if preview.Valid != 1 || preview.Invalid != 1 {
+		t.Fatalf("preview: %d valid, %d invalid; want the fraction accepted and "+
+			"the bare number refused", preview.Valid, preview.Invalid)
+	}
+	problem := preview.Rows[1]
+	if problem.Line != 3 {
+		t.Errorf("the ambiguous row is reported as line %d, want 3", problem.Line)
+	}
+	for _, expected := range []string{"8", "hours or minutes", "8h", "8m"} {
+		if !strings.Contains(problem.Problem, expected) {
+			t.Errorf("the message does not mention %q: %q", expected, problem.Problem)
+		}
+	}
+
+	// And nothing is importable until the file is fixed, because a file with an
+	// invalid row is refused outright.
+	if _, err := f.svc.ImportTimeCSV(f.ctx, strings.NewReader(csv), false); err == nil {
+		t.Error("a file with an ambiguous duration was imported")
+	}
+}

@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -222,19 +223,57 @@ func ParseDuration(s string) (int64, error) {
 	// type: nobody means thirty hours.
 	normalised := strings.Replace(in, ",", ".", 1)
 	if strings.Contains(normalised, ".") {
-		hours, err := strconv.ParseFloat(normalised, 64)
-		if err != nil || hours < 0 {
-			return 0, fmt.Errorf("invalid duration %q", s)
-		}
-		// The float is confined to this parse of user input and is immediately
-		// converted to integer seconds; it never reaches storage or a total.
-		return int64(hours*3600 + 0.5), nil
+		return decimalUnits(normalised, 3600, s)
 	}
 	mins, err := strconv.ParseInt(normalised, 10, 64)
 	if err != nil || mins < 0 {
 		return 0, fmt.Errorf("invalid duration %q", s)
 	}
 	return mins * 60, nil
+}
+
+// decimalUnits converts a decimal count of some unit into whole seconds.
+//
+// Integer arithmetic throughout, rather than parsing a float and multiplying.
+// The values are exact either way at the sizes involved, but a float in a
+// parser is the first step of the drift ADR-0014 exists to prevent, and the
+// integer version is no harder to read: 1.5 hours is one lot of 3600 plus five
+// tenths of one, and the halving is a rounding decision made in the open.
+//
+// It replaced the one strconv.ParseFloat in the tree, which internal/repocheck
+// had to carry a named exemption for.
+func decimalUnits(text string, secondsPerUnit int64, original string) (int64, error) {
+	whole, fraction, _ := strings.Cut(text, ".")
+
+	units := int64(0)
+	if whole != "" {
+		parsed, err := strconv.ParseInt(whole, 10, 64)
+		if err != nil || parsed < 0 {
+			return 0, fmt.Errorf("invalid duration %q", original)
+		}
+		units = parsed
+	}
+	seconds := units * secondsPerUnit
+
+	if fraction == "" {
+		return seconds, nil
+	}
+	// A long fraction is somebody's spreadsheet writing 1.3333333333 for a third
+	// of an hour. Nine digits is far past the point where another one changes
+	// the answer, and it keeps the scale below an int64 overflow.
+	if len(fraction) > 9 {
+		fraction = fraction[:9]
+	}
+	numerator, err := strconv.ParseInt(fraction, 10, 64)
+	if err != nil || numerator < 0 {
+		return 0, fmt.Errorf("invalid duration %q", original)
+	}
+	denominator := int64(1)
+	for range fraction {
+		denominator *= 10
+	}
+	// Half away from zero, the same rounding the money arithmetic uses.
+	return seconds + (numerator*secondsPerUnit+denominator/2)/denominator, nil
 }
 
 // parseUnitDuration handles the "1h30m" family by walking the string and applying
@@ -292,4 +331,73 @@ func parseUnitDuration(in, original string) (int64, error) {
 // See docs/adr/0015-utc-storage-local-display.md.
 func SecondsBetween(start, end time.Time) int64 {
 	return int64(end.Sub(start).Seconds())
+}
+
+// DurationUnit is what a bare number means where it was written.
+//
+// A person typing into the duration box on a form has the whole vocabulary
+// available and the placeholder tells them so, which is why ParseDuration can
+// read "30" as thirty minutes. A column in somebody's spreadsheet is different:
+// the header already said what the numbers are, and reading "2" under a column
+// called "hours" as two minutes is not a lenient parse, it is the wrong answer
+// arrived at confidently.
+type DurationUnit string
+
+const (
+	// UnitUnstated is a column whose name does not say - "duration", "time".
+	UnitUnstated DurationUnit = ""
+	// UnitHours is a column named for hours: "hours", "timmar", "duration_hours".
+	UnitHours DurationUnit = "hours"
+	// UnitMinutes is a column named for minutes: "minutes", "mins", "minuter".
+	UnitMinutes DurationUnit = "minutes"
+)
+
+// ErrAmbiguousDuration means a bare number was written under a heading that does
+// not say what it counts.
+//
+// Refused rather than guessed, for the same reason an ambiguous date is
+// (ADR-0022): "8" in a column called "duration" is eight hours or eight minutes
+// depending on which system exported the file, and a wrong guess silently turns
+// a day of work into a coffee break. Refusing names the value and is fixable in
+// a text editor; guessing is discovered at the end of the month.
+var ErrAmbiguousDuration = errors.New("ambiguous duration")
+
+// ParseDurationIn reads a duration written under a heading that may name its
+// unit.
+//
+// A value carrying its own unit means what it says, whatever the column is
+// called: "45m" under a column headed "hours" is three quarters of an hour,
+// because the cell is more specific than the header and somebody wrote it
+// deliberately.
+func ParseDurationIn(s string, unit DurationUnit) (int64, error) {
+	in := strings.ToLower(strings.TrimSpace(s))
+	in = strings.ReplaceAll(in, " ", "")
+	if in == "" {
+		return 0, fmt.Errorf("empty duration")
+	}
+	// Anything with a unit or a clock separator in it is self-describing.
+	if strings.ContainsAny(in, "hms:") {
+		return ParseDuration(s)
+	}
+
+	normalised := strings.Replace(in, ",", ".", 1)
+	switch unit {
+	case UnitHours:
+		return decimalUnits(normalised, 3600, s)
+	case UnitMinutes:
+		return decimalUnits(normalised, 60, s)
+	}
+
+	// The column did not say. A fraction is still unambiguous in practice -
+	// nobody records one and a half minutes - so only a whole number is refused.
+	if strings.Contains(normalised, ".") {
+		return decimalUnits(normalised, 3600, s)
+	}
+	// Only a well-formed number is ambiguous. Anything else is a mistake in the
+	// file, and saying "this could be hours or minutes" about "abc" would send
+	// somebody looking for the wrong problem.
+	if value, err := strconv.ParseInt(normalised, 10, 64); err != nil || value < 0 {
+		return 0, fmt.Errorf("invalid duration %q", s)
+	}
+	return 0, fmt.Errorf("%w: %q could be hours or minutes", ErrAmbiguousDuration, s)
 }

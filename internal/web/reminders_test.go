@@ -120,7 +120,9 @@ func TestRunningTimerNudgeOffersTheStop(t *testing.T) {
 	post(t, srv, "/timers/start", url.Values{"assignment_id": {"1"}})
 
 	body := get(t, srv, "/today").Body.String()
-	if !strings.Contains(body, "A timer is still running") {
+	// "%d timer is still running." with the count filled in: the plural helper
+	// always passes the count, so the singular carries the verb too.
+	if !strings.Contains(body, "1 timer is still running") {
 		t.Fatal("no nudge about the running timer")
 	}
 	// The panel's own stop control, not merely the one in the header.

@@ -70,6 +70,45 @@ tested.
 * Append-only is a discipline enforced by code review and tests, not by SQLite —
   anyone with the database file can edit it. True immutability would need hash
   chaining or an external log; noted as a future ADR if a client ever requires it.
+* Atomicity has to be arranged at each call site, and for a long time it was not.
+  Only the time-entry paths shared a transaction; every catalogue mutation wrote
+  the record on one connection and then opened a second transaction for the audit
+  row, so a failed audit reported failure to the user over a change that had
+  already committed. Nothing failed while nothing went wrong, which is why it
+  survived until a test injected a failure into the audit insert. The catalogue
+  now goes through `Service.mutate`, which takes the change as a function of the
+  transaction.
+
+  The importers and attachments followed, each needing an answer of its own. A
+  CSV import prepares every row and then writes them all, with their audit rows
+  and the summary, in one transaction ([ADR-0022](0022-two-pass-csv-import.md)).
+  A calendar import does the same while keeping its per-meeting refusals, which
+  happen during preparation, before anything is written. An attachment commits
+  its row and audit entry together, with the bytes written before the
+  transaction and removed after it ([ADR-0013](0013-attachment-storage.md)).
+
+  The account and timesheet paths followed, and two of them carry a second write
+  that has to go with the first: changing a role signs the account out, and
+  changing a password signs it out everywhere. A partial commit there leaves an
+  account whose privileges and whose sessions disagree, so the sign-out is inside
+  the transaction with the change and the audit row. A tag rename is the same
+  shape for a different reason — it rebuilds the search index, which has to
+  happen inside the same transaction or the rebuild indexes the old name.
+
+  **Every mutating path in the service now works this way**, and there is one
+  stated exception: the summary row at the end of a restore. A restore is not a
+  change but a sequence of them — every record it creates commits with its own
+  audit row — and it merges by name, so it is safe to run again. There is no
+  transaction that summary could join without holding the single write
+  connection for the length of a restore of somebody's whole history, so its
+  failure is logged and the restore stands. Reporting a failed restore to
+  somebody whose data is restored and fully recorded is the worse of the two
+  available lies.
+
+  The injection tests in `internal/service/audit_test.go` are what settle this
+  for any given path, and a path with no case there has not been checked. That
+  is how each of these groups was found in turn: the tests came first, the list
+  of what was still wrong came from them, and it shrank as they were fixed.
 
 ## Alternatives considered
 
