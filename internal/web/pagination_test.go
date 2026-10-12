@@ -427,6 +427,9 @@ func firstDifference(a, b string) string {
 // running application changes it.
 func setMaxCollectedExportRows(rows int) { maxCollectedExportRows = rows }
 
+// setMaxViewedExportRows is the same for a document rendered for reading.
+func setMaxViewedExportRows(rows int) { maxViewedExportRows = rows }
+
 // TestStreamedExportReportsAnEarlyFailureAsAnError.
 //
 // A streamed response commits to its status code with its first byte, so the

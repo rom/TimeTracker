@@ -99,6 +99,22 @@
       <p class="field-help">{{.T "export.preview.truncated"}}</p>
     {{end}}
 
+    {{/* The document itself, opened rather than saved. The figures above
+         answer "is this the right period"; they do not answer "is this the
+         right document", and a wrong title or a missing subtotal is the kind
+         of thing somebody notices once it has been sent to a client.
+
+         A new tab, because this is a detour: the decision is still being made
+         on this screen. */}}
+    <h2 class="section-heading">{{.T "export.preview.look"}}</h2>
+    <div class="review-actions">
+      {{range .Formats}}
+        <a class="btn btn-quiet" href="{{$.Filter.ViewURL .}}"
+           target="_blank" rel="noopener">{{.Label}}</a>
+      {{end}}
+    </div>
+    <p class="field-help">{{.T "export.preview.look.help"}}</p>
+
     {{/* And the downloads themselves, each carrying the same filter this
          preview was built from. */}}
     <h2 class="section-heading">{{.T "export.preview.download"}}</h2>

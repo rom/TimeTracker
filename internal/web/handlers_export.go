@@ -1,14 +1,18 @@
 package web
 
 import (
+	"bytes"
 	"fmt"
 	"html/template"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/rom/timetracker/internal/auth"
+	"github.com/rom/timetracker/internal/domain"
 	"github.com/rom/timetracker/internal/export"
+	"github.com/rom/timetracker/internal/preview"
 	"github.com/rom/timetracker/internal/service"
 )
 
@@ -44,6 +48,125 @@ func (s *Server) handleExportPreview(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "page_export_preview.html", data)
 }
 
+// handleExportView serves an export document for reading rather than for
+// saving.
+//
+// The screen before this one says what a download will contain - the rows, the
+// totals, the amounts per customer. That answers "is this the right period",
+// and it does not answer "is this the right document": the PDF has a layout, a
+// title and a set of subtotals, and a wrong one of those is the kind of thing
+// somebody notices only once it has been sent to a client.
+//
+// So this renders the same document the download writes and serves it inline,
+// with the sandboxed headers the attachment previews use. A DOCX is a zip,
+// which no browser displays, so it is handed to the same extractor that
+// previews an uploaded one and shown as the text it holds. The other formats
+// are text or PDF and the browser shows them itself.
+func (s *Server) handleExportView(w http.ResponseWriter, r *http.Request) {
+	format := export.Format(r.PathValue("format"))
+	if !format.Known() {
+		http.Error(w, "Unknown export format.", http.StatusBadRequest)
+		return
+	}
+	filter, form := s.entryFilter(r)
+	// As the download: the filter, never the page.
+	filter.Limit, filter.Offset = 0, 0
+
+	count, err := s.svc.CountEntries(r.Context(), filter)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	// Bounded for every format, not only the ones that cannot stream: this
+	// writes into memory so that it can still refuse cleanly, and a document
+	// being read on a screen is far smaller than one being archived anyway.
+	if count > maxViewedExportRows {
+		http.Error(w, s.tr(r).T("export.view.toolarge", count, maxViewedExportRows),
+			http.StatusRequestEntityTooLarge)
+		return
+	}
+
+	entries, err := s.svc.Entries(r.Context(), filter)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	user, _ := auth.UserFrom(r.Context())
+	meta := s.exportMeta(form, filter, user)
+	report := export.NewReport(meta.Title, meta.From, meta.To,
+		meta.TimeZone, meta.User, entries, s.svc.Now())
+
+	// Into a buffer, so a failure half way through is an error page rather than
+	// half a document under a 200.
+	var document bytes.Buffer
+	if err := format.Write(&document, report); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	contentType, body := format.ContentType(), document.Bytes()
+	filename := exportFilename(form, format)
+	if format == export.FormatDOCX {
+		result, err := preview.Render("application/zip", filename, bytes.NewReader(body))
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		contentType, body = "text/plain; charset=utf-8", []byte(result.Text)
+		// Named for what it now is, as a converted attachment preview is: a
+		// browser told to save this would otherwise write a .docx holding
+		// plain text, which no word processor opens.
+		filename = strings.TrimSuffix(filename, ".docx") + ".txt"
+	} else if format != export.FormatPDF {
+		// CSV, JSON and Markdown are text, and a browser handed text/csv saves
+		// it instead of showing it - which is the behaviour this route exists
+		// to avoid.
+		contentType = "text/plain; charset=utf-8"
+	}
+
+	// The same headers as an attachment preview: nothing loads, nothing runs,
+	// and the document is displayed rather than saved.
+	w.Header().Set("Content-Security-Policy",
+		"default-src 'none'; style-src 'unsafe-inline'; sandbox")
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", filename))
+	// Private and uncached: it is a view of live data, and it is somebody's
+	// billing.
+	w.Header().Set("Cache-Control", "no-store, private")
+
+	if _, err := w.Write(body); err != nil {
+		s.log.ErrorContext(r.Context(), "export view failed midway",
+			"format", string(format), "error", err.Error())
+	}
+}
+
+// maxViewedExportRows bounds a document rendered for reading.
+//
+// Lower than the download's bound on purpose: this one is held in memory in
+// order to fail cleanly, and nobody reads five thousand rows on a screen. The
+// message says to download instead, which is the route that streams.
+//
+// A var rather than a const so a test can lower it, as the download's bound is:
+// the real figure is far above anything a test should seed, and a bound nothing
+// reaches is a bound nothing checks.
+var maxViewedExportRows = 5000
+
+// exportMeta is the heading a report carries, built once so the download and
+// the inline view cannot disagree about the period they cover.
+func (s *Server) exportMeta(form entryFilterForm, filter service.EntryFilter,
+	user domain.User) export.Meta {
+	return export.Meta{
+		Title:       fmt.Sprintf("Time report %s to %s", form.From, form.To),
+		GeneratedAt: s.svc.Now().UTC(),
+		From:        filter.From,
+		To:          filter.To,
+		TimeZone:    user.TimeZone,
+		User:        user.DisplayName,
+	}
+}
+
 // handleExport renders the current entry selection in the requested format.
 //
 // The same filter drives the Entries screen and the export, so what a user
@@ -67,14 +190,7 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	filter.Limit, filter.Offset = 0, 0
 
 	user, _ := auth.UserFrom(r.Context())
-	meta := export.Meta{
-		Title:       fmt.Sprintf("Time report %s to %s", form.From, form.To),
-		GeneratedAt: s.svc.Now().UTC(),
-		From:        filter.From,
-		To:          filter.To,
-		TimeZone:    user.TimeZone,
-		User:        user.DisplayName,
-	}
+	meta := s.exportMeta(form, filter, user)
 
 	// The document formats group by customer and project, which means the last
 	// row read can belong to the first block written - so they have to hold the
@@ -187,6 +303,12 @@ func (f entryFilterForm) PreviewURL() template.URL {
 // user text reaches this unescaped.
 func (f entryFilterForm) ExportURL(format export.Format) template.URL {
 	return template.URL("/export/" + string(format) + "?" + f.exportQuery())
+}
+
+// ViewURL is the link that shows one format's document in the browser instead
+// of saving it, carrying the whole filter for the same reason ExportURL does.
+func (f entryFilterForm) ViewURL(format export.Format) template.URL {
+	return template.URL("/export/" + string(format) + "/view?" + f.exportQuery())
 }
 
 // PageURL is the link to another page of the same filter.

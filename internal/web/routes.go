@@ -195,5 +195,8 @@ func (s *Server) routes() {
 	// the flow: an export is the basis of an invoice, and what it holds is
 	// worth seeing before it is a file on somebody's disk.
 	mux.HandleFunc("GET /export/preview", s.handleExportPreview)
+	// The document itself, shown rather than saved: the preview above says what
+	// a download will contain, and this says what it will look like.
+	mux.HandleFunc("GET /export/{format}/view", s.handleExportView)
 	mux.HandleFunc("GET /export/{format}", s.handleExport)
 }

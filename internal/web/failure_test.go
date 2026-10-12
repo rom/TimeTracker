@@ -51,6 +51,7 @@ var screens = []string{
 	"/entries/1/edit", "/customers/1/edit", "/projects/1/edit", "/assignments/1/edit",
 	"/terms/customer/1", "/terms/project/1",
 	"/export/preview", "/export/csv", "/export/json", "/export/ical",
+	"/export/pdf/view",
 }
 
 // writes is every POST, with a form good enough to reach the database.
