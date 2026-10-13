@@ -101,10 +101,18 @@ func (s *Service) StopTimer(ctx context.Context, entryID int64) (domain.TimeEntr
 
 	endedAt := s.now()
 	seconds := domain.SecondsBetween(entry.StartedAt, endedAt)
-	if seconds < 0 {
+	clamped := seconds < 0
+	if clamped {
 		// The clock moved backwards, or the entry was edited to start in the
 		// future. Recording a negative duration would poison every total, so
 		// clamp and flag it for a human instead.
+		//
+		// The flag is the half that was missing. A zero-second entry on a day
+		// somebody worked is not a plausible record, and the clamp made it look
+		// like one: the only way to find out that an hour had gone missing was
+		// to notice the day was short. It is flagged below with the long-timer
+		// case, which keeps it out of totals until a human says what the
+		// interval should have been.
 		seconds = 0
 	}
 
@@ -130,8 +138,10 @@ func (s *Service) StopTimer(ctx context.Context, entryID int64) (domain.TimeEntr
 	}
 	// A timer left running overnight is the dominant failure mode of any tracker.
 	// Rather than silently billing it, mark it for review; flagged entries are
-	// excluded from totals until a human resolves them.
-	flagged := settings.MaxTimerSeconds > 0 && seconds > settings.MaxTimerSeconds
+	// excluded from totals until a human resolves them. A clamped interval is
+	// the other case: both are "this duration is not what was worked".
+	tooLong := settings.MaxTimerSeconds > 0 && seconds > settings.MaxTimerSeconds
+	flagged := tooLong || clamped
 
 	err = s.db.InTx(ctx, func(tx *sql.Tx) error {
 		stopped, txErr := store.StopEntryTx(ctx, tx, entryID, endedAt, seconds, snapshot)
@@ -156,6 +166,10 @@ func (s *Service) StopTimer(ctx context.Context, entryID int64) (domain.TimeEntr
 			"amount_minor":     snapshot.AmountMinor,
 			"currency":         snapshot.Currency,
 			"flagged":          flagged,
+			// Why it was flagged, which is the difference between "this timer
+			// ran for three days" and "this timer ended before it started".
+			// The second needs the start time corrected and the first does not.
+			"clamped": clamped,
 		})
 	})
 	if err != nil {
@@ -493,8 +507,19 @@ func (s *Service) canDelete(ctx context.Context, entry domain.TimeEntry) error {
 // entryResource describes an entry for an authorisation decision. OwnerID is the
 // subject of the entry, not whoever typed it in, which is what stops a proxy
 // author from retaining editing rights over someone else's confirmed time.
+//
+// The project and the customer are named too, which is what scopes a read of
+// somebody else's entry. They were missing, and the authoriser permits a
+// resource that names no project - correctly, for a global setting - so a
+// member asking for a colleague's entry by id got it, with its note and its
+// billing snapshot. The fields are on the entry for exactly this: see the
+// "denormalised for display and for authorisation scoping" comment on
+// domain.TimeEntry.
 func entryResource(e domain.TimeEntry) auth.Resource {
-	return auth.Resource{Type: "time_entry", ID: e.ID, OwnerID: e.UserID}
+	return auth.Resource{
+		Type: "time_entry", ID: e.ID, OwnerID: e.UserID,
+		ProjectID: e.ProjectID, CustomerID: e.CustomerID,
+	}
 }
 
 // applyEnd fills in the end time and duration from whichever the caller supplied.

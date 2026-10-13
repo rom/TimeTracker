@@ -186,6 +186,87 @@ the decision.
 
 ### Fixed
 
+* **Three reads were not scoped by project membership**, so a member could read
+  a record from a project they are not on by its id — another user's time entry
+  with its note and billing snapshot, any customer with its negotiated rate, or
+  the audit trail of any record of any type, which carries the values each
+  change moved between. One cause: `requireMembership` permits a resource that
+  names no project, which is right for one that genuinely has none (the instance
+  settings, a user account), and `entryResource` built a time entry without one,
+  so the question was answered as though it had been asked about a global
+  setting. Ids are sequential; the listings were never affected, because they go
+  through `effectiveScope` and are narrowed there, which is why this appeared on
+  no screen that shows a list ([ADR-0008](adr/0008-rbac-model.md)).
+
+  The resources now say where they sit, a customer — which has no single
+  project — is scoped by membership of any of its projects, and a named record
+  of a project-scoped type that says nothing about where it sits is refused
+  rather than permitted, so the next omission of this kind fails closed. The
+  audit trail resolves its own subject and asks the question that reading the
+  subject asks; the history of a deleted record, which deliberately outlives it,
+  is left to whoever administers the instance. A failing membership lookup is an
+  error rather than a refusal, since a refusal reaches the caller as "not found"
+  and a database that is merely unreachable should not read as data loss.
+* **A client's access was checked against any customer rather than their own.**
+  The authoriser asked only that the resource name *a* customer; it was correct
+  because every call site happened to pass the acting client's own id, which is
+  one call site away from being wrong. One of the role matrix's own cases said
+  "client cannot read another customer" and expected that it could.
+* **Every amount was parsed as having two decimal places**, whatever the
+  currency, and a currency code is validated as any three letters — so an
+  instance invoicing in JPY, KRW, ISK or CLP held every amount, every rate and
+  every budget at a hundred times its value, with the arithmetic correct
+  throughout and nothing in the application disagreeing with itself. The
+  exponent is the currency's own now, in one function that parsing and rendering
+  both read ([ADR-0014](adr/0014-exact-money-and-duration.md)). A yen is written
+  and read as a whole number, a Kuwaiti dinar to three places, and what is
+  written can be typed back in every currency. (Pre-release only: there is no
+  released version whose stored amounts this reinterprets.)
+* **Copying a day onto itself doubled it.** A copy adds to the target rather
+  than replacing it — deliberately, since replacing would silently delete work —
+  which is what made this destructive in the quiet way: every row twice, the
+  day's total twice what was worked, and nothing saying so. The form has a "copy
+  from" field, so typing today's date into it was all it took. `CopyWeek` had
+  refused the same thing all along.
+* **Restoring a bare `.json` backup said nothing about the attachments it could
+  not carry**, although the field's own comment promised it "reports rather than
+  hides" them: the reporting lived in the archive path, which is reached only
+  when there are files to read. It now names them — a handful, then a count —
+  so a missing receipt is known at the restore rather than discovered by opening
+  a billed expense.
+* **Two of the four decisions that take a typed reason did not bound its
+  length**: declining an expense and reopening an approved week, where declining
+  a time entry and rejecting a week did. The reason is stored, shown, audited and
+  exported. One check now, counting characters rather than bytes, because that
+  is what its message says.
+* **A timer clamped for a backwards clock was not flagged**, though the comment
+  on the clamp said "clamp and flag it for a human instead". A zero-second entry
+  on a day somebody worked is not a plausible record, and the clamp made it look
+  like one. It is flagged now, excluded from totals until somebody corrects it,
+  and the trail records that the interval was clamped rather than merely long —
+  the two need different corrections.
+* **A client was refused outright from `/week` and redirected from `/today` and
+  `/month`**, because the redirect was four lines copied twice rather than one
+  helper: a client following a week link from anywhere got a bare "not
+  permitted" where the other two links took them somewhere useful. Every screen
+  about somebody's own timesheet answers the same way now. The administrative
+  screens still refuse, which is right — they have no client equivalent to be
+  sent to.
+* **The upload allow-list matched the text/plain family by prefix**, so
+  "text/plainish" passed, and two of its keys carried a charset parameter, which
+  made the lookup miss for the same type sniffed without one — "text/csv" alone
+  was refused outright. Matched on the media type now, parameters cut and case
+  folded.
+* **Swedish weekday names were capitalised**, against the date formatter's own
+  comment that Swedish orthography requires lower case. Every long date on every
+  Swedish screen was written wrong, as were the weekday list in the routine
+  editor and the week-start option in settings.
+* **The backup screen was open to a member with no project memberships.** It
+  asked whether the caller may view time entries, which such a member may. What
+  they could take was narrowed by their own scope, so it was a weak gate rather
+  than a disclosure — until the preview of a stored archive, narrowed by nobody,
+  made the difference matter. Every read of the backup directory is
+  administrative now.
 * **A backup described its own scope by database id and by the wrong day.** It
   said "customer 1", which is no answer to "which backup is this" and is not
   even the same number in the instance the file would be restored into; it now

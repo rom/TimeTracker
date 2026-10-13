@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -439,5 +440,66 @@ func TestAScopeNamingSomethingTheBackupDoesNotCarry(t *testing.T) {
 			t.Errorf("the scope reads %q, want it to fall back to %q for a record "+
 				"the file does not carry", backup.Scope.Description, want)
 		}
+	}
+}
+
+// TestABackupIsAdministeredRatherThanViewed.
+//
+// Every read of the server's backup directory goes through AuthorizeBackup, and
+// it asked whether the caller may view time entries - which a member with no
+// project memberships may, since the listings they would read are narrowed
+// afterwards by their scope. So the whole backup screen was open to somebody the
+// instance shows nothing else to.
+//
+// What they could take was narrowed by that same scope, which is why this was a
+// weak gate rather than a disclosure. The preview of a stored archive is what
+// made the difference matter: a file on the server's disk is narrowed by nobody.
+func TestABackupIsAdministeredRatherThanViewed(t *testing.T) {
+	f := newStrangerFixture(t)
+
+	dir := t.TempDir()
+	stored, err := f.svc.WriteBackupFile(f.ctx, dir, BackupOptions{})
+	if err != nil {
+		t.Fatalf("take a backup as the administrator: %v", err)
+	}
+
+	for _, refused := range []struct {
+		name string
+		call func() error
+	}{
+		{"AuthorizeBackup", func() error { return f.svc.AuthorizeBackup(f.stranger) }},
+		{"CreateBackup", func() error {
+			_, err := f.svc.CreateBackup(f.stranger, BackupOptions{})
+			return err
+		}},
+		{"WriteArchive", func() error {
+			return f.svc.WriteArchive(f.stranger, io.Discard, BackupOptions{})
+		}},
+		{"WriteBackup", func() error {
+			return f.svc.WriteBackup(f.stranger, io.Discard, BackupOptions{})
+		}},
+		{"WriteBackupFile", func() error {
+			_, err := f.svc.WriteBackupFile(f.stranger, t.TempDir(), BackupOptions{})
+			return err
+		}},
+		{"PreviewBackupFile", func() error {
+			_, err := f.svc.PreviewBackupFile(f.stranger, dir, stored.Name)
+			return err
+		}},
+	} {
+		t.Run(refused.name, func(t *testing.T) {
+			if err := refused.call(); err == nil {
+				t.Errorf("%s answered a member who administers nothing", refused.name)
+			}
+		})
+	}
+
+	// The administrator is unaffected, which is the half worth asserting: a
+	// gate that refuses everybody is not a fix.
+	if err := f.svc.AuthorizeBackup(f.ctx); err != nil {
+		t.Errorf("the administrator may no longer take a backup: %v", err)
+	}
+	if _, err := f.svc.PreviewBackupFile(f.ctx, dir, stored.Name); err != nil {
+		t.Errorf("the administrator may no longer read their own backup: %v", err)
 	}
 }

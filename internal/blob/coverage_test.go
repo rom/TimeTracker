@@ -229,13 +229,49 @@ func TestWhichContentTypesMayBeStored(t *testing.T) {
 		})
 	}
 
-	// The charset family is matched by prefix, so a type that merely begins
-	// "text/plain" is accepted too. Nothing sniffs such a type, so this is
-	// looseness rather than a hole - pinned so that tightening it to require a
-	// parameter separator is a deliberate change.
-	if !Acceptable("text/plainish") {
-		t.Log("the charset match now requires a separator, so \"text/plainish\" " +
-			"is refused; this note is out of date")
+	// The match is on the media type, exactly, rather than on how the string
+	// begins. A prefix match accepted "text/plainish" and anything else
+	// starting that way: nothing sniffs such a type, so it was looseness rather
+	// than a hole, and a type accepted because of how its name starts is still
+	// the wrong rule for an allow-list whose point is the types nobody thought
+	// of.
+	for _, refused := range []string{
+		"text/plainish", "text/plain-but-not-really", "application/pdfx",
+		"image/pngish",
+	} {
+		if Acceptable(refused) {
+			t.Errorf("Acceptable(%q) = true; the match is on the media type and "+
+				"not on how the name begins", refused)
+		}
+	}
+
+	// And the parameters are cut off either way round, so the same type is
+	// accepted with a charset and without one. Two of the keys carried a
+	// charset, which made the lookup miss for the type sniffed without it:
+	// "text/csv" alone was refused outright.
+	for _, accepted := range []string{
+		"text/plain", "text/plain; charset=utf-8", "text/plain;charset=iso-8859-1",
+		"text/csv", "text/csv; charset=utf-8",
+		"application/pdf", "application/pdf; qs=0.001",
+		// Folded, because a media type is case-insensitive and this one did not
+		// come from the sniffer.
+		"TEXT/PLAIN", "Application/PDF",
+	} {
+		if !Acceptable(accepted) {
+			t.Errorf("Acceptable(%q) = false; the parameters and the case are "+
+				"not what is being decided", accepted)
+		}
+	}
+
+	// The explicit refusal still refuses, with or without parameters: unknown
+	// is not accepted, and that is the entry that says so.
+	for _, refused := range []string{
+		"application/octet-stream", "application/octet-stream; charset=binary",
+	} {
+		if Acceptable(refused) {
+			t.Errorf("Acceptable(%q) = true; an unknown type is explicitly "+
+				"refused", refused)
+		}
 	}
 }
 

@@ -382,7 +382,10 @@ func newServerModeTestServer(t *testing.T) (*Server, *service.Accounts) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := service.New(db, auth.RoleAuthorizer{IsProjectMember: db.IsProjectMember}, logger, time.Now)
+	svc := service.New(db, auth.RoleAuthorizer{
+		IsProjectMember:  db.IsProjectMember,
+		IsCustomerMember: db.IsCustomerMember,
+	}, logger, time.Now)
 	blobs, err := blob.Open(filepath.Join(t.TempDir(), "blobs"))
 	if err != nil {
 		t.Fatalf("open blob store: %v", err)

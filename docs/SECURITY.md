@@ -79,6 +79,14 @@ internal notes, cost data and colleague identities are removed before the data
 leaves it, so no template bug can leak them. Resources a user may not know exist
 return "not found" rather than "forbidden".
 
+A read of a single record must name the project or customer it belongs to, and a
+record of a project-scoped type that does not is **refused** rather than
+permitted. The authoriser does permit a resource with no place in the hierarchy —
+the instance settings, a user account, a listing the service narrows itself — and
+for three reads it was reached by a resource that simply forgot to say where it
+sat, which made a colleague's entry readable by its id. Forgetting now fails
+closed; see ADR-0008 for the three and for what each disclosed.
+
 ### Approval and period locking ([ADR-0023](adr/0023-week-as-the-unit-of-approval.md))
 
 Submitted and approved weeks refuse every mutation of the time inside them, and

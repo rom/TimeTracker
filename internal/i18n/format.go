@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/rom/timetracker/internal/domain"
 )
 
 // Locale-aware formatting.
@@ -76,12 +78,17 @@ func (p *Printer) FormatDecimal(value string) string {
 
 // FormatMoney renders minor units with a currency code, in this locale's
 // convention.
+//
+// The figure itself comes from domain.Money, which knows how many decimal places
+// the currency has - a yen has none - and this only changes how it is written.
+// Writing it here instead meant a second copy of that rule, and the copy held
+// every currency at two places.
 func (p *Printer) FormatMoney(minor int64, currency string) string {
 	negative := minor < 0
 	if negative {
 		minor = -minor
 	}
-	amount := p.FormatDecimal(fmt.Sprintf("%d.%02d", minor/100, minor%100))
+	amount := p.FormatDecimal(domain.NewMoney(minor, currency).Decimal())
 	if negative {
 		amount = "−" + amount
 	}

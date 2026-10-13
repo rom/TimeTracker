@@ -195,8 +195,8 @@ func (s *Service) RejectWeek(ctx context.Context, ownerID int64, weekStart, reas
 	if len(reason) == 0 {
 		return fmt.Errorf("%w: say why, so the week can be corrected", ErrValidation)
 	}
-	if len(reason) > 1000 {
-		return fmt.Errorf("%w: the reason is too long", ErrValidation)
+	if err := checkReason(reason); err != nil {
+		return err
 	}
 	return s.decideWeek(ctx, ownerID, weekStart, domain.PeriodRejected, reason)
 }
@@ -269,6 +269,11 @@ func (s *Service) ReopenWeek(ctx context.Context, ownerID int64, weekStart, reas
 	}
 	if period.Status != domain.PeriodApproved {
 		return fmt.Errorf("%w: only an approved week needs reopening", ErrConflict)
+	}
+	// Reopening an approved week is the most consequential of the four, and was
+	// the other one with no bound on its explanation.
+	if err := checkReason(reason); err != nil {
+		return err
 	}
 
 	previousDecider := period.DecidedBy

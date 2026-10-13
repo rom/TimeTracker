@@ -258,48 +258,103 @@ moves found something.
   was also hiding all of the above.
 * `service` 57% → 85%. The single-sign-on provisioning rules, the session
   lifecycle, damaged and tampered restores, the day pane's overflow, and the
-  refusals each operation makes. The scope sweep found three unscoped reads
-  (below).
+  refusals each operation makes. The scope sweep found three unscoped reads,
+  since fixed (below).
 * `i18n` and `logging`, from no tests at all to 90% and 88%. The first decides
   how every number and date on every screen is written - the two languages
   disagree about both separators, which at four figures is a different quantity.
   The second is the one function standing between a password and the log.
 
-### What is pinned rather than fixed
+### What the coverage work found, and what was done about it
 
-Some tests record what the application does today, with the discrepancy named
-in the test, because changing it is a decision rather than a coverage task. In
-each case the test logs and returns if the behaviour changes, so a fix reads as
-a prompt to invert the test rather than as a confusing failure.
+Raising the floor turned up nine discrepancies that no test had been looking
+for. Each was recorded first as a test that described what the application did,
+with the gap named - because changing behaviour is a decision and a coverage
+commit is not the place to make it - and each has since been fixed, with the
+test inverted to assert the new behaviour. They are listed here because the
+*kind* of defect is worth remembering: none of them was a mistake anybody would
+defend, and all of them were invisible from inside the code that caused them.
 
-* **Three reads are not scoped by project membership.**
-  `RoleAuthorizer.requireMembership` returns nil when `resource.ProjectID == 0`,
-  which is right for a resource that genuinely has no project. But
-  `entryResource` builds `auth.Resource{Type, ID, OwnerID}` with no project id,
-  and the customer and audit-trail resources carry none either - so a member
-  asking about somebody else's record falls through to a permissive check.
-  `Entry` gives another user's entry with its note and billing snapshot,
-  `Customer` gives any customer with its rate, and `AuditTrail` gives the trail
-  of any resource. The listings are unaffected: they go through
-  `effectiveScope` and are narrowed correctly, which is why this appears on no
-  screen that shows a list.
-* **Every amount is parsed as having two decimal places**, whatever the
-  currency, which ADR-0014 states as the model. The currency check accepts any
-  three letters, so an instance invoicing in JPY, KRW, ISK or CLP holds every
-  amount at a hundred times its value.
-* **`CopyDay` has no guard against a day being copied onto itself**, which
-  doubles it. The form has a "copy from" field, so it is reachable by typing
-  today's date into it.
-* **A bare `.json` backup that lists attachments reports nothing about them**,
-  although the `Attachments` field's own comment promises the restore "reports
-  rather than hides" it. The zip path does report it.
-* **Declining an expense does not cap the length of its reason**, where
-  declining a time entry or a week caps it at a thousand characters.
-* **`StopTimer`'s clamp for a backwards clock does not flag the entry**, though
-  its comment says "clamp and flag it for a human instead"; the only flag that
-  write sets is the long-timer one.
-* **A client is redirected to the entries listing from `/today` and `/month`,
-  and refused outright with 403 from `/week`.**
+* **Three reads were not scoped by project membership.**
+  `RoleAuthorizer.requireMembership` permits a resource that names no project,
+  which is right for one that genuinely has none - the instance settings, a user
+  account. But `entryResource` built `auth.Resource{Type, ID, OwnerID}` with no
+  project id, and the customer and audit-trail resources carried none either, so
+  a member asking about somebody else's record was answered as though they had
+  asked about a global setting. `Entry` gave another user's entry with its note
+  and billing snapshot, `Customer` gave any account with its negotiated rate,
+  and `AuditTrail` gave the history of any record of any type. The listings were
+  unaffected: they go through `effectiveScope` and are narrowed there, which is
+  why it appeared on no screen that shows a list.
+
+  The fix is in three parts, because filling in the field is not enough on its
+  own: the resources now say where they sit; a customer, which has no single
+  project, is scoped by membership of any of its projects; and a named record of
+  a project-scoped type that says nothing about where it sits is now *refused*
+  rather than permitted, so the next omission of this kind fails closed. The
+  audit trail resolves its own subject and asks the question that reading the
+  subject asks, with the history of a deleted record - which deliberately
+  outlives it - left to whoever administers the instance. The authoriser's client
+  branch also now checks that the customer is the acting client's own, which it
+  had never done: it was correct only because every call site happened to pass
+  the right id.
+
+  Failing closed turns a disclosure into a refusal, and a refusal somewhere no
+  test looks is still a bug - it breaks a manager instead of leaking to a
+  member. So a source scan
+  (`internal/repocheck/scoping_test.go`) reads every `auth.Resource` literal in
+  the service and web layers and requires one that names a record of a
+  project-scoped type to say where that record sits; a second test fails if that
+  scan's copy of the type list and the authoriser's own disagree. Both were
+  mutation-checked by reverting the fix.
+* **Every amount was parsed as having two decimal places**, whatever the
+  currency, and the currency check accepts any three letters - so an instance
+  invoicing in JPY, KRW, ISK or CLP held every amount, every rate and every
+  budget at a hundred times its value, with the arithmetic correct throughout
+  and nothing in the application disagreeing with itself. The exponent is now
+  the currency's own (`domain.CurrencyExponent`), read by parsing and rendering
+  alike, and the round trip - what is written can be typed back - is asserted
+  for a zero-, two-, three- and four-decimal currency.
+* **`CopyDay` had no guard against a day being copied onto itself**, which
+  doubles it: a copy adds to the target rather than replacing it, deliberately,
+  and that is what makes this case destructive in the quiet way. `CopyWeek` had
+  refused the same thing all along.
+* **A bare `.json` restore said nothing about the attachments it could not
+  carry**, although the `Attachments` field's own comment promised it "reports
+  rather than hides" them: the reporting lived in `restoreAttachments`, which is
+  reached only when there is an archive to read the files out of.
+* **Two of the four decisions that take a typed reason did not cap its
+  length** - declining an expense and reopening an approved week - where
+  declining a time entry and rejecting a week did. One function now, counting
+  characters rather than bytes, since that is what its message says.
+* **`StopTimer`'s clamp for a backwards clock did not flag the entry**, though
+  its comment said "clamp and flag it for a human instead". A zero-second entry
+  on a day somebody worked is not a plausible record, and the clamp made it look
+  like one. It is flagged now, kept out of totals until somebody corrects it,
+  and the trail records *why* - "ran for three days" and "ended before it
+  started" need different corrections.
+* **A client was redirected to the entries listing from `/today` and `/month`
+  and refused outright with 403 from `/week`**, because the redirect was four
+  lines copied twice rather than one helper. All the screens about somebody's own
+  timesheet now answer the same way; the administrative ones still refuse, which
+  is right - they have no client equivalent to be sent to.
+* **`blob.Acceptable` matched the text/plain family by prefix**, so
+  "text/plainish" was accepted. Nothing sniffs such a type, so it was looseness
+  rather than a hole - and two of the allow-list's keys carried a charset
+  parameter, which made the lookup miss for the same type sniffed without one
+  ("text/csv" alone was refused outright). Matched on the media type now, with
+  parameters cut and case folded.
+* **Swedish weekday names were capitalised**, against `FormatDateLong`'s own
+  comment ("lower case, as Swedish orthography requires"). Every long date on
+  every Swedish screen was written wrong, as were the weekday list in the
+  routine editor and the week-start option in settings.
+
+The backup screen was a tenth, found while building the preview of a stored
+archive: it was gated on "may you view time entries", which a member with no
+project memberships may. What they could *take* was narrowed by their own scope,
+so it was a weak gate rather than a disclosure - until a preview that reads a
+file on the server's disk, narrowed by nobody, made the difference matter. Every
+read of that directory is administrative now.
 
 ## 4. Practices
 

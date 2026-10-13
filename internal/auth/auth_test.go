@@ -217,6 +217,11 @@ func TestRoleMatrix(t *testing.T) {
 			// Every test user is a member of exactly project 1.
 			return projectID == memberProject, nil
 		},
+		// And project 1 belongs to customer 10, so that is the one account they
+		// work on.
+		IsCustomerMember: func(_ context.Context, userID, customerID int64) (bool, error) {
+			return customerID == ownCustomer, nil
+		},
 	}
 
 	const actorID = int64(7)
@@ -264,14 +269,37 @@ func TestRoleMatrix(t *testing.T) {
 		{"member cannot approve", domain.RoleMember, ActionApprove, ownEntry, false},
 		{"member cannot see a colleague's money", domain.RoleMember, ActionViewMoney, colleagueEntryInScope, false},
 
-		// Client: read-only, one customer.
+		// Client: read-only, one customer. Their own, which this branch now
+		// checks rather than assuming: the line below said "cannot" and
+		// expected "can" for as long as every call site happened to pass the
+		// acting client's own id.
 		{"client reads its own customer", domain.RoleClient, ActionView, ownCustomerResource, true},
-		{"client cannot read another customer", domain.RoleClient, ActionView, otherCustomerResource, true},
+		{"client cannot read another customer", domain.RoleClient, ActionView, otherCustomerResource, false},
 		{"client cannot write", domain.RoleClient, ActionCreate, ownCustomerResource, false},
 		{"client cannot update", domain.RoleClient, ActionUpdate, ownCustomerResource, false},
 		{"client cannot administer", domain.RoleClient, ActionManage, Resource{Type: "user"}, false},
 		{"client cannot approve", domain.RoleClient, ActionApprove, ownCustomerResource, false},
 		{"client with no customer scope is refused", domain.RoleClient, ActionView, Resource{Type: "report"}, false},
+
+		// A member reads an account they work on, and not one they do not: a
+		// customer record has no single project, so membership of any of its
+		// projects is what scopes it.
+		{"member reads a customer they work on", domain.RoleMember, ActionView,
+			Resource{Type: "customer", ID: ownCustomer, CustomerID: ownCustomer}, true},
+		{"member cannot read a customer they do not", domain.RoleMember, ActionView,
+			Resource{Type: "customer", ID: otherCustomer, CustomerID: otherCustomer}, false},
+
+		// And a named record of a scoped type that says where it sits nowhere
+		// is refused rather than treated as a global setting, which is how a
+		// colleague's entry was readable by its id alone.
+		{"a record that names no scope is refused", domain.RoleMember, ActionView,
+			Resource{Type: "time_entry", ID: 42, OwnerID: 99}, false},
+		{"a manager gets the same answer", domain.RoleManager, ActionView,
+			Resource{Type: "time_entry", ID: 42, OwnerID: 99}, false},
+		// A listing is not a record and is narrowed by the service instead, so
+		// it still passes: see effectiveScope.
+		{"a listing is not refused by that rule", domain.RoleMember, ActionView,
+			Resource{Type: "time_entry", OwnerID: actorID}, true},
 	}
 
 	for _, tc := range tests {
@@ -307,13 +335,56 @@ func TestInactiveUserIsRefused(t *testing.T) {
 
 // TestMissingMembershipLookupFailsClosed: a misconfigured authoriser must refuse,
 // never allow.
+//
+// Both lookups, because a customer record is scoped by the second one and an
+// authoriser wired up with only the first - which is how every test fixture
+// here was built before the customer scope existed - would otherwise answer
+// "permitted" for an account nobody works on.
 func TestMissingMembershipLookupFailsClosed(t *testing.T) {
-	authorizer := RoleAuthorizer{} // no lookup injected
+	authorizer := RoleAuthorizer{} // no lookups injected
 	ctx := WithUser(context.Background(), domain.User{ID: 1, Role: domain.RoleManager, Active: true})
 
-	err := authorizer.Can(ctx, ActionView, Resource{Type: "time_entry", ProjectID: 5})
-	if !errors.Is(err, ErrForbidden) {
-		t.Errorf("a missing membership lookup should refuse, got %v", err)
+	for _, resource := range []Resource{
+		{Type: "time_entry", ProjectID: 5},
+		{Type: "customer", ID: 9, CustomerID: 9},
+	} {
+		if err := authorizer.Can(ctx, ActionView, resource); !errors.Is(err, ErrForbidden) {
+			t.Errorf("a missing membership lookup should refuse %s, got %v",
+				resource.Type, err)
+		}
+	}
+}
+
+// TestAFailingMembershipLookupIsAnErrorRatherThanARefusal.
+//
+// The difference matters: a refusal is reported to the caller as "not found",
+// which for a database that is simply unreachable would be a lie that reads as
+// data loss. Both lookups propagate instead.
+func TestAFailingMembershipLookupIsAnErrorRatherThanARefusal(t *testing.T) {
+	broken := errors.New("the database is gone")
+	authorizer := RoleAuthorizer{
+		IsProjectMember: func(context.Context, int64, int64) (bool, error) {
+			return false, broken
+		},
+		IsCustomerMember: func(context.Context, int64, int64) (bool, error) {
+			return false, broken
+		},
+	}
+	ctx := WithUser(context.Background(), domain.User{ID: 1, Role: domain.RoleMember, Active: true})
+
+	for _, resource := range []Resource{
+		{Type: "time_entry", ID: 1, OwnerID: 99, ProjectID: 5},
+		{Type: "customer", ID: 9, CustomerID: 9},
+	} {
+		err := authorizer.Can(ctx, ActionView, resource)
+		if !errors.Is(err, broken) {
+			t.Errorf("a failing lookup for %s gave %v, want the underlying error",
+				resource.Type, err)
+		}
+		if errors.Is(err, ErrForbidden) {
+			t.Errorf("a failing lookup for %s was reported as a refusal, which "+
+				"a caller turns into \"not found\"", resource.Type)
+		}
 	}
 }
 

@@ -88,12 +88,13 @@ func TestStoppingATimerTwiceIsNotADoubledDuration(t *testing.T) {
 // A negative duration would subtract from the week's total, poisoning every
 // figure above it, so it is clamped to zero.
 //
-// It is *not* marked for review, although StopTimer's comment on the clamp
-// says "clamp and flag it for a human instead": the only flag that write sets
-// is the long-timer one. So an entry that could not be timed records zero and
-// nothing draws anybody's attention to it. Pinned as what the application
-// does, with the discrepancy named, rather than asserted as what the comment
-// promises.
+// And it is marked for review, which is what the comment on the clamp has
+// always said ("clamp and flag it for a human instead") and what the write did
+// not do: the only flag it set was the long-timer one, so an entry that could
+// not be timed recorded zero and nothing drew anybody's attention to it. A
+// zero-second entry on a day somebody worked is not a plausible record, and the
+// clamp made it look like one - the only way to find out that an hour had gone
+// missing was to notice the day was short.
 func TestATimerStoppedBeforeItStartedIsNotANegativeDuration(t *testing.T) {
 	f := newFixture(t)
 
@@ -113,9 +114,32 @@ func TestATimerStoppedBeforeItStartedIsNotANegativeDuration(t *testing.T) {
 			"duration would subtract from the week's total",
 			stopped.DurationSeconds)
 	}
-	if stopped.Flagged {
-		t.Log("the clamped entry is now flagged for review, which is what the " +
-			"comment on the clamp describes; this test's note is out of date")
+	if !stopped.Flagged {
+		t.Error("the clamped entry is not flagged, so an entry that could not " +
+			"be timed records zero and nothing says so")
+	}
+	// Which keeps it out of the day's total until somebody says what the
+	// interval should have been - the point of the flag rather than a side
+	// effect of it.
+	if stopped.Counts() {
+		t.Error("the clamped entry counts towards totals")
+	}
+
+	// The trail says why it was flagged, which is the difference between "this
+	// timer ran for three days" and "this timer ended before it started": the
+	// second needs its start time corrected and the first does not.
+	trail, err := f.svc.AuditTrail(f.ctx, "time_entry", stopped.ID)
+	if err != nil {
+		t.Fatalf("audit trail: %v", err)
+	}
+	var sawClamp bool
+	for _, event := range trail {
+		if event.Action == "time_entry.stop" && strings.Contains(event.Detail, "\"clamped\":true") {
+			sawClamp = true
+		}
+	}
+	if !sawClamp {
+		t.Errorf("the trail does not record that the interval was clamped: %+v", trail)
 	}
 
 	// A timer left running past the configured ceiling *is* flagged, which is

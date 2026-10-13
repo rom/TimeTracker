@@ -28,6 +28,14 @@ changes the invoice total, so it must be a decision rather than an accident.
   explicit **currency code**. There is a `Money` type; it is never a bare int, and
   it refuses to add two different currencies. Rates are stored as minor units per
   hour.
+* **How many minor units make a whole one is the currency's business**, not two
+  everywhere. A yen has none, a Kuwaiti dinar has a thousand, and the exponent
+  lives in one function (`domain.CurrencyExponent`) that parsing and rendering
+  both read. "Cents, öre, pence" names the representation; it is not a claim
+  that every currency subdivides by a hundred — and for a while this code read
+  it as one, so an instance invoicing in yen held every amount, every rate and
+  every budget at a hundred times its value, with the arithmetic correct
+  throughout and nothing in the application disagreeing with itself.
 * **Durations** are whole **seconds**, as `int64`.
 * **No `float64` appears in any persisted field, any total, or any export.** Percent
   values for display are computed at the point of rendering and never fed back into

@@ -17,6 +17,12 @@ import (
 // refusals that enforce that fire after the button has been pressed - which is
 // the wrong moment to be told that Thursday is empty or a receipt is missing.
 func (s *Server) handleReviewSubmission(w http.ResponseWriter, r *http.Request) {
+	// A client submits nothing, so this screen is about a timesheet they do not
+	// have: the same reasoning as the week it belongs to.
+	if s.sentToTheirOwnListing(w, r) {
+		return
+	}
+
 	data, err := s.newPageData(r, "", "week")
 	if err != nil {
 		s.fail(w, r, err)

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -31,7 +32,11 @@ import (
 // member who belongs to no project at all.
 type strangerFixture struct {
 	*serverFixture
-	stranger     context.Context
+	stranger context.Context
+	// colleague is the other side of the same question: a member who does work
+	// on the project. Without them a refusal proves nothing, because an
+	// authoriser that refuses everybody would pass every test below.
+	colleague    context.Context
 	theirEntry   domain.TimeEntry
 	theirExpense domain.Expense
 	customerID   int64
@@ -42,7 +47,7 @@ type strangerFixture struct {
 func newStrangerFixture(t *testing.T) *strangerFixture {
 	t.Helper()
 	f := newServerFixture(t)
-	assignment, _ := f.team(t)
+	assignment, colleague := f.team(t)
 
 	project, err := f.svc.Project(f.ctx, assignment.ProjectID)
 	if err != nil {
@@ -78,6 +83,7 @@ func newStrangerFixture(t *testing.T) *strangerFixture {
 	return &strangerFixture{
 		serverFixture: f,
 		stranger:      auth.WithUser(context.Background(), stranger),
+		colleague:     auth.WithUser(context.Background(), colleague),
 		theirEntry:    entry, theirExpense: expense,
 		customerID: project.CustomerID, projectID: project.ID,
 		assignmentID: assignment.ID,
@@ -267,6 +273,20 @@ func TestSomebodyWithNoProjectsReachesNoneOfThem(t *testing.T) {
 		"CreateBackup": func() (answer, error) {
 			backup, err := svc.CreateBackup(ctx, BackupOptions{})
 			return answer{len(backup.TimeEntries), describeBackupEntries(backup)}, err
+		},
+		// The three that were once unscoped, swept here now that they are not:
+		// each refuses, and a refusal is a correct answer below.
+		"Entry": func() (answer, error) {
+			entry, err := svc.Entry(ctx, f.theirEntry.ID)
+			return answer{1, describeEntries([]domain.TimeEntry{entry})}, err
+		},
+		"Customer": func() (answer, error) {
+			customer, err := svc.Customer(ctx, f.customerID)
+			return answer{1, customer.Name}, err
+		},
+		"AuditTrail": func() (answer, error) {
+			trail, err := svc.AuditTrail(ctx, "time_entry", f.theirEntry.ID)
+			return answer{len(trail), ""}, err
 		},
 		"PreviewBackupFile": func() (answer, error) {
 			preview, err := svc.PreviewBackupFile(ctx, backupDir, storedBackup.Name)
@@ -466,11 +486,6 @@ func TestBothSweepsCoverTheSameSurface(t *testing.T) {
 		// the table above rather than here because of it.
 		"PreviewArchive": true,
 	}
-	// The three reads whose scoping is broken, pinned by their own test below
-	// with the reason.
-	leaking := map[string]bool{
-		"Entry": true, "Customer": true, "AuditTrail": true,
-	}
 	// Writes, covered by the second test in this file rather than the first.
 	written := map[string]bool{
 		"CreateEntry": true, "UpdateEntry": true, "DeleteEntry": true,
@@ -506,7 +521,7 @@ func TestBothSweepsCoverTheSameSurface(t *testing.T) {
 		if method.Type.NumIn() < 2 || method.Type.In(1) != ctxType {
 			continue
 		}
-		if personal[method.Name] || written[method.Name] || leaking[method.Name] {
+		if personal[method.Name] || written[method.Name] {
 			continue
 		}
 		if !strangerReads[method.Name] {
@@ -535,109 +550,197 @@ var strangerReads = map[string]bool{
 	"PendingIdle": true, "RunningIdle": true, "RunningTimers": true,
 	"Tags": true, "Routines": true, "ContractTerms": true, "ReviewSubmission": true,
 	"PreviewExport": true, "PreviewBackupFile": true,
+	"Entry": true, "Customer": true, "AuditTrail": true,
 	"Attachments": true, "CreateBackup": true,
 }
 
-// TestReadsThatAreNotScopedByProjectMembership.
+// TestReadsAreScopedByProjectMembership.
 //
-// Three reads let a member see records belonging to a project they are not on.
-// They share one cause, and it is worth stating exactly, because it looks
-// right at every individual call site.
+// Three reads once let a member see records belonging to a project they were not
+// on. They shared one cause, and it is worth stating, because the fix is spread
+// over three files and none of them looks like a security change on its own.
 //
-// RoleAuthorizer.requireMembership begins:
+// RoleAuthorizer.requireMembership permits a resource that names no project,
+// which is right for one that genuinely has none - the instance settings, a user
+// account. But entryResource built auth.Resource{Type, ID, OwnerID} with no
+// project id, and the customer and audit-trail resources carried none either, so
+// a member asking about somebody else's record was answered as though they had
+// asked about a global setting. Entry gave another user's entry with its note
+// and its billing snapshot; Customer gave any account with its negotiated rate;
+// AuditTrail gave the history of any record of any type, including the values
+// each change moved between.
 //
-//	if resource.ProjectID == 0 {
-//		return nil
-//	}
+// All three now say where the record sits, the authoriser scopes a customer by
+// membership of any of its projects, and a named record of a project-scoped type
+// that says nothing about where it sits is refused rather than permitted - which
+// is what makes the next omission of this kind fail closed.
 //
-// which is correct for a resource that genuinely has no project - the instance
-// settings, a user account. But entryResource builds
-// auth.Resource{Type, ID, OwnerID} with *no* ProjectID, and the customer and
-// audit-trail resources carry none either. So for a member asking about
-// somebody else's record, the member branch falls through to
-// requireMembership, which sees a zero ProjectID and permits it.
-//
-// Proved directly rather than inferred: with the project id filled in, the
-// same authoriser refuses the same request.
-//
-// What reaches the caller:
-//
-//   - Entry: another user's entry by id, with its note, customer, project,
-//     assignment, and the billing snapshot - the rate and the amount.
-//   - Customer: any customer by id, with its rate. narrowCustomer only
-//     strips figures for a *client* user, so a member sees them.
-//   - AuditTrail: the trail of any resource, of any type, by id.
-//
-// The listings are not affected: they go through effectiveScope and are
-// correctly narrowed, which is why this does not show up on any screen that
-// shows a list. It needs an id, and ids are sequential.
-//
-// Pinned here as what the application does, and reported rather than changed:
-// filling in the project id at these call sites, or making requireMembership
-// fail closed on a zero project id, is a change to the security policy and is
-// the owner's decision, not a side effect of a coverage commit. When it is
-// fixed, this test fails and says so.
-func TestReadsThatAreNotScopedByProjectMembership(t *testing.T) {
+// The listings were never affected: they go through effectiveScope and are
+// narrowed there, which is why this appeared on no screen that shows a list. It
+// needed an id, and ids are sequential.
+func TestReadsAreScopedByProjectMembership(t *testing.T) {
 	f := newStrangerFixture(t)
 
-	// The cause, stated as an assertion so a fix to the authoriser is visible
-	// here even if the call sites are left alone.
+	// The authoriser itself, first: a record that names its project is refused
+	// to a non-member, and so is one that names nothing at all.
+	named := auth.Resource{
+		Type: "time_entry", ID: f.theirEntry.ID, OwnerID: f.admin.ID,
+		ProjectID: f.projectID, CustomerID: f.customerID,
+	}
 	bare := auth.Resource{Type: "time_entry", ID: f.theirEntry.ID, OwnerID: f.admin.ID}
-	withProject := bare
-	withProject.ProjectID = f.projectID
 
-	if err := f.svc.authz.Can(f.stranger, auth.ActionView, withProject); err == nil {
-		t.Error("the authoriser permits a non-member to view a resource that names " +
-			"the project, which would be a policy problem rather than a wiring one")
+	if err := f.svc.authz.Can(f.stranger, auth.ActionView, named); err == nil {
+		t.Error("the authoriser permits a non-member to view a record on a " +
+			"project they are not on")
 	}
-	if err := f.svc.authz.Can(f.stranger, auth.ActionView, bare); err != nil {
-		t.Logf("the authoriser now refuses a resource with no project id (%v); "+
-			"the three reads below may be fixed - check whether this test should "+
-			"be inverted", err)
+	if err := f.svc.authz.Can(f.stranger, auth.ActionView, bare); err == nil {
+		t.Error("the authoriser permits a named time entry that says nothing " +
+			"about where it sits; that is the shape of a global setting, and it " +
+			"is how a colleague's entry was readable by its id alone")
+	}
+	// The three reads, each refused by name rather than by returning
+	// nothing - a refusal is the honest answer to "show me a record you may
+	// not see", and ErrNotFound is what the service turns it into so that
+	// probing ids cannot enumerate records.
+	for _, read := range []struct {
+		name string
+		call func() error
+	}{
+		{"Entry", func() error {
+			_, err := f.svc.Entry(f.stranger, f.theirEntry.ID)
+			return err
+		}},
+		{"Customer", func() error {
+			_, err := f.svc.Customer(f.stranger, f.customerID)
+			return err
+		}},
+		{"AuditTrail", func() error {
+			_, err := f.svc.AuditTrail(f.stranger, "time_entry", f.theirEntry.ID)
+			return err
+		}},
+		// The same question asked through the records in between, since each
+		// resolves its own scope and each could have forgotten.
+		{"Expense", func() error {
+			_, err := f.svc.Expense(f.stranger, f.theirExpense.ID)
+			return err
+		}},
+		{"Project", func() error {
+			_, err := f.svc.Project(f.stranger, f.projectID)
+			return err
+		}},
+		{"Assignment", func() error {
+			_, err := f.svc.Assignment(f.stranger, f.assignmentID)
+			return err
+		}},
+	} {
+		t.Run(read.name, func(t *testing.T) {
+			err := read.call()
+			if err == nil {
+				t.Fatalf("%s answered a member who belongs to no project", read.name)
+			}
+			if !errors.Is(err, ErrNotFound) {
+				t.Errorf("%s refused with %v; a record somebody may not see is "+
+					"reported as absent, so probing ids cannot enumerate "+
+					"records", read.name, err)
+			}
+		})
 	}
 
-	t.Run("Entry", func(t *testing.T) {
-		entry, err := f.svc.Entry(f.stranger, f.theirEntry.ID)
-		if err != nil {
-			t.Logf("Entry now refuses a non-member (%v) - fixed; invert this test", err)
-			return
-		}
-		if entry.Note != "work the stranger must not see" {
-			t.Errorf("Entry returned note %q; expected the owner's note while "+
-				"this is unscoped", entry.Note)
-		}
-		if entry.AssignmentName == "" {
-			t.Error("Entry returned an entry with no assignment name, which this " +
-				"test cannot interpret")
-		}
-	})
+	// And the other side of each: somebody who does work on the project reads
+	// all of it. A membership check that refused everybody would pass every
+	// assertion above, and the customer lookup is the one most easily broken
+	// this way - a customer record names no project, so it is answered by a
+	// second query, and a nil one fails closed.
+	for _, read := range []struct {
+		name string
+		call func() error
+	}{
+		{"Entry", func() error {
+			_, err := f.svc.Entry(f.colleague, f.theirEntry.ID)
+			return err
+		}},
+		{"Customer", func() error {
+			_, err := f.svc.Customer(f.colleague, f.customerID)
+			return err
+		}},
+		{"AuditTrail", func() error {
+			_, err := f.svc.AuditTrail(f.colleague, "time_entry", f.theirEntry.ID)
+			return err
+		}},
+		{"Expense", func() error {
+			_, err := f.svc.Expense(f.colleague, f.theirExpense.ID)
+			return err
+		}},
+		{"Project", func() error {
+			_, err := f.svc.Project(f.colleague, f.projectID)
+			return err
+		}},
+		{"Assignment", func() error {
+			_, err := f.svc.Assignment(f.colleague, f.assignmentID)
+			return err
+		}},
+	} {
+		t.Run(read.name+" on the project", func(t *testing.T) {
+			if err := read.call(); err != nil {
+				t.Errorf("%s refused a member of the project: %v", read.name, err)
+			}
+		})
+	}
 
-	t.Run("Customer", func(t *testing.T) {
-		customer, err := f.svc.Customer(f.stranger, f.customerID)
-		if err != nil {
-			t.Logf("Customer now refuses a non-member (%v) - fixed; invert this test", err)
-			return
-		}
-		if customer.Name != "Acme" {
-			t.Errorf("Customer returned %q, expected the real name while this is "+
-				"unscoped", customer.Name)
-		}
-		if customer.RateMinor == 0 {
-			t.Log("the customer's rate came back as zero; if narrowing now applies " +
-				"to members as well as clients, say so here")
-		}
+	// Their own records are still their own, which is the half a membership
+	// check is easiest to break: the owner branch answers before membership is
+	// consulted at all.
+	end := time.Date(2026, 3, 18, 10, 0, 0, 0, time.UTC)
+	own, err := f.svc.CreateEntry(f.stranger, EntryInput{
+		AssignmentID: f.assignmentID,
+		StartedAt:    time.Date(2026, 3, 18, 9, 0, 0, 0, time.UTC),
+		EndedAt:      &end,
 	})
+	if err != nil {
+		t.Fatalf("record own time: %v", err)
+	}
+	if _, err := f.svc.Entry(f.stranger, own.ID); err != nil {
+		t.Errorf("a member cannot read the entry they just recorded: %v", err)
+	}
+	if _, err := f.svc.AuditTrail(f.stranger, "time_entry", own.ID); err != nil {
+		t.Errorf("a member cannot read the history of their own entry: %v", err)
+	}
+}
 
-	t.Run("AuditTrail", func(t *testing.T) {
-		trail, err := f.svc.AuditTrail(f.stranger, "time_entry", f.theirEntry.ID)
-		if err != nil {
-			t.Logf("AuditTrail now refuses a non-member (%v) - fixed; invert this test", err)
-			return
-		}
-		if len(trail) == 0 {
-			t.Error("AuditTrail returned nothing, which this test cannot interpret")
-		}
-	})
+// TestTheHistoryOfSomethingDeletedIsAdministrative.
+//
+// The trail deliberately outlives the record it describes, so once the record is
+// gone there is nothing left to read a scope from. An administrator can still
+// account for the deletion; nobody else can, which is the conservative end of a
+// choice that had to be made either way.
+func TestTheHistoryOfSomethingDeletedIsAdministrative(t *testing.T) {
+	f := newStrangerFixture(t)
+
+	trail, err := f.svc.AuditTrail(f.ctx, "time_entry", f.theirEntry.ID)
+	if err != nil {
+		t.Fatalf("read the trail as the administrator: %v", err)
+	}
+	if len(trail) == 0 {
+		t.Fatal("the entry has no recorded history, so this test reads nothing")
+	}
+
+	if err := f.svc.DeleteEntry(f.ctx, f.theirEntry.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	after, err := f.svc.AuditTrail(f.ctx, "time_entry", f.theirEntry.ID)
+	if err != nil {
+		t.Fatalf("the administrator cannot account for a deletion: %v", err)
+	}
+	if len(after) <= len(trail) {
+		t.Errorf("the deletion is not in the trail: %d rows before, %d after",
+			len(trail), len(after))
+	}
+
+	if _, err := f.svc.AuditTrail(f.stranger, "time_entry", f.theirEntry.ID); err == nil {
+		t.Error("the history of a deleted entry was read by somebody who could " +
+			"not have read the entry")
+	}
 }
 
 // TestRecordingOwnTimeIsNotBoundedByMembership.
@@ -682,5 +785,63 @@ func TestRecordingOwnTimeIsNotBoundedByMembership(t *testing.T) {
 		if listed.UserID != entry.UserID {
 			t.Errorf("the listing shows an entry owned by %d", listed.UserID)
 		}
+	}
+}
+
+// TestEveryKindOfHistoryIsScopedLikeTheRecordItDescribes.
+//
+// The trail used to be authorised by naming a type and an id, which is not a
+// check: the authoriser was handed a resource with no project, customer or owner
+// on it - the shape of a global setting - so it permitted the history of
+// anybody's record to any member, and the trail carries the values each change
+// moved between.
+//
+// So each type resolves its own subject now, and each could have forgotten.
+func TestEveryKindOfHistoryIsScopedLikeTheRecordItDescribes(t *testing.T) {
+	f := newStrangerFixture(t)
+
+	for _, subject := range []struct {
+		resourceType string
+		id           int64
+	}{
+		{"time_entry", f.theirEntry.ID},
+		{"expense", f.theirExpense.ID},
+		{"customer", f.customerID},
+		{"project", f.projectID},
+		{"assignment", f.assignmentID},
+	} {
+		t.Run(subject.resourceType, func(t *testing.T) {
+			if _, err := f.svc.AuditTrail(f.stranger, subject.resourceType, subject.id); err == nil {
+				t.Errorf("the history of a %s was read by somebody on no project",
+					subject.resourceType)
+			}
+			if _, err := f.svc.AuditTrail(f.colleague, subject.resourceType, subject.id); err != nil {
+				t.Errorf("the history of a %s was refused to a member of its "+
+					"project: %v", subject.resourceType, err)
+			}
+		})
+	}
+
+	// A type that is nobody's record is administrative: the instance settings,
+	// a user account, a backup. A member has no business reading who changed
+	// how the instance is run.
+	for _, administrative := range []string{"settings", "user", "tag", "backup"} {
+		t.Run(administrative, func(t *testing.T) {
+			if _, err := f.svc.AuditTrail(f.colleague, administrative, 1); err == nil {
+				t.Errorf("a member read the history of the instance's %s",
+					administrative)
+			}
+			if _, err := f.svc.AuditTrail(f.ctx, administrative, 1); err != nil {
+				t.Errorf("the administrator cannot read the history of the "+
+					"instance's %s: %v", administrative, err)
+			}
+		})
+	}
+
+	// A subject that is not there at all reports absent rather than permitting
+	// it: resolving the record is what scopes the trail, so a missing record
+	// must not become an unscoped one.
+	if _, err := f.svc.AuditTrail(f.colleague, "time_entry", 999999); err == nil {
+		t.Error("the history of an entry that does not exist was read")
 	}
 }

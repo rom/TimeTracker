@@ -68,6 +68,35 @@ projection is now applied to entries, customers and projects; a source-level tes
 (`internal/service/architecture_test.go`) fails the build if a new service method
 returns entries without it.
 
+**And the same lesson again in 2026-10, one layer down.** A coverage sweep asked
+what a *member with no project memberships* receives, and found that the scope
+was enforced by what each call site remembered to put in the resource:
+
+* `requireMembership` permits a resource that names no project, which is right
+  for one that genuinely has none — the instance settings, a user account, or a
+  listing that `effectiveScope` narrows instead. `entryResource` built a time
+  entry with no project id, and the customer and audit-trail resources carried
+  none either, so "may this member read this entry" was answered as though it
+  had been asked about a global setting. Another user's entry came back with its
+  note and its billing snapshot, any customer with its rate, and the audit trail
+  of any record of any type with the values each change moved between. It needed
+  an id, and ids are sequential.
+* The `client` branch required that the resource name *a* customer, not *their*
+  customer. It was correct only because every call site passed the acting
+  client's own id.
+* The backup screen asked whether the caller may view time entries, which such a
+  member may — and then showed them the archives on the server's disk.
+
+Three changes, and the third is the one that matters beyond these cases.
+Resources now say where they sit; a customer, which has no single project, is
+scoped by membership of any of its projects; and **a named record of a
+project-scoped type that says nothing about where it sits is refused rather than
+permitted**. The permissive branch stays — a global setting still needs it — but
+it can no longer be reached by forgetting a field, which is the only way it was
+ever reached. A failing membership lookup propagates as an error rather than as
+a refusal, because a refusal reaches the caller as "not found" and a database
+that is merely unreachable should not read as data loss.
+
 ## Consequences
 
 **Positive**
@@ -84,6 +113,11 @@ returns entries without it.
 * Every query that lists data must be membership-scoped, which is easy to forget;
   mitigated by making the repository take the actor's scope as a parameter rather
   than offering an unscoped list at all.
+* Every read of a single record must say where that record sits in the
+  hierarchy, which is just as easy to forget and was forgotten three times. Now
+  mitigated the same way the listings are: the authoriser refuses a named record
+  of a project-scoped type that does not say, so forgetting fails closed instead
+  of opening up.
 * The client projection is a second shape of the same data to maintain and test.
 
 ## Alternatives considered

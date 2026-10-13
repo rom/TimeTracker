@@ -145,6 +145,34 @@ type RoleAuthorizer struct {
 	// IsProjectMember reports whether a user belongs to a project. It is called
 	// only for decisions that need scoping.
 	IsProjectMember func(ctx context.Context, userID, projectID int64) (bool, error)
+	// IsCustomerMember reports whether a user belongs to any project of a
+	// customer. A customer record has no single project, so membership of one
+	// is the nearest true answer to "may this person read this account": the
+	// alternative was permitting it outright, which gave every member every
+	// customer's negotiated rate.
+	IsCustomerMember func(ctx context.Context, userID, customerID int64) (bool, error)
+}
+
+// scopedTypes are the resource types whose records belong to a customer, and
+// usually to a project within it.
+//
+// A resource naming one of these records - an id rather than a listing - must
+// also say where in the hierarchy it sits, or there is nothing to scope it by.
+// It is a deny list by construction: a type absent from here is administrative
+// (settings, a user account, a backup) and is gated by role alone, which is the
+// decision the role branches above have already made by the time scoping is
+// asked about.
+//
+// This exists because the permissive branch it guards was reached by accident.
+// requireMembership permits a resource with no project, which is right for a
+// global setting - and entryResource built a time entry without one, so a
+// member asking for another member's entry by id was answered as though they
+// had asked about the instance settings. The fix was to fill the field in; this
+// is what makes the next omission fail closed instead.
+var scopedTypes = map[string]bool{
+	"time_entry": true, "expense": true, "assignment": true,
+	"project": true, "customer": true, "contract_terms": true,
+	"attachment": true,
 }
 
 // Can implements Authorizer for server mode.
@@ -219,6 +247,14 @@ func (a RoleAuthorizer) Can(ctx context.Context, action Action, resource Resourc
 		if resource.CustomerID == 0 {
 			return deny("client access is scoped to a customer")
 		}
+		// Their own customer, asked here rather than trusted from the caller.
+		// Every call site passes the acting client's own id today, which is the
+		// only reason "any customer" was ever safe - and a check that is
+		// correct because of what its callers happen to pass is one call site
+		// away from being wrong.
+		if resource.CustomerID != actor.ClientCustomerID {
+			return deny("a client reads their own customer and no other")
+		}
 		return nil
 
 	default:
@@ -227,23 +263,48 @@ func (a RoleAuthorizer) Can(ctx context.Context, action Action, resource Resourc
 }
 
 // requireMembership permits the action when the actor belongs to the resource's
-// project. A resource with no project (a global setting, a new record) is
-// permitted, because the caller has already established the actor's role allows
-// it in principle.
+// project, or - for a customer, which has no single project - to any project of
+// that customer.
+//
+// A resource with neither (a global setting, a new record, a listing that the
+// service narrows with effectiveScope instead) is permitted, because the caller
+// has already established the actor's role allows it in principle. The one
+// exception is a named record of a scopedType, which must say where it sits:
+// see the note there.
 func (a RoleAuthorizer) requireMembership(ctx context.Context, userID int64, resource Resource, deny func(string) error) error {
-	if resource.ProjectID == 0 {
+	switch {
+	case resource.ProjectID != 0:
+		if a.IsProjectMember == nil {
+			// Failing closed: a misconfigured authoriser must refuse, never
+			// allow.
+			return deny("membership lookup unavailable")
+		}
+		member, err := a.IsProjectMember(ctx, userID, resource.ProjectID)
+		if err != nil {
+			return fmt.Errorf("check project membership: %w", err)
+		}
+		if !member {
+			return deny("not a member of the project")
+		}
+		return nil
+
+	case resource.CustomerID != 0:
+		if a.IsCustomerMember == nil {
+			return deny("membership lookup unavailable")
+		}
+		member, err := a.IsCustomerMember(ctx, userID, resource.CustomerID)
+		if err != nil {
+			return fmt.Errorf("check customer membership: %w", err)
+		}
+		if !member {
+			return deny("not a member of any of the customer's projects")
+		}
+		return nil
+
+	case resource.ID != 0 && scopedTypes[resource.Type]:
+		return deny("the resource names no project or customer to scope it by")
+
+	default:
 		return nil
 	}
-	if a.IsProjectMember == nil {
-		// Failing closed: a misconfigured authoriser must refuse, never allow.
-		return deny("membership lookup unavailable")
-	}
-	member, err := a.IsProjectMember(ctx, userID, resource.ProjectID)
-	if err != nil {
-		return fmt.Errorf("check project membership: %w", err)
-	}
-	if !member {
-		return deny("not a member of the project")
-	}
-	return nil
 }

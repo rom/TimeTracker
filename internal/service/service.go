@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+	"unicode/utf8"
 
 	"github.com/rom/timetracker/internal/auth"
 	"github.com/rom/timetracker/internal/blob"
@@ -164,6 +165,32 @@ func (s *Service) auditLog(ctx context.Context, action, resourceType string, res
 	)
 }
 
+// maxDecisionReason bounds an explanation somebody types when declining or
+// reopening something.
+//
+// A thousand characters, which is several paragraphs: the point is not to be
+// brief but to have a limit at all. The reason is stored, shown on a screen,
+// carried into the audit trail and written into every export, so an unbounded
+// one is a field that can be used to make a listing unreadable or a PDF
+// enormous - and two of the four places that take one had the check while the
+// other two did not, which is the sort of inconsistency nobody notices until it
+// is being used.
+const maxDecisionReason = 1000
+
+// checkReason bounds a typed explanation.
+//
+// Counted in characters rather than bytes, which is what the message says and
+// what somebody writing Swedish or Japanese would expect: a limit that silently
+// shrinks to six hundred characters for one alphabet and not another is not the
+// limit it claims to be.
+func checkReason(reason string) error {
+	if count := utf8.RuneCountInString(reason); count > maxDecisionReason {
+		return fmt.Errorf("%w: the reason is too long (%d characters; the limit is %d)",
+			ErrValidation, count, maxDecisionReason)
+	}
+	return nil
+}
+
 // notFoundFor hides the difference between "does not exist" and "you may not see
 // it" for resources an actor may not know about, so that probing ids cannot be
 // used to enumerate records. Errors that are already validation failures pass
@@ -177,9 +204,97 @@ func notFoundFor(err error) error {
 
 // AuditTrail returns the recorded history of one resource. Reading the trail is
 // itself an authorised action.
+//
+// Who the trail belongs to is answered by loading the record and asking the same
+// question reading the record itself asks, rather than by naming its type and
+// id. Naming them was not a check at all: the authoriser was handed a resource
+// with no project, customer or owner on it, which is the shape of a global
+// setting, so it permitted the trail of anybody's entry to any member - and the
+// trail carries the values each change moved between.
+//
+// A type that is not somebody's record - the instance settings, a user account,
+// a backup - is administered rather than owned, so its history is read by
+// whoever administers it. So is the history of a record that no longer exists:
+// the trail deliberately outlives what it describes, and there is nothing left
+// to read a scope from, so an administrator can still account for a deletion
+// and nobody else can.
 func (s *Service) AuditTrail(ctx context.Context, resourceType string, resourceID int64) ([]store.AuditEvent, error) {
-	if err := s.authz.Can(ctx, auth.ActionView, auth.Resource{Type: resourceType, ID: resourceID}); err != nil {
+	if err := s.authorizeTrail(ctx, resourceType, resourceID); err != nil {
 		return nil, notFoundFor(err)
 	}
 	return s.db.ListAuditEvents(ctx, resourceType, resourceID, 200)
+}
+
+// authorizeTrail asks whether the actor may read one resource's history.
+func (s *Service) authorizeTrail(ctx context.Context, resourceType string, resourceID int64) error {
+	subject, err := s.trailSubject(ctx, resourceType, resourceID)
+	switch {
+	case errors.Is(err, ErrNotFound):
+		// The record is gone and the trail is not: see the note above.
+		return s.authz.Can(ctx, auth.ActionManage, auth.Resource{Type: resourceType})
+	case err != nil:
+		return err
+	}
+	if subject.Type == "" {
+		// Not somebody's record at all.
+		return s.authz.Can(ctx, auth.ActionManage, auth.Resource{Type: resourceType})
+	}
+	return s.authz.Can(ctx, auth.ActionView, subject)
+}
+
+// trailSubject loads the record a trail is about, as the authoriser needs to
+// see it. The zero resource means the type is administrative rather than
+// somebody's.
+func (s *Service) trailSubject(ctx context.Context, resourceType string, resourceID int64) (auth.Resource, error) {
+	switch resourceType {
+	case "time_entry":
+		entry, err := s.db.GetEntry(ctx, resourceID)
+		if err != nil {
+			return auth.Resource{}, err
+		}
+		return entryResource(entry), nil
+
+	case "expense":
+		expense, err := s.db.GetExpense(ctx, resourceID)
+		if err != nil {
+			return auth.Resource{}, err
+		}
+		return auth.Resource{
+			Type: "expense", ID: resourceID, OwnerID: expense.UserID,
+			ProjectID: expense.ProjectID, CustomerID: expense.CustomerID,
+		}, nil
+
+	case "customer":
+		if _, err := s.db.GetCustomer(ctx, resourceID); err != nil {
+			return auth.Resource{}, err
+		}
+		return auth.Resource{
+			Type: "customer", ID: resourceID, CustomerID: resourceID,
+		}, nil
+
+	case "project":
+		project, err := s.db.GetProject(ctx, resourceID)
+		if err != nil {
+			return auth.Resource{}, err
+		}
+		return auth.Resource{
+			Type: "project", ID: resourceID, ProjectID: resourceID,
+			CustomerID: project.CustomerID,
+		}, nil
+
+	case "assignment":
+		assignment, err := s.db.GetAssignment(ctx, resourceID)
+		if err != nil {
+			return auth.Resource{}, err
+		}
+		return auth.Resource{
+			Type: "assignment", ID: resourceID,
+			ProjectID: assignment.ProjectID, CustomerID: assignment.CustomerID,
+		}, nil
+
+	default:
+		// settings, user, tag, timesheet, contract_terms, backup. Each is a
+		// record of how the instance is run rather than of somebody's work.
+		return auth.Resource{}, nil
+	}
 }

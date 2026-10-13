@@ -235,16 +235,12 @@ func TestAnExpenseIsPricedInItsCustomersCurrency(t *testing.T) {
 			swedish.AmountMinor)
 	}
 
-	// The currency travels with the amount, and the *number of minor units*
-	// does not depend on it: every currency is parsed as having exactly two
-	// decimal places, which ADR-0014 states as the model ("cents, öre, pence").
-	//
-	// A currency with no minor unit is therefore held at a hundred times its
-	// value. The code validates a currency as any three letters, so an
-	// instance invoicing in JPY, KRW, ISK or CLP would be out by that factor
-	// everywhere. Pinned as what the application does and reported rather than
-	// changed: making the exponent per-currency touches every stored amount and
-	// every rate, and is not a coverage commit's business.
+	// The currency travels with the amount, and so does how many minor units a
+	// decimal place is worth. A yen has no subdivision, so a hundred yen is a
+	// hundred minor units and not ten thousand - which is what this held for a
+	// long time, because every currency was parsed at two decimal places.
+	// ADR-0014's "cents, öre, pence" is the model; it is not a claim that every
+	// currency has them.
 	japanese, err := f.svc.CreateExpense(f.ctx, ExpenseInput{
 		ProjectID: otherProject.ID, SpentOn: "2026-03-16", Category: "travel",
 		Description: "Taxi", Amount: "100", Billable: true,
@@ -255,9 +251,9 @@ func TestAnExpenseIsPricedInItsCustomersCurrency(t *testing.T) {
 	if japanese.Currency != "JPY" {
 		t.Errorf("the expense is in %q, want the customer's JPY", japanese.Currency)
 	}
-	if japanese.AmountMinor != 10000 {
-		t.Logf("100 JPY now comes to %d minor units rather than 10000; if the "+
-			"exponent is per-currency now, this note is out of date",
+	if japanese.AmountMinor != 100 {
+		t.Errorf("100 JPY came to %d minor units, want 100 - a yen has no "+
+			"subdivision to hold the other two decimal places",
 			japanese.AmountMinor)
 	}
 
@@ -273,9 +269,9 @@ func TestAnExpenseIsPricedInItsCustomersCurrency(t *testing.T) {
 		t.Errorf("the edited expense is in %q, want the JPY it was recorded in",
 			edited.Currency)
 	}
-	if edited.AmountMinor != 25000 {
-		t.Errorf("the edited amount is %d minor units; 250 parsed with two "+
-			"decimal places is 25000", edited.AmountMinor)
+	if edited.AmountMinor != 250 {
+		t.Errorf("the edited amount is %d minor units; 250 yen is 250 of them",
+			edited.AmountMinor)
 	}
 
 	// An amount that is not one is refused rather than priced at zero.
@@ -358,9 +354,10 @@ func TestAManagerReadsTheirTeamsTimesheets(t *testing.T) {
 	// effectiveScope after the permission check, so a permissive check cannot
 	// turn into a disclosure here.
 	//
-	// That is the difference from Entry, Customer and AuditTrail - see
-	// TestReadsThatAreNotScopedByProjectMembership - which return a record
-	// directly with no scope applied after.
+	// It is belt and braces with the authoriser rather than a substitute for
+	// it: Entry, Customer and AuditTrail return a record directly with no
+	// scope applied after, so they depend on the check alone - see
+	// TestReadsAreScopedByProjectMembership.
 	stranger, err := f.accounts.CreateUser(f.ctx, NewUserInput{
 		DisplayName: "Stranger", Email: "stranger@example.com",
 		Password: "a-long-enough-password", Role: domain.RoleMember,

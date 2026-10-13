@@ -342,14 +342,34 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	_, _ = fmt.Fprintf(w, `{"status":"ok","hardening":%q}`+"\n", s.hardening)
 }
 
+// sentToTheirOwnListing redirects a client away from a screen about somebody's
+// own timesheet, and reports whether it did.
+//
+// A client has none: they are looking at work done for them, by other people. So
+// the day, the week and the month have nothing to show them, and they are sent
+// to the listing that does rather than refused - "/" lands on the day screen,
+// and answering a client's front door with 403 is a hostile way to say "your
+// page is over there".
+//
+// One helper rather than the same four lines in each handler, because for a long
+// time it was three copies and the week screen had none: a client following a
+// week link from anywhere got a bare "not permitted" where the day and month
+// links took them somewhere useful. Screens that are administrative rather than
+// personal - the approvals queue, the backup screen, the user list - still
+// refuse outright, which is the right answer there: those have no client
+// equivalent to be sent to.
+func (s *Server) sentToTheirOwnListing(w http.ResponseWriter, r *http.Request) bool {
+	user, ok := auth.UserFrom(r.Context())
+	if !ok || user.Role != domain.RoleClient {
+		return false
+	}
+	http.Redirect(w, r, "/entries", http.StatusSeeOther)
+	return true
+}
+
 // handleToday renders the day view, defaulting to today.
 func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
-	// A client has no timesheet of their own, so this screen has nothing to show
-	// them. Sent to the one they do have rather than refused: this is also the
-	// route "/" lands on, and answering a client's front door with 403 is a
-	// hostile way to say "your page is over there".
-	if user, ok := auth.UserFrom(r.Context()); ok && user.Role == domain.RoleClient {
-		http.Redirect(w, r, "/entries", http.StatusSeeOther)
+	if s.sentToTheirOwnListing(w, r) {
 		return
 	}
 	date := s.dateParam(r, "date")
@@ -427,10 +447,7 @@ func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
 // that is what an <input type="month"> submits, and from ?date= otherwise so
 // that a link from the day or week screen can carry the date it was on.
 func (s *Server) handleMonth(w http.ResponseWriter, r *http.Request) {
-	// A client has no timesheet of their own to summarise, the same reasoning as
-	// the day screen.
-	if user, ok := auth.UserFrom(r.Context()); ok && user.Role == domain.RoleClient {
-		http.Redirect(w, r, "/entries", http.StatusSeeOther)
+	if s.sentToTheirOwnListing(w, r) {
 		return
 	}
 
@@ -470,6 +487,9 @@ func (s *Server) monthParam(r *http.Request) time.Time {
 
 // handleWeek renders the weekly grid.
 func (s *Server) handleWeek(w http.ResponseWriter, r *http.Request) {
+	if s.sentToTheirOwnListing(w, r) {
+		return
+	}
 	date := s.dateParam(r, "date")
 
 	data, err := s.newPageData(r, "Week", "week")

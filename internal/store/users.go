@@ -285,6 +285,30 @@ func (db *DB) IsProjectMember(ctx context.Context, userID, projectID int64) (boo
 	return true, nil
 }
 
+// IsCustomerMember reports whether a user is attached to any project of a
+// customer.
+//
+// The authoriser's second lookup, for a customer record: an account has no
+// single project, so "do you work on anything of theirs" is the nearest true
+// answer to whether somebody may read it. One indexed row read, like the
+// project lookup above, because it runs on an authorisation path.
+func (db *DB) IsCustomerMember(ctx context.Context, userID, customerID int64) (bool, error) {
+	var exists int
+	err := db.read.QueryRowContext(ctx,
+		`SELECT 1 FROM project_members m
+		   JOIN projects p ON p.id = m.project_id
+		  WHERE m.user_id = ? AND p.customer_id = ?
+		  LIMIT 1`,
+		userID, customerID).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("check customer membership: %w", err)
+	}
+	return true, nil
+}
+
 // ProjectIDsForUser returns the projects a user belongs to.
 //
 // Listing queries take this set rather than filtering afterwards: a query that
