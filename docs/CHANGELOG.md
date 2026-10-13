@@ -186,6 +186,40 @@ the decision.
 
 ### Fixed
 
+* **A member read every customer's rate and every project's budget off the
+  catalogue screen**, beside create, edit and archive controls they cannot
+  submit. The only narrowing that existed was the client's, and nothing applied
+  it to anybody else — while ADR-0008's role table gives a member "own rates
+  only". The screen stays theirs, because reading the catalogue is in the role
+  and it is where a favourite is marked, but the figures are removed from the
+  value before it leaves the service and the administrative controls are left
+  out of the page. Who may see money is asked of the authoriser rather than
+  written as a role test, so the answer comes from the table rather than from a
+  second copy of it. Assignments had never been narrowed for any role, and an
+  assignment's rate is the most specific of the three — it overrides the
+  project's, which overrides the customer's.
+* **The tag vocabulary was the whole instance's**, names and counts, to anybody
+  with an account. A tag is created by being used, so the vocabulary describes
+  the work it labels: "globex-escalation" with forty entries behind it is a
+  sentence about somebody else's engagement. It is scoped like the entries
+  listing now, so the labels a filter offers are the labels it can match and a
+  tag's count agrees with the rows behind it. The administrative listing stays
+  whole, since tidying a vocabulary means seeing all of it.
+* **A member with no project memberships could record time and then not see
+  it.** `scopeFor` fills `OwnUserID` and documents "member — the projects they
+  are a member of, plus their own records"; the SQL never rendered it, so an
+  empty project list became `1 = 0` and the hour they had just recorded was
+  absent from the listing, the day and the week. ADR-0008 says every new and
+  every SSO-provisioned account starts exactly there, seeing "their own (empty)
+  timesheet". The own-records dimension is now a column each query names
+  explicitly, including as "": a member's timesheet includes the hour they
+  recorded off-project, and a project's budget does not appear to them because
+  of it.
+* **The navigation offered a member two links that refuse them**, the tag editor
+  and the user list. Its own comment states the rule — "offering a link whose
+  only outcome is a refusal is a worse answer than not offering it" — and it had
+  only ever been applied to a client. A sweep now walks the rendered navigation
+  for each role and follows every link.
 * **Nine screens were reachable by a client because nothing asked.** The
   navigation has never offered them more than the entries listing and the guide,
   and its own comment says that presentation is never the enforcement — for

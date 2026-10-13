@@ -129,7 +129,43 @@ reached them:
 Each is now decided rather than discovered: a screen about recording somebody's
 own time redirects a client to their listing, an administrative one refuses, an
 edit form asks the question its save asks, and a client fetches no attachment at
-all. The lesson is the same one twice over — a check answers the question it was
+all.
+
+**And then the same question of a member**, which the role table answers and the
+code did not:
+
+* The **catalogue screen** showed every customer's negotiated rate and every
+  project's budget, because the only narrowing that existed was the client's and
+  nothing applied it to anybody else - while the table says a member "sees own
+  rates only". The screen stays theirs, since the table also says they read the
+  projects they are a member of and it is where a favourite is marked, but the
+  figures are removed from the value before it leaves the service and the
+  create, edit and archive controls are left out of the page. Who may see money
+  is asked of the authoriser (`ActionViewMoney`) rather than written as a role
+  test, so the answer comes from the table rather than from a second copy of it.
+  Assignments had never been narrowed for any role, and an assignment's rate is
+  the most specific of the three.
+* The **tag vocabulary** was the whole instance's, names and counts. A tag is
+  created by being used, so the vocabulary describes the work it labels:
+  "globex-escalation" with forty entries behind it is a sentence about somebody
+  else's engagement. It is scoped like the entries listing now, so the labels a
+  filter offers are the labels it can match and a count agrees with the rows
+  behind it. The administrative listing stays whole, because tidying a
+  vocabulary means seeing all of it.
+* The **navigation** had applied its own rule - don't offer a link whose only
+  outcome is a refusal - to a client alone, so a member was offered the tag
+  editor and the user list. Both refuse them.
+
+One more thing fell out of asking: `scopeFor` fills `OwnUserID` and documents
+"member - the projects they are a member of, **plus their own records**", and
+`Scope.condition` never rendered it. An account with no memberships - which this
+ADR says is what every new and every SSO-provisioned user starts as, seeing
+"their own (empty) timesheet" - could record time and then find every screen
+empty, because an empty project list renders as `1 = 0` and nothing re-admitted
+their own rows. The own-records dimension is now a column the caller names
+explicitly, including as "": a member's timesheet includes the hour they
+recorded off-project, and a project's *budget* does not appear to them because
+of it. The lesson is the same one twice over — a check answers the question it was
 asked, and a form that edits a record is not a read of it — and the guard is a
 sweep (`internal/web/clientscreens_test.go`) that walks the route table and
 requires a decided answer for every GET, so a screen added later cannot be

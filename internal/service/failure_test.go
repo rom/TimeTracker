@@ -391,7 +391,10 @@ func TestEveryServiceMethodReportsADeadDatabase(t *testing.T) {
 	// than quietly reducing what is checked.
 	exempt := map[string]bool{
 		"TextPreviews": true, "AuthorizeBackup": true,
-		"PendingApprovals": true, "ApprovedPeriods": true,
+		// Asks the authoriser and returns a bool: there is no error to report,
+		// which is the point of it - a template cannot handle one.
+		"MayManageCatalogue": true,
+		"PendingApprovals":   true, "ApprovedPeriods": true,
 	}
 	serviceType := reflect.TypeOf(svc)
 	ctxType := reflect.TypeOf((*context.Context)(nil)).Elem()

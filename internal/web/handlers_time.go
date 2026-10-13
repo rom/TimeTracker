@@ -185,6 +185,16 @@ type pageData struct {
 	// IsClient trims the navigation to the one screen a client has. The data is
 	// narrowed whatever this says; hiding a link is courtesy, not enforcement.
 	IsClient bool
+	// CanManage hides the catalogue's create, edit and archive controls from
+	// somebody who may not use them. As IsClient: the service refuses the
+	// action whatever this says, and a row of buttons that each answer 403 is
+	// how a read-only screen comes to look broken rather than read-only.
+	//
+	// The favourite control is deliberately not behind it. Marking a favourite
+	// is a working preference rather than administration - the service says so
+	// and authorises it with a plain view - and it is the one thing on that
+	// screen a member is meant to do.
+	CanManage bool
 }
 
 // T translates a key in the page's language. Templates call it directly, which
@@ -302,6 +312,7 @@ func (s *Server) newPageData(r *http.Request, title, active string) (pageData, e
 		Rounding:        service.RoundingPresets(),
 		InboxCount:      inboxCount,
 		IsClient:        user.Role == domain.RoleClient,
+		CanManage:       s.svc.MayManageCatalogue(r.Context()),
 		Zone:            userLocation(r),
 	}, nil
 }

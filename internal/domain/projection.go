@@ -85,12 +85,25 @@ func ProjectEntriesForClient(entries []TimeEntry) []TimeEntry {
 // report; the rate and the internal notes are the two things the role exists to
 // withhold.
 func (c Customer) ForClient() Customer {
+	c = c.WithoutMoney()
 	c.Notes = ""
-	c.RateMinor = 0
 	// Whether a customer bills under dated terms, and what those terms are, is
 	// commercial. A badge saying "this account bills differently" is a small
 	// leak but a leak.
 	c.HasTerms = false
+	return c
+}
+
+// WithoutMoney returns the customer with its commercial figures removed and
+// everything a colleague may read left in place.
+//
+// A narrower removal than ForClient, for a different reader: a member is staff,
+// so the internal note is theirs, and the negotiated rate is not. ADR-0008 gives
+// a member "own rates only" - which the catalogue screen did not honour, because
+// the only narrowing that existed was the client's and nothing applied it to
+// anybody else.
+func (c Customer) WithoutMoney() Customer {
+	c.RateMinor = 0
 	return c
 }
 
@@ -100,11 +113,33 @@ func (c Customer) ForClient() Customer {
 // particular is somebody's estimate of the engagement, which the client is often
 // negotiating against.
 func (p Project) ForClient() Project {
+	return p.WithoutMoney()
+}
+
+// WithoutMoney returns the project with its commercial figures removed.
+//
+// The same four fields the client projection removes, and for the same reasons:
+// a rate and a rounding rule are how the work is billed, and a budget is
+// somebody's estimate of the engagement. A member is not negotiating against it,
+// but they are not entitled to it either - and a member who happens to work on
+// the project is exactly who would mention it.
+func (p Project) WithoutMoney() Project {
 	p.RateMinor = 0
 	p.RoundingRule = ""
 	p.BudgetSeconds = 0
 	p.BudgetMinor = 0
 	return p
+}
+
+// WithoutMoney returns the assignment with its rate removed.
+//
+// An assignment's rate is the most specific of the three - it overrides the
+// project's, which overrides the customer's - so it is the one a member working
+// on it would most easily read off a screen. Nothing narrowed assignments at
+// all until now, for any role.
+func (a Assignment) WithoutMoney() Assignment {
+	a.RateMinor = 0
+	return a
 }
 
 // ProjectCustomersForClient and ProjectProjectsForClient narrow listings, for
@@ -122,4 +157,31 @@ func ProjectProjectsForClient(projects []Project) []Project {
 		projects[i] = projects[i].ForClient()
 	}
 	return projects
+}
+
+// CustomersWithoutMoney, ProjectsWithoutMoney and AssignmentsWithoutMoney narrow
+// listings for a reader who may not see commercial figures, for the same reason
+// the client helpers above exist: a helper that took one record would be called
+// in a loop somebody eventually writes wrongly.
+func CustomersWithoutMoney(customers []Customer) []Customer {
+	for i := range customers {
+		customers[i] = customers[i].WithoutMoney()
+	}
+	return customers
+}
+
+// ProjectsWithoutMoney narrows a listing of projects.
+func ProjectsWithoutMoney(projects []Project) []Project {
+	for i := range projects {
+		projects[i] = projects[i].WithoutMoney()
+	}
+	return projects
+}
+
+// AssignmentsWithoutMoney narrows a listing of assignments.
+func AssignmentsWithoutMoney(assignments []Assignment) []Assignment {
+	for i := range assignments {
+		assignments[i] = assignments[i].WithoutMoney()
+	}
+	return assignments
 }

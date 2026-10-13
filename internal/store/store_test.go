@@ -627,7 +627,7 @@ func TestTagStorage(t *testing.T) {
 
 	// The tag list carries usage counts, which is what makes the management
 	// screen able to say which tags are worth keeping.
-	tags, err := db.ListTags(ctx)
+	tags, err := db.ListTags(ctx, UnrestrictedScope())
 	if err != nil {
 		t.Fatalf("list tags: %v", err)
 	}

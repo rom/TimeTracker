@@ -79,6 +79,14 @@ internal notes, cost data and colleague identities are removed before the data
 leaves it, so no template bug can leak them. Resources a user may not know exist
 return "not found" rather than "forbidden".
 
+Commercial figures — a customer's negotiated rate, a project's budget, an
+assignment's rate — are removed from the catalogue before it leaves the service
+for any reader who may not see money, which the authoriser answers rather than a
+role test. Only the client projection existed for a long time, so a member read
+all three off the catalogue screen against the role table's "own rates only".
+The tag vocabulary is scoped the same way the entries listing is, because a tag
+is created by being used and so describes the work it labels.
+
 A screen is not an action, so opening one has to be asked about separately: every
 registered GET has a decided answer for a client, checked by a sweep over the
 route table (`internal/web/clientscreens_test.go`). Nine screens were reachable

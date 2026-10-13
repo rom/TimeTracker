@@ -40,7 +40,10 @@ func (db *DB) ConsumptionByProject(ctx context.Context, scope Scope, from, to ti
 	conditions := []string{`e.status = 'confirmed'`, `e.flagged = 0`, `e.ended_at IS NOT NULL`}
 	var args []any
 
-	if scoped, scopeArgs := scope.condition("a.project_id", "p.customer_id"); scoped != "" {
+	// No owner column: a member's own hour on a project they are not a member
+	// of must not put that project's consumption on their report. Membership is
+	// the whole question a budget report answers.
+	if scoped, scopeArgs := scope.condition("a.project_id", "p.customer_id", ""); scoped != "" {
 		conditions = append(conditions, scoped)
 		args = append(args, scopeArgs...)
 	}
@@ -115,7 +118,10 @@ func (db *DB) ActiveWeeksByProject(ctx context.Context, scope Scope, from, to ti
 	conditions := []string{`e.status = 'confirmed'`, `e.flagged = 0`, `e.ended_at IS NOT NULL`}
 	var args []any
 
-	if scoped, scopeArgs := scope.condition("a.project_id", "p.customer_id"); scoped != "" {
+	// No owner column: a member's own hour on a project they are not a member
+	// of must not put that project's consumption on their report. Membership is
+	// the whole question a budget report answers.
+	if scoped, scopeArgs := scope.condition("a.project_id", "p.customer_id", ""); scoped != "" {
 		conditions = append(conditions, scoped)
 		args = append(args, scopeArgs...)
 	}
@@ -163,7 +169,8 @@ func (db *DB) ActiveWeeksByProject(ctx context.Context, scope Scope, from, to ti
 func (db *DB) BudgetedProjects(ctx context.Context, scope Scope) ([]domain.Project, error) {
 	conditions := []string{`(p.budget_seconds > 0 OR p.budget_minor > 0)`}
 	var args []any
-	if scoped, scopeArgs := scope.condition("p.id", "p.customer_id"); scoped != "" {
+	// As above: membership decides which projects have a budget worth showing.
+	if scoped, scopeArgs := scope.condition("p.id", "p.customer_id", ""); scoped != "" {
 		conditions = append(conditions, scoped)
 		args = append(args, scopeArgs...)
 	}

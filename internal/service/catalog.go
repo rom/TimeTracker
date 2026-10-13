@@ -349,7 +349,11 @@ func (s *Service) Assignments(ctx context.Context, projectID int64, includeArchi
 	if err != nil {
 		return nil, err
 	}
-	return s.db.ListAssignments(ctx, scope, projectID, includeArchived)
+	assignments, err := s.db.ListAssignments(ctx, scope, projectID, includeArchived)
+	if err != nil {
+		return nil, err
+	}
+	return s.narrowAssignments(ctx, assignments), nil
 }
 
 // Assignment loads one assignment.
@@ -363,7 +367,7 @@ func (s *Service) Assignment(ctx context.Context, id int64) (domain.Assignment, 
 	}); err != nil {
 		return domain.Assignment{}, notFoundFor(err)
 	}
-	return a, nil
+	return s.narrowAssignment(ctx, a), nil
 }
 
 // AssignmentForEdit loads an assignment for a form that will change it.
@@ -406,7 +410,11 @@ func (s *Service) RecentAssignments(ctx context.Context, limit int) ([]domain.As
 	}); err != nil {
 		return nil, err
 	}
-	return s.db.RecentAssignments(ctx, actor.ID, s.now().Add(-RecentWindow), limit)
+	recent, err := s.db.RecentAssignments(ctx, actor.ID, s.now().Add(-RecentWindow), limit)
+	if err != nil {
+		return nil, err
+	}
+	return s.narrowAssignments(ctx, recent), nil
 }
 
 // ------------------------------------------------------------------ shared --

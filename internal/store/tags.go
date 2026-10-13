@@ -147,12 +147,43 @@ const maxBoundParameters = 500
 // The count is what makes the management screen useful: a tag on nothing is
 // either a typo or something that has served its purpose, and both are worth
 // seeing.
-func (db *DB) ListTags(ctx context.Context) ([]domain.Tag, error) {
-	rows, err := db.read.QueryContext(ctx, `
+func (db *DB) ListTags(ctx context.Context, scope Scope) ([]domain.Tag, error) {
+	// Both the names and the counts are the reader's own view. A tag is created
+	// by being used, so the vocabulary is a description of the work it labels:
+	// the full list told a member which labels exist on projects they are not
+	// on - "globex-escalation" - and the full count told them how much work
+	// carries each one. Neither is theirs.
+	//
+	// The count is the same subquery narrowed by the same scope, so a tag's
+	// figure agrees with what filtering the entries listing by it returns. A
+	// count that disagreed with the rows behind it is how somebody concludes
+	// the filter is broken.
+	scoped, scopeArgs := scope.condition("a.project_id", "p.customer_id", "e.user_id")
+	where := ""
+	if scoped != "" {
+		where = " AND " + scoped
+	}
+	// One join path, used twice: once to count and once to decide the tag
+	// appears at all.
+	const visible = `
+		FROM entry_tags et
+		JOIN time_entries e ON e.id = et.entry_id
+		JOIN assignments  a ON a.id = e.assignment_id
+		JOIN projects     p ON p.id = a.project_id
+		WHERE et.tag_id = t.id`
+
+	query := `
 		SELECT t.id, t.name, t.colour_key, t.created_at,
-		       (SELECT COUNT(*) FROM entry_tags et WHERE et.tag_id = t.id)
+		       (SELECT COUNT(*)` + visible + where + `)
 		FROM tags t
-		ORDER BY t.name COLLATE NOCASE`)
+		WHERE EXISTS (SELECT 1` + visible + where + `)
+		ORDER BY t.name COLLATE NOCASE`
+
+	// The arguments appear twice because the condition does: once for the
+	// count, once for the existence test.
+	args := append(append([]any{}, scopeArgs...), scopeArgs...)
+
+	rows, err := db.read.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list tags: %w", err)
 	}

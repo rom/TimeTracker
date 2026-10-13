@@ -390,3 +390,152 @@ func TestAReceiptIsNotAClientsToFetch(t *testing.T) {
 		t.Errorf("the administrator can no longer open the receipt: %d", rec.Code)
 	}
 }
+
+// TestTheCatalogueScreenShowsAMemberNoMoneyAndNoControls.
+//
+// ADR-0008's role table gives a member "own time and expenses; reads the
+// projects they are a member of; sees own rates only" - and the catalogue screen
+// showed them every customer's negotiated rate and every project's budget,
+// beside create, edit and archive forms that each answer 403. The only narrowing
+// that existed was the client's, and nothing applied it to anybody else.
+//
+// The screen stays theirs: reading the catalogue is in the role, and it is where
+// a favourite is marked - which the service calls a working preference rather
+// than administration, and authorises with a plain view.
+func TestTheCatalogueScreenShowsAMemberNoMoneyAndNoControls(t *testing.T) {
+	srv, accounts := newServerModeTestServer(t)
+	admin := newClient(t, srv)
+
+	admin.post(t, "/customers", url.Values{"name": {"Acme"}, "currency": {"EUR"},
+		"rate": {"1250.00"}})
+	admin.post(t, "/projects", url.Values{"customer_id": {"1"}, "name": {"Migration"},
+		"billable": {"on"}, "currency": {"EUR"}, "rate": {"1375.00"},
+		"budget_hours": {"40"}})
+	admin.post(t, "/assignments", url.Values{"project_id": {"1"}, "name": {"Development"},
+		"billable": {"on"}, "rate": {"1480.00"}})
+	admin.post(t, "/users", url.Values{"display_name": {"Member"},
+		"email": {"m@example.com"}, "password": {"a-long-enough-password"},
+		"role": {"member"}})
+	admin.post(t, "/members", url.Values{"project_id": {"1"}, "user_id": {"2"}})
+
+	member := signInAs(t, srv, accounts, "m@example.com", "a-long-enough-password")
+
+	rec := member.get(t, "/admin")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("a member's GET /admin = %d; reading the catalogue is in their "+
+			"role\n%s", rec.Code, truncate(rec.Body.String()))
+	}
+	body := rec.Body.String()
+
+	// They are on the project, so the catalogue is not empty - otherwise this
+	// test would pass on a screen with no rows at all.
+	for _, name := range []string{"Acme", "Migration", "Development"} {
+		if !strings.Contains(body, name) {
+			t.Errorf("the catalogue does not list %q, so this test is reading an "+
+				"empty screen", name)
+		}
+	}
+
+	// No commercial figures, in any of the three tables.
+	for _, figure := range []string{"1250", "1375", "1480"} {
+		if strings.Contains(body, figure) {
+			t.Errorf("a member reads %q off the catalogue screen", figure)
+		}
+	}
+
+	// No control they cannot use - and the favourite, which they can.
+	for _, refused := range []string{
+		`action="/customers"`, `action="/projects"`, `action="/assignments"`,
+		"/customers/1/edit", "/projects/1/edit", "/assignments/1/edit",
+		"/customers/1/archive", "/projects/1/archive", "/assignments/1/archive",
+		`href="/settings"`, `href="/backup"`, `href="/import"`,
+	} {
+		if strings.Contains(body, refused) {
+			t.Errorf("the catalogue screen offers a member %s, which the service "+
+				"refuses", refused)
+		}
+	}
+	if !strings.Contains(body, "/assignments/1/favourite") {
+		t.Error("the favourite control is gone; it is the one thing on this " +
+			"screen a member is meant to do")
+	}
+
+	// And it works, rather than merely being rendered.
+	if rec := member.post(t, "/assignments/1/favourite", url.Values{}); rec.Code >= 400 {
+		t.Errorf("a member could not mark a favourite: %d\n%s", rec.Code,
+			truncate(rec.Body.String()))
+	}
+	if !strings.Contains(member.get(t, "/admin").Body.String(), "★") {
+		t.Error("the favourite did not take")
+	}
+
+	// The administrator's own view is unchanged: they manage the catalogue and
+	// they price it.
+	adminBody := admin.get(t, "/admin").Body.String()
+	for _, figure := range []string{"1250", "1375"} {
+		if !strings.Contains(adminBody, figure) {
+			t.Errorf("the administrator can no longer see %q on the catalogue",
+				figure)
+		}
+	}
+	if !strings.Contains(adminBody, `action="/customers"`) {
+		t.Error("the administrator lost the create-customer form")
+	}
+}
+
+// TestTheNavigationOffersNoLinkItsOwnerWillBeRefused.
+//
+// The navigation's comment states the rule and the caveat: "offering a link
+// whose only outcome is a refusal is a worse answer than not offering it", and
+// "this is presentation, and presentation is never the enforcement". The rule
+// had only ever been applied to a client - so a member was offered the tag
+// editor and the user list, both of which refuse them.
+//
+// Walked rather than listed, so a link added to the layout is covered without
+// anybody remembering to add it here.
+func TestTheNavigationOffersNoLinkItsOwnerWillBeRefused(t *testing.T) {
+	srv, accounts := newServerModeTestServer(t)
+	admin := newClient(t, srv)
+	admin.post(t, "/customers", url.Values{"name": {"Acme"}, "currency": {"EUR"}})
+	admin.post(t, "/users", url.Values{"display_name": {"Member"},
+		"email": {"m@example.com"}, "password": {"a-long-enough-password"},
+		"role": {"member"}})
+	admin.post(t, "/users", url.Values{"display_name": {"Reviewer"},
+		"email": {"r@example.com"}, "password": {"a-long-enough-password"},
+		"role": {"client"}, "client_customer_id": {"1"}})
+
+	href := regexp.MustCompile(`<nav class="mainnav"[^>]*>(.*?)</nav>`)
+	link := regexp.MustCompile(`href="(/[^"]*)"`)
+
+	for _, who := range []struct {
+		role string
+		as   *client
+	}{
+		{"an administrator", admin},
+		{"a member", signInAs(t, srv, accounts, "m@example.com", "a-long-enough-password")},
+		{"a client", signInAsReadOnly(t, srv, accounts, "r@example.com", "a-long-enough-password")},
+	} {
+		t.Run(who.role, func(t *testing.T) {
+			// The entries listing is the one screen every role can open, so it
+			// is where the navigation is read from.
+			body := who.as.get(t, "/entries").Body.String()
+			nav := href.FindStringSubmatch(strings.ReplaceAll(body, "\n", " "))
+			if nav == nil {
+				t.Fatalf("%s gets no main navigation", who.role)
+			}
+			links := link.FindAllStringSubmatch(nav[1], -1)
+			if len(links) == 0 {
+				t.Fatalf("%s is offered no links at all", who.role)
+			}
+			for _, match := range links {
+				rec := who.as.get(t, match[1])
+				switch rec.Code {
+				case http.StatusOK, http.StatusSeeOther:
+				default:
+					t.Errorf("%s is offered %s in the navigation and gets %d from "+
+						"it", who.role, match[1], rec.Code)
+				}
+			}
+		})
+	}
+}

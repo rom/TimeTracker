@@ -412,7 +412,11 @@ func (f EntryFilter) buildConditions() (string, []any, SearchMode, error) {
 	if f.BillableOnly {
 		conditions = append(conditions, `e.billable = 1`)
 	}
-	if scoped, scopeArgs := f.Scope.condition("a.project_id", "p.customer_id"); scoped != "" {
+	// With the owner: a member's own timesheet includes the time they recorded,
+	// including against an assignment on a project they do not belong to -
+	// which they may do, and which otherwise vanished from every screen they
+	// have.
+	if scoped, scopeArgs := f.Scope.condition("a.project_id", "p.customer_id", "e.user_id"); scoped != "" {
 		conditions = append(conditions, scoped)
 		args = append(args, scopeArgs...)
 	}
@@ -610,7 +614,11 @@ func (db *DB) CountPending(ctx context.Context, userID int64, scope Scope) (int,
 // countPendingIn runs one of the two counts with the actor's scope applied.
 func (db *DB) countPendingIn(ctx context.Context, query string, userID int64, scope Scope) (int, error) {
 	args := []any{userID}
-	if scoped, scopeArgs := scope.condition("p.id", "p.customer_id"); scoped != "" {
+	// With the owner: this counts what is waiting for *this* user's decision,
+	// so a proposal about their own time belongs in it wherever the work sits.
+	// The query already restricts to them by id; this stops the scope removing
+	// what it just selected.
+	if scoped, scopeArgs := scope.condition("p.id", "p.customer_id", "e.user_id"); scoped != "" {
 		query += " AND " + scoped
 		args = append(args, scopeArgs...)
 	}
@@ -797,7 +805,10 @@ func (db *DB) ListEntriesEnteredBy(ctx context.Context, enteredBy int64, scope S
 	conditions := []string{`e.entered_by = ?`, `e.user_id != e.entered_by`}
 	args := []any{enteredBy}
 
-	if scoped, scopeArgs := scope.condition("a.project_id", "p.customer_id"); scoped != "" {
+	// No owner column: these are entries this user *entered* for other people,
+	// which the query already restricts by entered_by. Adding their ownership
+	// would widen it to their own time, which is a different listing.
+	if scoped, scopeArgs := scope.condition("a.project_id", "p.customer_id", ""); scoped != "" {
 		conditions = append(conditions, scoped)
 		args = append(args, scopeArgs...)
 	}

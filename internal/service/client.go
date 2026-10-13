@@ -122,29 +122,86 @@ func (s *Service) narrowStream(ctx context.Context, entries iter.Seq2[domain.Tim
 // client needs to read a report; the rates, notes and budgets are what the role
 // exists to withhold.
 func (s *Service) narrowCustomers(ctx context.Context, customers []domain.Customer) []domain.Customer {
-	if !actingAsClient(ctx) {
-		return customers
+	if actingAsClient(ctx) {
+		return domain.ProjectCustomersForClient(customers)
 	}
-	return domain.ProjectCustomersForClient(customers)
+	if !s.maySeeMoney(ctx) {
+		return domain.CustomersWithoutMoney(customers)
+	}
+	return customers
 }
 
 func (s *Service) narrowCustomer(ctx context.Context, customer domain.Customer) domain.Customer {
-	if !actingAsClient(ctx) {
-		return customer
+	if actingAsClient(ctx) {
+		return customer.ForClient()
 	}
-	return customer.ForClient()
+	if !s.maySeeMoney(ctx) {
+		return customer.WithoutMoney()
+	}
+	return customer
 }
 
 func (s *Service) narrowProjects(ctx context.Context, projects []domain.Project) []domain.Project {
-	if !actingAsClient(ctx) {
-		return projects
+	if actingAsClient(ctx) {
+		return domain.ProjectProjectsForClient(projects)
 	}
-	return domain.ProjectProjectsForClient(projects)
+	if !s.maySeeMoney(ctx) {
+		return domain.ProjectsWithoutMoney(projects)
+	}
+	return projects
 }
 
 func (s *Service) narrowProject(ctx context.Context, project domain.Project) domain.Project {
-	if !actingAsClient(ctx) {
-		return project
+	if actingAsClient(ctx) {
+		return project.ForClient()
 	}
-	return project.ForClient()
+	if !s.maySeeMoney(ctx) {
+		return project.WithoutMoney()
+	}
+	return project
+}
+
+// narrowAssignments and narrowAssignment remove an assignment's rate from a
+// reader who may not see one.
+//
+// Nothing narrowed assignments at all, for any role - and an assignment's rate
+// is the most specific of the three, overriding the project's and the
+// customer's, so it is the one a member working on it would read off a screen.
+func (s *Service) narrowAssignments(ctx context.Context, assignments []domain.Assignment) []domain.Assignment {
+	if s.maySeeMoney(ctx) {
+		return assignments
+	}
+	return domain.AssignmentsWithoutMoney(assignments)
+}
+
+func (s *Service) narrowAssignment(ctx context.Context, assignment domain.Assignment) domain.Assignment {
+	if s.maySeeMoney(ctx) {
+		return assignment
+	}
+	return assignment.WithoutMoney()
+}
+
+// MayManageCatalogue reports whether the actor may create, edit or archive
+// catalogue records.
+//
+// Exported for the web layer, which uses it to leave out controls rather than
+// to decide anything: every one of those actions is checked again when it is
+// attempted. It exists because the catalogue screen offered a member the whole
+// administration of the instance in forms that each answered 403 - and the same
+// screen was where the commercial figures leaked, since nothing narrowed the
+// catalogue for anybody but a client.
+func (s *Service) MayManageCatalogue(ctx context.Context) bool {
+	return s.authz.Can(ctx, auth.ActionManage, auth.Resource{Type: "customer"}) == nil
+}
+
+// maySeeMoney reports whether the actor may read commercial figures.
+//
+// Asked of the authoriser rather than written as a role test, because the
+// authoriser is where ADR-0008's table lives: an administrator and a manager
+// may, a member sees "own rates only", and a client is read-only so the money
+// action is refused outright. The resource names no record, which is the
+// question being asked - "may this person see rates at all" - rather than "may
+// they see this one".
+func (s *Service) maySeeMoney(ctx context.Context) bool {
+	return s.authz.Can(ctx, auth.ActionViewMoney, auth.Resource{Type: "customer"}) == nil
 }

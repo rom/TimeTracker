@@ -362,7 +362,11 @@ func (db *DB) ListProjects(ctx context.Context, scope Scope, customerID int64, i
 	query := projectSelect
 	var args []any
 	var conditions []string
-	if scoped, scopeArgs := scope.condition("p.id", "p.customer_id"); scoped != "" {
+	// No owner column: the catalogue is what somebody may work on, which is
+	// membership. An entry on a project does not add it to their catalogue -
+	// and the entry itself still lists the project's name, which is what they
+	// need to read their own timesheet.
+	if scoped, scopeArgs := scope.condition("p.id", "p.customer_id", ""); scoped != "" {
 		conditions = append(conditions, scoped)
 		args = append(args, scopeArgs...)
 	}
@@ -507,7 +511,8 @@ func (db *DB) ListAssignments(ctx context.Context, scope Scope, projectID int64,
 	query := assignmentSelect
 	var args []any
 	var conditions []string
-	if scoped, scopeArgs := scope.condition("a.project_id", "p.customer_id"); scoped != "" {
+	// As the project list above.
+	if scoped, scopeArgs := scope.condition("a.project_id", "p.customer_id", ""); scoped != "" {
 		conditions = append(conditions, scoped)
 		args = append(args, scopeArgs...)
 	}

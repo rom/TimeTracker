@@ -17,18 +17,27 @@ import (
 // system that has to be set up before it can be used does not get used. The
 // management screen exists to rename, recolour and tidy afterwards.
 
-// Tags lists every tag with how many entries carry it.
+// Tags lists the tags on work the actor can see, with how many of those entries
+// carry each one.
 //
-// A tag is instance-wide and applied by whoever records the time, so the whole
-// vocabulary is what a member needs: they are choosing from it. A client is
-// not. The projection strips tags from their entries on purpose - a label is
-// internal shorthand, and the names carry other customers' work in them
-// ("globex-outage" read by a client of Acme) - so handing them the vocabulary
-// said the opposite of what the projection says, through the tag screen and
-// through the datalist on the correction form.
+// A tag is created by being used, so the vocabulary is a description of the work
+// it labels - which is why the whole of it is not everybody's to read. The full
+// list told a member which labels exist on projects they are not on, and the
+// full count told them how much work carries each; "globex-escalation" with
+// forty entries behind it is a sentence about somebody else's engagement. It is
+// scoped the same way the entries listing is, so the vocabulary a filter offers
+// is the vocabulary that filter can match, and a tag's count agrees with the
+// rows behind it.
 //
-// Nothing rather than a narrowed list, because there is no narrowed list to
-// give: a client's entries have no tags at all by the time they see them.
+// A client gets nothing rather than a narrowed list, because there is no
+// narrowed list to give: the projection strips tags from their entries on
+// purpose - a label is internal shorthand and nothing stops one being a candid
+// opinion - so by the time a client sees an entry it carries none.
+//
+// It stays a listing of every tag the actor can see rather than only the ones
+// they wrote, because choosing from what the team already uses is the whole
+// point of a shared vocabulary: a labelling system where everybody invents
+// their own spelling of "incident" is not one.
 func (s *Service) Tags(ctx context.Context) ([]domain.Tag, error) {
 	if _, err := auth.MustUser(ctx); err != nil {
 		return nil, err
@@ -36,19 +45,29 @@ func (s *Service) Tags(ctx context.Context) ([]domain.Tag, error) {
 	if actingAsClient(ctx) {
 		return nil, nil
 	}
-	return s.db.ListTags(ctx)
+	scope, err := s.effectiveScope(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.db.ListTags(ctx, scope)
 }
 
-// TagsForAdmin lists the tags for the screen that renames and deletes them.
+// TagsForAdmin lists the whole vocabulary, for the screen that renames and
+// deletes them.
 //
 // Every control on that screen is administration, so opening it is too. It was
 // authorised as a plain read, which made it a page of six forms a member could
 // not submit - and a page of another customer's labels for a client.
+//
+// Unscoped, which is the point of it being administrative: tidying a vocabulary
+// means seeing all of it, including the tag used once on a project the
+// administrator does not happen to be a member of, and the true count is what
+// makes "delete this one" a safe decision.
 func (s *Service) TagsForAdmin(ctx context.Context) ([]domain.Tag, error) {
 	if err := s.authz.Can(ctx, auth.ActionManage, auth.Resource{Type: "tag"}); err != nil {
 		return nil, notFoundFor(err)
 	}
-	return s.db.ListTags(ctx)
+	return s.db.ListTags(ctx, store.UnrestrictedScope())
 }
 
 // UpdateTag renames or recolours a tag.
@@ -65,7 +84,9 @@ func (s *Service) UpdateTag(ctx context.Context, tag domain.Tag) error {
 	}
 
 	name := domain.NormaliseTag(tag.Name)
-	existing, err := s.db.ListTags(ctx)
+	// The whole vocabulary: a rename collides with every existing name, not
+	// only with the ones this administrator can see work under.
+	existing, err := s.db.ListTags(ctx, store.UnrestrictedScope())
 	if err != nil {
 		return err
 	}
@@ -101,7 +122,9 @@ func (s *Service) DeleteTag(ctx context.Context, id int64) error {
 		return notFoundFor(err)
 	}
 
-	tags, err := s.db.ListTags(ctx)
+	// The whole vocabulary, so a tag can be deleted by id whatever work carries
+	// it: this is the administrative listing's counterpart.
+	tags, err := s.db.ListTags(ctx, store.UnrestrictedScope())
 	if err != nil {
 		return err
 	}

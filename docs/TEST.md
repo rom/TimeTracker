@@ -362,6 +362,19 @@ table (`internal/web/clientscreens_test.go`) requiring a decided answer for
 every GET - theirs, with a stated reason; redirected; or refused - and it was
 mutation-checked by reverting three of the fixes.
 
+Asking the same question of a *member* found three more, and they are the same
+shape: the role table is written down and the code only implemented part of it.
+The catalogue screen showed them every rate and every budget, because the only
+narrowing that existed was the client's; the tag vocabulary was the whole
+instance's, names and counts; and the navigation offered them two links that
+refuse them. A fourth fell out of looking: `scopeFor` fills `OwnUserID` and
+promises "plus their own records", and the SQL never rendered it, so an account
+with no memberships could record an hour and find every screen empty. The
+projections now have a field-by-field test with a completeness guard - a field
+added to a catalogue struct that is in neither the removed nor the kept list
+fails it - and the scope has a direct test of all three of its dimensions as
+SQL. Both were mutation-checked.
+
 The backup screen was a tenth, found while building the preview of a stored
 archive: it was gated on "may you view time entries", which a member with no
 project memberships may. What they could *take* was narrowed by their own scope,

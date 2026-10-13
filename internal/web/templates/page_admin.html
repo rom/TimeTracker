@@ -7,17 +7,22 @@
 
   <p class="hint">{{.T "admin.intro"}}</p>
 
+  {{/* Each of these three screens is administration and refuses anybody else,
+       so the links are offered to the people they work for. */}}
+  {{if .CanManage}}
   <p>
     <a class="btn btn-quiet" href="/settings">{{.T "settings.title"}}</a>
     <a class="btn btn-quiet" href="/import">{{.T "import.title"}}</a>
     <a class="btn btn-quiet" href="/backup">{{.T "backup.title"}}</a>
   </p>
+  {{end}}
 
   {{/* An edit form replaces the list row it was opened from. */}}
   <div id="edit-panel"></div>
 
   {{/* ------------------------------------------------------------ customers */}}
   <h2 class="section-heading">Customers</h2>
+  {{if .CanManage}}
   <form class="entry-form" method="post" action="/customers" hx-post="/customers">
     {{template "csrf" $.CSRFToken}}
     <input type="text" name="name" placeholder="Customer name" required aria-label="Customer name">
@@ -36,9 +41,19 @@
     <input type="text" name="icon" placeholder="🏢" size="3" aria-label="Icon">
     <button type="submit" class="btn btn-primary">Add customer</button>
   </form>
+  {{end}}
 
   <table class="admin-table">
-    <thead><tr><th>Name</th><th>Code</th><th>Currency</th><th>Default rate</th><th></th></tr></thead>
+    {{/* The rate column is left out for a reader who may not see one, rather
+         than drawn empty: a column headed "Default rate" with nothing under it
+         reads as missing data. The figure is already absent from the value by
+         then - the service removes it - so this is tidiness, not enforcement.
+
+         One flag for both questions because in this role model the answers
+         coincide: an administrator and a manager may manage the catalogue and
+         may see money; a member and a client may do neither. If that ever comes
+         apart, this needs a question of its own. */}}
+    <thead><tr><th>Name</th><th>Code</th><th>Currency</th>{{if .CanManage}}<th>Default rate</th>{{end}}<th></th></tr></thead>
     <tbody>
       {{range .Customers}}
         <tr class="{{if .Archived}}archived{{end}}">
@@ -51,8 +66,9 @@
           </td>
           <td>{{.Code}}</td>
           <td>{{.Currency}}</td>
-          <td>{{if gt .RateMinor 0}}{{money .RateMinor .Currency}}{{end}}</td>
+          {{if $.CanManage}}<td>{{if gt .RateMinor 0}}{{money .RateMinor .Currency}}{{end}}</td>{{end}}
           <td class="cell-actions">
+            {{if $.CanManage}}
             <a class="btn btn-small btn-quiet" href="/customers/{{.ID}}/edit"
                hx-get="/customers/{{.ID}}/edit">{{$.T "action.edit"}}</a>
             {{/* Contract terms: overtime, travel time, reimbursement. Badged
@@ -70,16 +86,18 @@
                 {{if .Archived}}Restore{{else}}Archive{{end}}
               </button>
             </form>
+            {{end}}
           </td>
         </tr>
       {{else}}
-        <tr><td colspan="5" class="empty">No customers yet.</td></tr>
+        <tr><td colspan="{{if .CanManage}}5{{else}}4{{end}}" class="empty">No customers yet.</td></tr>
       {{end}}
     </tbody>
   </table>
 
   {{/* ------------------------------------------------------------- projects */}}
   <h2 class="section-heading">Projects</h2>
+  {{if .CanManage}}
   <form class="entry-form" method="post" action="/projects" hx-post="/projects">
     {{template "csrf" $.CSRFToken}}
     <select name="customer_id" required aria-label="Customer">
@@ -98,16 +116,18 @@
     <label class="inline-check"><input type="checkbox" name="billable" checked> Billable</label>
     <button type="submit" class="btn btn-primary">Add project</button>
   </form>
+  {{end}}
 
   <table class="admin-table">
-    <thead><tr><th>Project</th><th>Customer</th><th>Rate</th><th></th></tr></thead>
+    <thead><tr><th>Project</th><th>Customer</th>{{if .CanManage}}<th>Rate</th>{{end}}<th></th></tr></thead>
     <tbody>
       {{range .Projects}}
         <tr class="{{if .Archived}}archived{{end}}">
           <td>{{.Name}}{{if .Archived}} <span class="badge">archived</span>{{end}}</td>
           <td>{{.CustomerName}}</td>
-          <td>{{if gt .RateMinor 0}}{{money .RateMinor .Currency}}{{end}}</td>
+          {{if $.CanManage}}<td>{{if gt .RateMinor 0}}{{money .RateMinor .Currency}}{{end}}</td>{{end}}
           <td class="cell-actions">
+            {{if $.CanManage}}
             <a class="btn btn-small btn-quiet" href="/projects/{{.ID}}/edit"
                hx-get="/projects/{{.ID}}/edit">{{$.T "action.edit"}}</a>
             <form method="post" action="/projects/{{.ID}}/archive" hx-post="/projects/{{.ID}}/archive">
@@ -117,10 +137,11 @@
                 {{if .Archived}}Restore{{else}}Archive{{end}}
               </button>
             </form>
+            {{end}}
           </td>
         </tr>
       {{else}}
-        <tr><td colspan="4" class="empty">No projects yet.</td></tr>
+        <tr><td colspan="{{if .CanManage}}4{{else}}3{{end}}" class="empty">No projects yet.</td></tr>
       {{end}}
     </tbody>
   </table>
@@ -129,6 +150,7 @@
   <h2 class="section-heading">Assignments</h2>
   <p class="hint">An assignment is what a timer runs against. Its colour and icon
      are what make the day view scannable at a glance.</p>
+  {{if .CanManage}}
   <form class="entry-form" method="post" action="/assignments" hx-post="/assignments">
     {{template "csrf" $.CSRFToken}}
     <select name="project_id" required aria-label="Project">
@@ -153,6 +175,7 @@
     <label class="inline-check"><input type="checkbox" name="favourite"> Favourite</label>
     <button type="submit" class="btn btn-primary">Add assignment</button>
   </form>
+  {{end}}
 
   <table class="admin-table">
     <thead><tr><th>Assignment</th><th>Project</th><th>Customer</th><th></th></tr></thead>
@@ -182,6 +205,7 @@
                 <span class="visually-hidden">{{$.T "action.favourite"}}</span>
               </button>
             </form>
+            {{if $.CanManage}}
             <a class="btn btn-small btn-quiet" href="/assignments/{{.ID}}/edit"
                hx-get="/assignments/{{.ID}}/edit">{{$.T "action.edit"}}</a>
             <form method="post" action="/assignments/{{.ID}}/archive" hx-post="/assignments/{{.ID}}/archive">
@@ -191,6 +215,7 @@
                 {{if .Archived}}Restore{{else}}Archive{{end}}
               </button>
             </form>
+            {{end}}
           </td>
         </tr>
       {{else}}
