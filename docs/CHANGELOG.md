@@ -186,6 +186,37 @@ the decision.
 
 ### Fixed
 
+* **Nine screens were reachable by a client because nothing asked.** The
+  navigation has never offered them more than the entries listing and the guide,
+  and its own comment says that presentation is never the enforcement — for
+  these it was the only thing there, and typing the URL reached them
+  ([ADR-0008](adr/0008-rbac-model.md)).
+
+  Four were dead forms for recording time a client does not record (`/routines`,
+  `/move`, `/import`, `/calendar`), as was the expenses screen, which lists the
+  acting user's own claims and is therefore empty for them. Those now send a
+  client to their listing, as the day, week and month already did. The rest were
+  disclosures: `/tags` listed the whole instance's vocabulary, and tag names
+  carry other customers' work in them — which is exactly why the projection
+  strips tags from a client's entries, so the screen said the opposite of the
+  projection, and so did the correction form's datalist. `/settings` asked
+  nothing at all and carries the instance's default hourly rate, which any
+  member could read there. And `/attachments/{id}` served a receipt in full to
+  anybody who could view the record it hung on, against the projection's own
+  stated premise — it drops the attachment count because "a client cannot fetch
+  an attachment", and they could.
+* **Four edit forms were authorised as reads.** The entry, customer, project and
+  assignment forms loaded their record with a view check while the save they
+  submit to requires update or manage. So a client was handed an assignment's
+  negotiated hourly rate and a project's budget typed into form fields, and a
+  member on the project got the same — the figures the projection removes from
+  those very records elsewhere. A form cannot be narrowed instead: it writes its
+  fields back on save, so narrowing it would write the narrowing into the
+  record. The check is what had to change.
+
+  A sweep now walks the route table and requires a decided answer for every GET
+  a client makes, so a screen added later cannot be reachable merely because no
+  handler thought to ask.
 * **Three reads were not scoped by project membership**, so a member could read
   a record from a project they are not on by its id — another user's time entry
   with its note and billing snapshot, any customer with its negotiated rate, or

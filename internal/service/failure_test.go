@@ -272,6 +272,19 @@ func TestEveryServiceMethodReportsADeadDatabase(t *testing.T) {
 			_, err := svc.PreviewBackupFile(ctx, f.backupDir, f.backupName)
 			return err
 		},
+		// The four edit forms' reads, which ask a different question from their
+		// listing counterparts and so are their own entries here.
+		"EntryForEdit": func() error { _, err := svc.EntryForEdit(ctx, f.entryID); return err },
+		"CustomerForEdit": func() error {
+			_, err := svc.CustomerForEdit(ctx, f.customerID)
+			return err
+		},
+		"ProjectForEdit": func() error { _, err := svc.ProjectForEdit(ctx, f.projectID); return err },
+		"AssignmentForEdit": func() error {
+			_, err := svc.AssignmentForEdit(ctx, f.assignment.ID)
+			return err
+		},
+		"TagsForAdmin":  func() error { _, err := svc.TagsForAdmin(ctx); return err },
 		"Routines":      func() error { _, err := svc.Routines(ctx, false); return err },
 		"RoutinesDue":   func() error { _, err := svc.RoutinesDue(ctx, f.now); return err },
 		"RunningIdle":   func() error { _, err := svc.RunningIdle(ctx); return err },
@@ -292,6 +305,7 @@ func TestEveryServiceMethodReportsADeadDatabase(t *testing.T) {
 		"SetTheme":              func() error { return svc.SetTheme(ctx, "dark") },
 		"SetTimeZone":           func() error { return svc.SetTimeZone(ctx, "Europe/Stockholm") },
 		"Settings":              func() error { _, err := svc.Settings(ctx); return err },
+		"SettingsForAdmin":      func() error { _, err := svc.SettingsForAdmin(ctx); return err },
 		"StartTimer":            func() error { _, err := svc.StartTimer(ctx, f.assignment.ID, ""); return err },
 		"StopAllTimers":         func() error { _, err := svc.StopAllTimers(ctx); return err },
 		"StopTimer":             func() error { _, err := svc.StopTimer(ctx, f.entryID); return err },

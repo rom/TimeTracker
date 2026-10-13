@@ -240,7 +240,9 @@ func (s *Server) handleTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data.Title = data.Printer.T("tags.title")
-	if data.Tags, err = s.svc.Tags(r.Context()); err != nil {
+	// TagsForAdmin: every control on this screen renames, recolours or deletes,
+	// so opening it is administration too.
+	if data.Tags, err = s.svc.TagsForAdmin(r.Context()); err != nil {
 		s.fail(w, r, err)
 		return
 	}

@@ -460,6 +460,30 @@ func (s *Service) Entry(ctx context.Context, entryID int64) (domain.TimeEntry, e
 	return s.narrowEntry(ctx, entry), nil
 }
 
+// EntryForEdit loads an entry for the correction form.
+//
+// Entry above asks whether the actor may read it, which a colleague on a shared
+// project may and a client may over their own customer's work. The form submits
+// to UpdateEntry, which asks whether they may change it - only the subject of
+// the entry can. So the form was reachable by two people who could not save it,
+// and for a client it also carried the whole instance's tag vocabulary in its
+// datalist, which the projection strips from their entries on purpose.
+//
+// Unnarrowed, deliberately: a form whose fields were narrowed would write the
+// narrowed values back on save. That is safe only because the check above has
+// already established that the actor may change this record, which is the whole
+// difference between this and Entry.
+func (s *Service) EntryForEdit(ctx context.Context, entryID int64) (domain.TimeEntry, error) {
+	entry, err := s.db.GetEntry(ctx, entryID)
+	if err != nil {
+		return domain.TimeEntry{}, err
+	}
+	if err := s.canModify(ctx, entry); err != nil {
+		return domain.TimeEntry{}, notFoundFor(err)
+	}
+	return entry, nil
+}
+
 // RunningTimers returns every timer currently running for the acting user. The
 // header renders this on every page, so losing track of a timer is hard.
 func (s *Service) RunningTimers(ctx context.Context) ([]domain.TimeEntry, error) {

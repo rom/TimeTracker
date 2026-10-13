@@ -107,6 +107,33 @@ func (s *Service) Customer(ctx context.Context, id int64) (domain.Customer, erro
 	return s.narrowCustomer(ctx, c), nil
 }
 
+// CustomerForEdit loads a customer for a form that will change it.
+//
+// Separate from Customer above because the question is different, and asking
+// the reading question for an editing form is how the negotiated rate reached
+// a client. The form submits to UpdateCustomer, which requires ActionManage;
+// the form itself was authorised with ActionView, which a client has over their
+// own customer and a member has over a project they are on. So both were handed
+// a filled-in administration form they could not submit - and the fields are
+// filled in from the unnarrowed record, because narrowing a form you are about
+// to save would write the narrowed values back.
+//
+// The rule is the one ADR-0008 already states and these four forms did not
+// follow: a permission check answers the question it was asked. A form that
+// edits a record asks whether you may edit it.
+func (s *Service) CustomerForEdit(ctx context.Context, id int64) (domain.Customer, error) {
+	c, err := s.db.GetCustomer(ctx, id)
+	if err != nil {
+		return domain.Customer{}, err
+	}
+	if err := s.authz.Can(ctx, auth.ActionManage, auth.Resource{
+		Type: "customer", ID: id, CustomerID: id,
+	}); err != nil {
+		return domain.Customer{}, notFoundFor(err)
+	}
+	return c, nil
+}
+
 // ---------------------------------------------------------------- projects --
 
 // CreateProject adds a project to a customer.
@@ -212,6 +239,23 @@ func (s *Service) Project(ctx context.Context, id int64) (domain.Project, error)
 	return s.narrowProject(ctx, p), nil
 }
 
+// ProjectForEdit loads a project for a form that will change it.
+//
+// As CustomerForEdit: the budget is what narrowProject withholds from a client,
+// and the edit form showed it to them.
+func (s *Service) ProjectForEdit(ctx context.Context, id int64) (domain.Project, error) {
+	p, err := s.db.GetProject(ctx, id)
+	if err != nil {
+		return domain.Project{}, err
+	}
+	if err := s.authz.Can(ctx, auth.ActionManage, auth.Resource{
+		Type: "project", ID: id, ProjectID: id, CustomerID: p.CustomerID,
+	}); err != nil {
+		return domain.Project{}, notFoundFor(err)
+	}
+	return p, nil
+}
+
 // ------------------------------------------------------------- assignments --
 
 // CreateAssignment adds an assignment to a project. This is the thing a timer
@@ -315,6 +359,23 @@ func (s *Service) Assignment(ctx context.Context, id int64) (domain.Assignment, 
 		return domain.Assignment{}, err
 	}
 	if err := s.authz.Can(ctx, auth.ActionView, auth.Resource{
+		Type: "assignment", ID: id, ProjectID: a.ProjectID, CustomerID: a.CustomerID,
+	}); err != nil {
+		return domain.Assignment{}, notFoundFor(err)
+	}
+	return a, nil
+}
+
+// AssignmentForEdit loads an assignment for a form that will change it.
+//
+// As CustomerForEdit, and this is the one that mattered most: an assignment
+// carries an hourly rate, and the edit form arrived with it typed into a field.
+func (s *Service) AssignmentForEdit(ctx context.Context, id int64) (domain.Assignment, error) {
+	a, err := s.db.GetAssignment(ctx, id)
+	if err != nil {
+		return domain.Assignment{}, err
+	}
+	if err := s.authz.Can(ctx, auth.ActionManage, auth.Resource{
 		Type: "assignment", ID: id, ProjectID: a.ProjectID, CustomerID: a.CustomerID,
 	}); err != nil {
 		return domain.Assignment{}, notFoundFor(err)

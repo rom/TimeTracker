@@ -18,9 +18,35 @@ import (
 // management screen exists to rename, recolour and tidy afterwards.
 
 // Tags lists every tag with how many entries carry it.
+//
+// A tag is instance-wide and applied by whoever records the time, so the whole
+// vocabulary is what a member needs: they are choosing from it. A client is
+// not. The projection strips tags from their entries on purpose - a label is
+// internal shorthand, and the names carry other customers' work in them
+// ("globex-outage" read by a client of Acme) - so handing them the vocabulary
+// said the opposite of what the projection says, through the tag screen and
+// through the datalist on the correction form.
+//
+// Nothing rather than a narrowed list, because there is no narrowed list to
+// give: a client's entries have no tags at all by the time they see them.
 func (s *Service) Tags(ctx context.Context) ([]domain.Tag, error) {
 	if _, err := auth.MustUser(ctx); err != nil {
 		return nil, err
+	}
+	if actingAsClient(ctx) {
+		return nil, nil
+	}
+	return s.db.ListTags(ctx)
+}
+
+// TagsForAdmin lists the tags for the screen that renames and deletes them.
+//
+// Every control on that screen is administration, so opening it is too. It was
+// authorised as a plain read, which made it a page of six forms a member could
+// not submit - and a page of another customer's labels for a client.
+func (s *Service) TagsForAdmin(ctx context.Context) ([]domain.Tag, error) {
+	if err := s.authz.Can(ctx, auth.ActionManage, auth.Resource{Type: "tag"}); err != nil {
+		return nil, notFoundFor(err)
 	}
 	return s.db.ListTags(ctx)
 }

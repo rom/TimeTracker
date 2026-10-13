@@ -349,6 +349,19 @@ defend, and all of them were invisible from inside the code that caused them.
   every Swedish screen was written wrong, as were the weekday list in the
   routine editor and the week-start option in settings.
 
+Nine more came from asking the same question of the screens rather than of the
+service: what does a *client* get from every route? The navigation has never
+offered them more than the entries listing and the guide, so nothing had ever
+walked the rest. Five were dead forms for recording time they do not record
+(`/routines`, `/move`, `/import`, `/calendar`, `/expenses`); four were
+disclosures (`/tags`, the four edit forms, `/settings`, `/attachments/{id}`), and
+the edit forms are the interesting ones: each loaded its record with a *view*
+check while the save it submits to requires update or manage, so an assignment's
+hourly rate arrived typed into a form field. The guard is a sweep over the route
+table (`internal/web/clientscreens_test.go`) requiring a decided answer for
+every GET - theirs, with a stated reason; redirected; or refused - and it was
+mutation-checked by reverting three of the fixes.
+
 The backup screen was a tenth, found while building the preview of a stored
 archive: it was gated on "may you view time entries", which a member with no
 project memberships may. What they could *take* was narrowed by their own scope,

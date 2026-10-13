@@ -79,6 +79,17 @@ internal notes, cost data and colleague identities are removed before the data
 leaves it, so no template bug can leak them. Resources a user may not know exist
 return "not found" rather than "forbidden".
 
+A screen is not an action, so opening one has to be asked about separately: every
+registered GET has a decided answer for a client, checked by a sweep over the
+route table (`internal/web/clientscreens_test.go`). Nine screens were reachable
+by a client because the navigation hid the links and no handler asked — among
+them four edit forms that loaded their record with a *view* check while the save
+they submit to requires manage, so an assignment's hourly rate arrived typed
+into a field; the instance settings screen, which asked nothing and carries the
+default rate; and an attachment route that served a receipt to anybody who could
+view the record it hung on, against the projection's own stated premise that a
+client cannot fetch one.
+
 A read of a single record must name the project or customer it belongs to, and a
 record of a project-scoped type that does not is **refused** rather than
 permitted. The authoriser does permit a resource with no place in the hierarchy —

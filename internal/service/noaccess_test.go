@@ -551,6 +551,8 @@ var strangerReads = map[string]bool{
 	"Tags": true, "Routines": true, "ContractTerms": true, "ReviewSubmission": true,
 	"PreviewExport": true, "PreviewBackupFile": true,
 	"Entry": true, "Customer": true, "AuditTrail": true,
+	"EntryForEdit": true, "CustomerForEdit": true, "ProjectForEdit": true,
+	"AssignmentForEdit": true, "TagsForAdmin": true, "SettingsForAdmin": true,
 	"Attachments": true, "CreateBackup": true,
 }
 

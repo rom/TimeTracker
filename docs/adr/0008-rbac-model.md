@@ -97,6 +97,44 @@ ever reached. A failing membership lookup propagates as an error rather than as
 a refusal, because a refusal reaches the caller as "not found" and a database
 that is merely unreachable should not read as data loss.
 
+**And a third time, at the screens.** The navigation has never offered a client
+more than the entries listing and the guide, and its comment gives the reason —
+"offering a link whose only outcome is a refusal is a worse answer than not
+offering it" — along with the caveat that the data behind those screens is
+narrowed regardless, "this is presentation, and presentation is never the
+enforcement". For nine screens it was the only thing there, and typing the URL
+reached them:
+
+* `/routines`, `/move`, `/import`, `/calendar` and `/expenses` rendered live
+  forms for recording time a client does not record. Dead rather than
+  disclosing, but a page of controls that each answer 403 is not read-only, it
+  is broken.
+* `/tags` listed the whole instance's vocabulary. Tag names carry other
+  customers' work in them, and the projection strips tags from a client's
+  entries for exactly that reason, so the screen said the opposite of the
+  projection. The correction form's datalist did too.
+* The **edit forms** — for an entry, a customer, a project and an assignment —
+  loaded their record with a *view* check while the save they submit to requires
+  update or manage. So a client was handed an assignment's hourly rate and a
+  project's budget typed into form fields, from the unnarrowed record, because a
+  form cannot be narrowed: it writes its fields back. A member on the project
+  got the same.
+* `/settings` asked nothing at all, and carries the instance's default hourly
+  rate. Any member read it there.
+* `/attachments/{id}` served a receipt in full to anybody who could view the
+  record it hung on. The projection drops the attachment count and states the
+  premise plainly — "a client cannot fetch an attachment" — and that was not
+  true.
+
+Each is now decided rather than discovered: a screen about recording somebody's
+own time redirects a client to their listing, an administrative one refuses, an
+edit form asks the question its save asks, and a client fetches no attachment at
+all. The lesson is the same one twice over — a check answers the question it was
+asked, and a form that edits a record is not a read of it — and the guard is a
+sweep (`internal/web/clientscreens_test.go`) that walks the route table and
+requires a decided answer for every GET, so a screen added later cannot be
+reachable merely because no handler thought to ask.
+
 ## Consequences
 
 **Positive**
@@ -118,6 +156,11 @@ that is merely unreachable should not read as data loss.
   mitigated the same way the listings are: the authoriser refuses a named record
   of a project-scoped type that does not say, so forgetting fails closed instead
   of opening up.
+* A screen is not an action, so nothing about the four verbs says who may open
+  one. Nine screens were reachable by a client because the navigation hid them
+  and no handler asked. Mitigated by a sweep over the route table rather than by
+  a mechanism: every GET must have a decided answer for a client, and a new
+  route with no answer fails the build.
 * The client projection is a second shape of the same data to maintain and test.
 
 ## Alternatives considered

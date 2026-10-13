@@ -77,7 +77,32 @@ func New(db *store.DB, authz auth.Authorizer, log *slog.Logger, now Clock) *Serv
 func (s *Service) Now() time.Time { return s.now() }
 
 // Settings returns the instance-wide defaults.
+//
+// Unauthorised, and it has to be: every page render reads it for the theme, the
+// navigation position, the clock and the week start, so a check here would gate
+// the whole application. What it carries beyond those is the reason for
+// SettingsForAdmin below - the figures nobody but an administrator should read
+// are in the same struct as the display preferences, and the screen that shows
+// them was not asking anybody anything.
 func (s *Service) Settings(ctx context.Context) (store.Settings, error) {
+	return s.db.GetSettings(ctx)
+}
+
+// SettingsForAdmin returns the same settings for the screen that edits them.
+//
+// The settings screen is the instance's: the default currency and hourly rate,
+// the timer ceiling, the idle threshold, the reminder schedule, whether a backup
+// password is set. Every control on it posts to UpdateSettings, which requires
+// ActionManage - and the screen itself asked nothing at all, so a member read
+// the instance's default rate off a form they could not submit, and so did a
+// client. ADR-0008 gives a member "own rates only".
+//
+// Returning the value rather than only answering the question, so the screen
+// cannot render what it did not ask for.
+func (s *Service) SettingsForAdmin(ctx context.Context) (store.Settings, error) {
+	if err := s.authz.Can(ctx, auth.ActionManage, auth.Resource{Type: "settings"}); err != nil {
+		return store.Settings{}, notFoundFor(err)
+	}
 	return s.db.GetSettings(ctx)
 }
 

@@ -342,22 +342,28 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	_, _ = fmt.Fprintf(w, `{"status":"ok","hardening":%q}`+"\n", s.hardening)
 }
 
-// sentToTheirOwnListing redirects a client away from a screen about somebody's
-// own timesheet, and reports whether it did.
+// sentToTheirOwnListing redirects a client away from a screen about recording or
+// reviewing somebody's own time, and reports whether it did.
 //
-// A client has none: they are looking at work done for them, by other people. So
-// the day, the week and the month have nothing to show them, and they are sent
-// to the listing that does rather than refused - "/" lands on the day screen,
-// and answering a client's front door with 403 is a hostile way to say "your
-// page is over there".
+// A client records none: they are looking at work done for them, by other
+// people. So the day, the week, the month, the submission review, the copy and
+// move forms, the two importers and the routine editor all have nothing to show
+// them, and they are sent to the listing that does rather than refused - "/"
+// lands on the day screen, and answering a client's front door with 403 is a
+// hostile way to say "your page is over there".
 //
 // One helper rather than the same four lines in each handler, because for a long
-// time it was three copies and the week screen had none: a client following a
-// week link from anywhere got a bare "not permitted" where the day and month
-// links took them somewhere useful. Screens that are administrative rather than
-// personal - the approvals queue, the backup screen, the user list - still
-// refuse outright, which is the right answer there: those have no client
-// equivalent to be sent to.
+// time it was three copies and the other six screens had none. The navigation
+// has never offered a client those links, and its comment says why: "offering a
+// link whose only outcome is a refusal is a worse answer than not offering it".
+// What that comment also says is that presentation is never the enforcement -
+// and for these screens it was the only thing there, so typing the URL got a
+// live form whose every submission was refused.
+//
+// Screens that are administrative rather than personal - the approvals queue,
+// the backup screen, the user list, the tag editor - refuse outright instead,
+// which is the right answer there: those have no client equivalent to be sent
+// to.
 func (s *Server) sentToTheirOwnListing(w http.ResponseWriter, r *http.Request) bool {
 	user, ok := auth.UserFrom(r.Context())
 	if !ok || user.Role != domain.RoleClient {
@@ -775,7 +781,9 @@ func (s *Server) handleQuickAdd(w http.ResponseWriter, r *http.Request) {
 // the duration is shown next to the day, the start time and the assignment. An
 // inline cell shows the wrong number in the same shape as the right one.
 func (s *Server) handleEditEntryForm(w http.ResponseWriter, r *http.Request) {
-	entry, err := s.svc.Entry(r.Context(), int64Param(r.PathValue("id")))
+	// EntryForEdit rather than Entry: the form submits a change, so opening it
+	// asks whether this actor may make one. See the note there.
+	entry, err := s.svc.EntryForEdit(r.Context(), int64Param(r.PathValue("id")))
 	if err != nil {
 		s.fail(w, r, err)
 		return
