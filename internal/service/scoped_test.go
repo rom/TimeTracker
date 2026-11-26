@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rom/timetracker/internal/domain"
+	"github.com/rom/timetracker/internal/store"
 )
 
 // Reading somebody else's records, and taking a backup of part of the data.
@@ -379,5 +380,131 @@ func TestAManagerReadsTheirTeamsTimesheets(t *testing.T) {
 	// its early exit.
 	if _, err := f.svc.Entries(theirs, EntryFilter{UserID: colleague.ID}); err != nil {
 		t.Errorf("a member could not read their own timesheet by naming themselves: %v", err)
+	}
+}
+
+// TestAManagerAdministersTheirProjectsAndNotTheInstance.
+//
+// ADR-0008's table gives a manager "customers and projects they are a member
+// of" and gives the administrator "everything: users, roles, customers,
+// settings". The bound was membership, and requireMembership permits a resource
+// that names no project - rightly, for one that genuinely has none. The
+// accounts, the instance settings, the backups and the tag vocabulary genuinely
+// have none, so a manager's ActionManage fell straight through: they could
+// create an account and set its role, rewrite the instance settings, take a
+// backup carrying every customer's negotiated rates, and delete a tag off
+// entries on projects they have nothing to do with.
+//
+// Both halves are asserted, because a rule that refused a manager everything
+// would pass the first half alone.
+func TestAManagerAdministersTheirProjectsAndNotTheInstance(t *testing.T) {
+	f := newServerFixture(t)
+	assignment, _ := f.team(t)
+
+	project, err := f.svc.Project(f.ctx, assignment.ProjectID)
+	if err != nil {
+		t.Fatalf("read the project: %v", err)
+	}
+
+	manager, err := f.accounts.CreateUser(f.ctx, NewUserInput{
+		DisplayName: "Manager", Email: "manager@example.com",
+		Password: "a-long-enough-password", Role: domain.RoleManager,
+	})
+	if err != nil {
+		t.Fatalf("create the manager: %v", err)
+	}
+	if err := f.accounts.AddMember(f.ctx, store.ProjectMember{
+		ProjectID: project.ID, UserID: manager.ID,
+	}); err != nil {
+		t.Fatalf("put the manager on the project: %v", err)
+	}
+	theirs := f.asUser(manager)
+
+	// The instance is not theirs.
+	for _, refused := range []struct {
+		name string
+		call func() error
+	}{
+		{"create an account", func() error {
+			_, err := f.accounts.CreateUser(theirs, NewUserInput{
+				DisplayName: "Planted", Email: "planted@example.com",
+				Password: "a-long-enough-password", Role: domain.RoleAdmin,
+			})
+			return err
+		}},
+		{"list the accounts", func() error {
+			_, err := f.accounts.Users(theirs)
+			return err
+		}},
+		{"change somebody's role", func() error {
+			user := f.admin
+			user.Role = domain.RoleMember
+			return f.accounts.UpdateUser(theirs, user)
+		}},
+		{"read the instance settings", func() error {
+			_, err := f.svc.SettingsForAdmin(theirs)
+			return err
+		}},
+		{"write the instance settings", func() error {
+			return f.svc.UpdateSettings(theirs, SettingsInput{
+				DefaultCurrency: "SEK", WeekStart: 1,
+			})
+		}},
+		{"take a backup", func() error { return f.svc.AuthorizeBackup(theirs) }},
+		{"read the whole tag vocabulary", func() error {
+			_, err := f.svc.TagsForAdmin(theirs)
+			return err
+		}},
+		{"delete a tag", func() error { return f.svc.DeleteTag(theirs, 1) }},
+	} {
+		t.Run(refused.name, func(t *testing.T) {
+			if err := refused.call(); err == nil {
+				t.Errorf("a manager could %s", refused.name)
+			}
+		})
+	}
+
+	// Their own projects are, which is the authority the table gives them and
+	// the half a blunt refusal would have taken away.
+	for _, allowed := range []struct {
+		name string
+		call func() error
+	}{
+		{"administer their project", func() error {
+			return f.svc.UpdateProject(theirs, project)
+		}},
+		{"add an assignment to it", func() error {
+			_, err := f.svc.CreateAssignment(theirs, domain.Assignment{
+				ProjectID: project.ID, Name: "Support", BillableDefault: true,
+			})
+			return err
+		}},
+		{"put somebody on it", func() error {
+			return f.accounts.AddMember(theirs, store.ProjectMember{
+				ProjectID: project.ID, UserID: f.admin.ID,
+			})
+		}},
+		{"read its commercial terms", func() error {
+			_, err := f.svc.ContractTerms(theirs, domain.TermsForCustomer, project.CustomerID)
+			return err
+		}},
+		{"change their own preferences", func() error {
+			return f.svc.SetTheme(theirs, "dark")
+		}},
+	} {
+		t.Run(allowed.name, func(t *testing.T) {
+			if err := allowed.call(); err != nil {
+				t.Errorf("a manager could not %s: %v", allowed.name, err)
+			}
+		})
+	}
+
+	// And the administrator still administers all of it, so the rule is a bound
+	// on the role rather than on the action.
+	if err := f.svc.AuthorizeBackup(f.ctx); err != nil {
+		t.Errorf("the administrator can no longer take a backup: %v", err)
+	}
+	if _, err := f.accounts.Users(f.ctx); err != nil {
+		t.Errorf("the administrator can no longer list the accounts: %v", err)
 	}
 }

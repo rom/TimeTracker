@@ -194,6 +194,20 @@ func (s *Service) MayManageCatalogue(ctx context.Context) bool {
 	return s.authz.Can(ctx, auth.ActionManage, auth.Resource{Type: "customer"}) == nil
 }
 
+// MayAdministerInstance reports whether the actor may administer the instance
+// itself: the accounts and their roles, the instance settings, the backups, the
+// tag vocabulary.
+//
+// A different question from MayManageCatalogue, and the two have different
+// answers: a manager administers the customers and projects they are a member
+// of, and not the instance - which is what ADR-0008's table says and what
+// auth.instanceTypes now enforces. Exported for the web layer, which uses it to
+// leave links out rather than to decide anything; every one of those screens
+// asks again for itself.
+func (s *Service) MayAdministerInstance(ctx context.Context) bool {
+	return s.authz.Can(ctx, auth.ActionManage, auth.Resource{Type: "settings"}) == nil
+}
+
 // maySeeMoney reports whether the actor may read commercial figures.
 //
 // Asked of the authoriser rather than written as a role test, because the

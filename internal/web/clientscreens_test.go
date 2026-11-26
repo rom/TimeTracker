@@ -448,7 +448,7 @@ func TestTheCatalogueScreenShowsAMemberNoMoneyAndNoControls(t *testing.T) {
 		`action="/customers"`, `action="/projects"`, `action="/assignments"`,
 		"/customers/1/edit", "/projects/1/edit", "/assignments/1/edit",
 		"/customers/1/archive", "/projects/1/archive", "/assignments/1/archive",
-		`href="/settings"`, `href="/backup"`, `href="/import"`,
+		`href="/settings"`, `href="/backup"`,
 	} {
 		if strings.Contains(body, refused) {
 			t.Errorf("the catalogue screen offers a member %s, which the service "+
@@ -458,6 +458,16 @@ func TestTheCatalogueScreenShowsAMemberNoMoneyAndNoControls(t *testing.T) {
 	if !strings.Contains(body, "/assignments/1/favourite") {
 		t.Error("the favourite control is gone; it is the one thing on this " +
 			"screen a member is meant to do")
+	}
+	// The importer is offered, because it is not administration: it records the
+	// reader's own time from a file, and the screen behind the link works for
+	// them. Hiding it was a leftover from gating the whole row of links.
+	if !strings.Contains(body, `href="/import"`) {
+		t.Error("the importer is not offered to a member, though it records " +
+			"their own time and the screen works for them")
+	}
+	if rec := member.get(t, "/import"); rec.Code != http.StatusOK {
+		t.Errorf("a member's GET /import = %d, so the link above is dead", rec.Code)
 	}
 
 	// And it works, rather than merely being rendered.
@@ -500,6 +510,13 @@ func TestTheNavigationOffersNoLinkItsOwnerWillBeRefused(t *testing.T) {
 	admin.post(t, "/users", url.Values{"display_name": {"Member"},
 		"email": {"m@example.com"}, "password": {"a-long-enough-password"},
 		"role": {"member"}})
+	// A manager is the role this sweep was missing, and the one the navigation
+	// got wrong: they administer their own customers and projects, so the flag
+	// that draws the catalogue's controls says yes for them - and the tag
+	// editor and the user list administer the instance, which says no.
+	admin.post(t, "/users", url.Values{"display_name": {"Manager"},
+		"email": {"g@example.com"}, "password": {"a-long-enough-password"},
+		"role": {"manager"}})
 	admin.post(t, "/users", url.Values{"display_name": {"Reviewer"},
 		"email": {"r@example.com"}, "password": {"a-long-enough-password"},
 		"role": {"client"}, "client_customer_id": {"1"}})
@@ -512,6 +529,7 @@ func TestTheNavigationOffersNoLinkItsOwnerWillBeRefused(t *testing.T) {
 		as   *client
 	}{
 		{"an administrator", admin},
+		{"a manager", signInAs(t, srv, accounts, "g@example.com", "a-long-enough-password")},
 		{"a member", signInAs(t, srv, accounts, "m@example.com", "a-long-enough-password")},
 		{"a client", signInAsReadOnly(t, srv, accounts, "r@example.com", "a-long-enough-password")},
 	} {

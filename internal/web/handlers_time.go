@@ -195,6 +195,12 @@ type pageData struct {
 	// and authorises it with a plain view - and it is the one thing on that
 	// screen a member is meant to do.
 	CanManage bool
+	// CanAdminister hides the links to the screens that administer the instance
+	// rather than a project: the settings, the backups, the tag vocabulary and
+	// the user list. A manager has CanManage and not this one - they administer
+	// the customers and projects they are a member of, and the instance is the
+	// administrator's - so the two cannot be one flag.
+	CanAdminister bool
 }
 
 // T translates a key in the page's language. Templates call it directly, which
@@ -313,6 +319,7 @@ func (s *Server) newPageData(r *http.Request, title, active string) (pageData, e
 		InboxCount:      inboxCount,
 		IsClient:        user.Role == domain.RoleClient,
 		CanManage:       s.svc.MayManageCatalogue(r.Context()),
+		CanAdminister:   s.svc.MayAdministerInstance(r.Context()),
 		Zone:            userLocation(r),
 	}, nil
 }

@@ -478,11 +478,12 @@ func TestBothSweepsCoverTheSameSurface(t *testing.T) {
 		"PendingApprovals": true, "SubmitWeek": true, "WithdrawWeek": true,
 		"OvertimeNotices": true, "RoutinesDue": true, "TextPreviews": true,
 		"AuthorizeBackup": true, "NeedsReceipt": true,
-		// Answers "may you administer the catalogue" with a bool, for a
-		// template deciding whether to draw a button. It discloses nothing: the
-		// answer is the actor's own permission, not anybody's data.
-		"MayManageCatalogue": true,
-		"TermsOn":            true, "TermsCurrency": true,
+		// Each answers "may you administer this" with a bool, for a template
+		// deciding whether to draw a button or a link. Neither discloses
+		// anything: the answer is the actor's own permission, not anybody's
+		// data.
+		"MayManageCatalogue": true, "MayAdministerInstance": true,
+		"TermsOn": true, "TermsCurrency": true,
 		"ParseQuickAdd": true, "ParseTimeCSV": true, "ParseCalendar": true,
 		// PreviewArchive is the same shape as the parsers above: the caller
 		// hands it the bytes, so it describes a file they already hold and

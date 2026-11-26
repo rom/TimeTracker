@@ -87,6 +87,14 @@ all three off the catalogue screen against the role table's "own rates only".
 The tag vocabulary is scoped the same way the entries listing is, because a tag
 is created by being used and so describes the work it labels.
 
+Administering the instance — the accounts and their roles, the instance
+settings, the backups, the tag vocabulary every project shares — is the
+administrator's. A manager's authority is real and bounded by project
+membership, and those four resources name no project, so the bound let a manager
+through until they were named as the instance's own. The verb is what is
+refused: a manager still views, records and approves across them, and changing
+your own preferences is an update of your own user record.
+
 A screen is not an action, so opening one has to be asked about separately: every
 registered GET has a decided answer for a client, checked by a sweep over the
 route table (`internal/web/clientscreens_test.go`). Nine screens were reachable

@@ -175,6 +175,31 @@ var scopedTypes = map[string]bool{
 	"attachment": true,
 }
 
+// instanceTypes are the resource types that are the instance itself rather than
+// any project's: the accounts and their roles, the instance-wide settings, the
+// backups, and the tag vocabulary every project shares.
+//
+// Administering one of these is the administrator's, which the decision table
+// above states and this list is what makes true. A manager's authority is
+// "customers and projects they are a member of" - real, and bounded by that
+// membership - and requireMembership permits a resource that names no project,
+// correctly, for a resource that genuinely has none. These genuinely have none,
+// so a manager's ActionManage fell straight through the bound: they could add an
+// account, change anybody's role, read and write the instance settings, take a
+// backup of every customer's catalogue, and delete a tag off entries on projects
+// they have nothing to do with.
+//
+// It is only about ActionManage. A manager views, records and approves across
+// these types as the table allows - and so does everybody else: changing your
+// own theme is an ActionUpdate on your own user record, which this does not
+// touch.
+//
+// The catalogue is deliberately absent. A customer and its projects are what a
+// manager administers, so they stay bounded by membership rather than refused.
+var instanceTypes = map[string]bool{
+	"user": true, "settings": true, "backup": true, "tag": true,
+}
+
 // Can implements Authorizer for server mode.
 //
 // The structure is deliberately a flat, readable decision table rather than a
@@ -199,7 +224,15 @@ func (a RoleAuthorizer) Can(ctx context.Context, action Action, resource Resourc
 
 	case domain.RoleManager:
 		switch action {
-		case ActionManage, ActionApprove, ActionProxy, ActionViewMoney,
+		case ActionManage:
+			// Bounded twice: to the projects they are responsible for, and to
+			// what is a project's in the first place. The instance itself is
+			// the administrator's - see instanceTypes.
+			if instanceTypes[resource.Type] {
+				return deny("the instance is the administrator's to administer")
+			}
+			return a.requireMembership(ctx, actor.ID, resource, deny)
+		case ActionApprove, ActionProxy, ActionViewMoney,
 			ActionView, ActionCreate, ActionUpdate, ActionDelete:
 			// A manager's authority is real but bounded by membership: they act
 			// on the projects they are responsible for, not on every project.

@@ -7,15 +7,19 @@
 
   <p class="hint">{{.T "admin.intro"}}</p>
 
-  {{/* Each of these three screens is administration and refuses anybody else,
-       so the links are offered to the people they work for. */}}
-  {{if .CanManage}}
+  {{/* The settings and the backups administer the instance and refuse anybody
+       else, including a manager. The importer is not administration at all - it
+       records somebody's own time from a file - so it is offered to everybody
+       who can reach this screen, all of whom can record time. */}}
   <p>
-    <a class="btn btn-quiet" href="/settings">{{.T "settings.title"}}</a>
+    {{if .CanAdminister}}
+      <a class="btn btn-quiet" href="/settings">{{.T "settings.title"}}</a>
+    {{end}}
     <a class="btn btn-quiet" href="/import">{{.T "import.title"}}</a>
-    <a class="btn btn-quiet" href="/backup">{{.T "backup.title"}}</a>
+    {{if .CanAdminister}}
+      <a class="btn btn-quiet" href="/backup">{{.T "backup.title"}}</a>
+    {{end}}
   </p>
-  {{end}}
 
   {{/* An edit form replaces the list row it was opened from. */}}
   <div id="edit-panel"></div>

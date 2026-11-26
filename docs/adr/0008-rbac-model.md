@@ -156,6 +156,31 @@ code did not:
   outcome is a refusal - to a client alone, so a member was offered the tag
   editor and the user list. Both refuse them.
 
+**And the manager's own bound had a hole of the same shape.** The table says
+"customers and projects they are a member of", and the bound was membership -
+but `requireMembership` permits a resource that names no project, correctly, for
+one that genuinely has none. The accounts and their roles, the instance
+settings, the backups and the tag vocabulary genuinely have none, so a manager's
+`ActionManage` fell straight through it: they could add an account and set its
+role, rewrite the instance settings, take a backup carrying every customer's
+negotiated rates, and delete a tag off entries on projects they have nothing to
+do with. The role table had said otherwise since the day it was written -
+"**admin**: Everything: users, roles, customers, settings" - and nothing
+enforced the word "everything".
+
+Those four types are now named (`auth.instanceTypes`) and refused to a manager
+for `ActionManage` alone. The verb matters: a manager still views, records and
+approves across them, and changing your own theme is an update of your own user
+record, not administration of the instance. The catalogue is deliberately absent
+from the list, because a customer and its projects are exactly what a manager
+*does* administer - they stay bounded by membership rather than refused, which
+is the half a blunt refusal would have taken away.
+
+The navigation needed a second question to go with it. "May you administer the
+catalogue" is what draws the catalogue's own controls, and a manager passes it;
+"may you administer the instance" is what offers the tag editor and the user
+list, and a manager does not. One flag could not answer both.
+
 One more thing fell out of asking: `scopeFor` fills `OwnUserID` and documents
 "member - the projects they are a member of, **plus their own records**", and
 `Scope.condition` never rendered it. An account with no memberships - which this

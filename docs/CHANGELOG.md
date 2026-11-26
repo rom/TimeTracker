@@ -186,6 +186,23 @@ the decision.
 
 ### Fixed
 
+* **A manager could administer the instance**, which the role table has never
+  said they may: add an account and set its role, rewrite the instance settings,
+  take a backup carrying every customer's negotiated rates, and delete a tag off
+  entries on projects they have nothing to do with. Their authority is bounded
+  by project membership, and those four resources name no project — so the bound
+  let them through, exactly as it did for the records fixed above. They are now
+  named as the instance's own and refused for administration alone: a manager
+  still views, records and approves across them, still administers the customers
+  and projects they are a member of, and still changes their own preferences,
+  which is an update of their own user record rather than administration of
+  anything ([ADR-0008](adr/0008-rbac-model.md)).
+
+  The navigation needed a second question to match: "may you administer the
+  catalogue" draws the catalogue's controls and a manager passes it, while "may
+  you administer the instance" offers the tag editor and the user list and they
+  do not. The role sweep over the rendered navigation now walks a manager too,
+  which is what caught the two links left pointing at refusals.
 * **A member read every customer's rate and every project's budget off the
   catalogue screen**, beside create, edit and archive controls they cannot
   submit. The only narrowing that existed was the client's, and nothing applied

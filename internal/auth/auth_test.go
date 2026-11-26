@@ -255,6 +255,53 @@ func TestRoleMatrix(t *testing.T) {
 		{"manager cannot read another project", domain.RoleManager, ActionView, colleagueEntryOutOfScope, false},
 		{"manager cannot approve outside their projects", domain.RoleManager, ActionApprove, colleagueEntryOutOfScope, false},
 
+		// A manager administers the customers and projects they are a member
+		// of. The instance is the administrator's, and these four resources are
+		// the instance: they name no project, so requireMembership permitted
+		// them - correctly, for a resource that genuinely has none, which is
+		// how a manager came to be able to add an account, change anybody's
+		// role, rewrite the instance settings, back up every customer's
+		// catalogue and delete a tag off work they have nothing to do with.
+		{"manager cannot administer accounts", domain.RoleManager, ActionManage,
+			Resource{Type: "user"}, false},
+		{"manager cannot administer one account either", domain.RoleManager, ActionManage,
+			Resource{Type: "user", ID: 99}, false},
+		{"manager cannot administer the instance settings", domain.RoleManager, ActionManage,
+			Resource{Type: "settings"}, false},
+		{"manager cannot take a backup", domain.RoleManager, ActionManage,
+			Resource{Type: "backup"}, false},
+		{"manager cannot administer the tag vocabulary", domain.RoleManager, ActionManage,
+			Resource{Type: "tag"}, false},
+		// The catalogue is theirs, which is the half the rule must not take:
+		// bounded by membership, not refused.
+		{"manager administers their own project", domain.RoleManager, ActionManage,
+			Resource{Type: "project", ID: memberProject, ProjectID: memberProject}, true},
+		{"manager does not administer another project", domain.RoleManager, ActionManage,
+			Resource{Type: "project", ID: otherProject, ProjectID: otherProject}, false},
+		{"manager administers the catalogue in general", domain.RoleManager, ActionManage,
+			Resource{Type: "customer"}, true},
+		// And the rule is about administering, not about every verb: changing
+		// your own theme is an update of your own user record.
+		{"manager changes their own preferences", domain.RoleManager, ActionUpdate,
+			Resource{Type: "user", ID: actorID, OwnerID: actorID}, true},
+		{"manager approves a timesheet in their project", domain.RoleManager, ActionApprove,
+			Resource{Type: "timesheet", OwnerID: 99, ProjectID: memberProject}, true},
+
+		// An administrator administers all four, which is what makes the rule a
+		// bound on the manager rather than on the action.
+		{"admin administers accounts", domain.RoleAdmin, ActionManage,
+			Resource{Type: "user"}, true},
+		{"admin administers the settings", domain.RoleAdmin, ActionManage,
+			Resource{Type: "settings"}, true},
+		{"admin takes a backup", domain.RoleAdmin, ActionManage,
+			Resource{Type: "backup"}, true},
+		{"admin administers the tags", domain.RoleAdmin, ActionManage,
+			Resource{Type: "tag"}, true},
+		// A member administers none of it, which was already true and is worth
+		// keeping true beside the manager's line.
+		{"member administers no instance", domain.RoleMember, ActionManage,
+			Resource{Type: "settings"}, false},
+
 		// Member: own records, plus read access to their projects.
 		{"member reads own entry", domain.RoleMember, ActionView, ownEntry, true},
 		{"member edits own entry", domain.RoleMember, ActionUpdate, ownEntry, true},

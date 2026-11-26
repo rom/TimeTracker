@@ -362,6 +362,14 @@ table (`internal/web/clientscreens_test.go`) requiring a decided answer for
 every GET - theirs, with a stated reason; redirected; or refused - and it was
 mutation-checked by reverting three of the fixes.
 
+Asking it of a *manager* found the last of the family: their authority is
+bounded by project membership, and the accounts, the instance settings, the
+backups and the tag vocabulary name no project, so the bound let them through.
+The role matrix gained the cases for all four, plus the ones that say what a
+manager keeps - their own projects, their own preferences, approving a
+timesheet - because a rule that refused them everything would have passed the
+first half alone.
+
 Asking the same question of a *member* found three more, and they are the same
 shape: the role table is written down and the code only implemented part of it.
 The catalogue screen showed them every rate and every budget, because the only
