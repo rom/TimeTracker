@@ -470,10 +470,30 @@ func TestAHandlerPassesItsAttributesThrough(t *testing.T) {
 // Where to send without configuration. It has to name something that exists on
 // the host rather than a guess, since the alternative is an operator wondering
 // why nothing arrives.
+//
+// "Nothing" is one of the answers, and the one this test used to fail on: the
+// function's own comment says it returns empty "where there is none", Windows
+// has no such socket, and main.go warns and carries on. So a container without
+// /dev/log - which this one is - made a passing suite depend on the host rather
+// than on the code. What is actually promised is that the answer is either a
+// complete pair naming a socket that is really there, or nothing at all; never
+// half a pair, and never a path that does not exist.
 func TestTheDefaultSyslogAddress(t *testing.T) {
 	network, address := DefaultSyslogAddress()
-	if network == "" || address == "" {
-		t.Fatalf("the default address is %q on %q", address, network)
+	if (network == "") != (address == "") {
+		t.Fatalf("the default address is %q on %q: half an answer is one the "+
+			"caller cannot act on", address, network)
+	}
+	if network == "" {
+		// No socket on this host. Assert that is true rather than taking its
+		// word for it, so a lookup that simply stopped working is not read as
+		// a host without syslog.
+		for _, candidate := range []string{"/dev/log", "/var/run/syslog", "/var/run/log"} {
+			if _, err := os.Stat(candidate); err == nil {
+				t.Errorf("the default is empty although this host has %s", candidate)
+			}
+		}
+		return
 	}
 	switch network {
 	case "unix", "unixgram":
@@ -488,10 +508,9 @@ func TestTheDefaultSyslogAddress(t *testing.T) {
 		t.Errorf("the default network is %q, which is not one this handler dials", network)
 	}
 
-	// On a host with a syslog socket, that is what is named.
-	for _, candidate := range []string{"/dev/log", "/var/run/syslog"} {
-		if _, err := os.Stat(candidate); err == nil && address != candidate {
-			t.Logf("this host has %s and the default names %s", candidate, address)
-		}
+	// And what it names is really there, which is the whole point of looking
+	// rather than guessing from the platform.
+	if _, err := os.Stat(address); err != nil {
+		t.Errorf("the default names %s, which is not on this host: %v", address, err)
 	}
 }
