@@ -40,6 +40,12 @@ type pageData struct {
 	// interface needs to know. The password itself is stripped from Settings
 	// before it reaches here.
 	BackupEncrypted bool
+	// WeekendColour is the palette key the day numbers of a Saturday and a
+	// Sunday are drawn in, already reduced to a key the stylesheet has a rule
+	// for. It is written into an attribute on the document, like the theme and
+	// the navigation position, so every grid on every screen picks it up
+	// without being passed anything.
+	WeekendColour string
 
 	// Help is the context-sensitive help for the current screen.
 	Help       []helpSection
@@ -185,6 +191,22 @@ type pageData struct {
 	// IsClient trims the navigation to the one screen a client has. The data is
 	// narrowed whatever this says; hiding a link is courtesy, not enforcement.
 	IsClient bool
+	// CanManage hides the catalogue's create, edit and archive controls from
+	// somebody who may not use them. As IsClient: the service refuses the
+	// action whatever this says, and a row of buttons that each answer 403 is
+	// how a read-only screen comes to look broken rather than read-only.
+	//
+	// The favourite control is deliberately not behind it. Marking a favourite
+	// is a working preference rather than administration - the service says so
+	// and authorises it with a plain view - and it is the one thing on that
+	// screen a member is meant to do.
+	CanManage bool
+	// CanAdminister hides the links to the screens that administer the instance
+	// rather than a project: the settings, the backups, the tag vocabulary and
+	// the user list. A manager has CanManage and not this one - they administer
+	// the customers and projects they are a member of, and the instance is the
+	// administrator's - so the two cannot be one flag.
+	CanAdminister bool
 }
 
 // T translates a key in the page's language. Templates call it directly, which
@@ -299,9 +321,12 @@ func (s *Server) newPageData(r *http.Request, title, active string) (pageData, e
 		IdleSeconds:     settings.IdleSeconds,
 		BackupEncrypted: backupEncrypted,
 		Nav:             domain.NavPosition(settings.NavPosition).OrDefault(),
+		WeekendColour:   domain.ColourKeyOr(settings.WeekendColour, "red"),
 		Rounding:        service.RoundingPresets(),
 		InboxCount:      inboxCount,
 		IsClient:        user.Role == domain.RoleClient,
+		CanManage:       s.svc.MayManageCatalogue(r.Context()),
+		CanAdminister:   s.svc.MayAdministerInstance(r.Context()),
 		Zone:            userLocation(r),
 	}, nil
 }
@@ -342,14 +367,40 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	_, _ = fmt.Fprintf(w, `{"status":"ok","hardening":%q}`+"\n", s.hardening)
 }
 
+// sentToTheirOwnListing redirects a client away from a screen about recording or
+// reviewing somebody's own time, and reports whether it did.
+//
+// A client records none: they are looking at work done for them, by other
+// people. So the day, the week, the month, the submission review, the copy and
+// move forms, the two importers and the routine editor all have nothing to show
+// them, and they are sent to the listing that does rather than refused - "/"
+// lands on the day screen, and answering a client's front door with 403 is a
+// hostile way to say "your page is over there".
+//
+// One helper rather than the same four lines in each handler, because for a long
+// time it was three copies and the other six screens had none. The navigation
+// has never offered a client those links, and its comment says why: "offering a
+// link whose only outcome is a refusal is a worse answer than not offering it".
+// What that comment also says is that presentation is never the enforcement -
+// and for these screens it was the only thing there, so typing the URL got a
+// live form whose every submission was refused.
+//
+// Screens that are administrative rather than personal - the approvals queue,
+// the backup screen, the user list, the tag editor - refuse outright instead,
+// which is the right answer there: those have no client equivalent to be sent
+// to.
+func (s *Server) sentToTheirOwnListing(w http.ResponseWriter, r *http.Request) bool {
+	user, ok := auth.UserFrom(r.Context())
+	if !ok || user.Role != domain.RoleClient {
+		return false
+	}
+	http.Redirect(w, r, "/entries", http.StatusSeeOther)
+	return true
+}
+
 // handleToday renders the day view, defaulting to today.
 func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
-	// A client has no timesheet of their own, so this screen has nothing to show
-	// them. Sent to the one they do have rather than refused: this is also the
-	// route "/" lands on, and answering a client's front door with 403 is a
-	// hostile way to say "your page is over there".
-	if user, ok := auth.UserFrom(r.Context()); ok && user.Role == domain.RoleClient {
-		http.Redirect(w, r, "/entries", http.StatusSeeOther)
+	if s.sentToTheirOwnListing(w, r) {
 		return
 	}
 	date := s.dateParam(r, "date")
@@ -427,10 +478,7 @@ func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
 // that is what an <input type="month"> submits, and from ?date= otherwise so
 // that a link from the day or week screen can carry the date it was on.
 func (s *Server) handleMonth(w http.ResponseWriter, r *http.Request) {
-	// A client has no timesheet of their own to summarise, the same reasoning as
-	// the day screen.
-	if user, ok := auth.UserFrom(r.Context()); ok && user.Role == domain.RoleClient {
-		http.Redirect(w, r, "/entries", http.StatusSeeOther)
+	if s.sentToTheirOwnListing(w, r) {
 		return
 	}
 
@@ -470,6 +518,9 @@ func (s *Server) monthParam(r *http.Request) time.Time {
 
 // handleWeek renders the weekly grid.
 func (s *Server) handleWeek(w http.ResponseWriter, r *http.Request) {
+	if s.sentToTheirOwnListing(w, r) {
+		return
+	}
 	date := s.dateParam(r, "date")
 
 	data, err := s.newPageData(r, "Week", "week")
@@ -755,7 +806,9 @@ func (s *Server) handleQuickAdd(w http.ResponseWriter, r *http.Request) {
 // the duration is shown next to the day, the start time and the assignment. An
 // inline cell shows the wrong number in the same shape as the right one.
 func (s *Server) handleEditEntryForm(w http.ResponseWriter, r *http.Request) {
-	entry, err := s.svc.Entry(r.Context(), int64Param(r.PathValue("id")))
+	// EntryForEdit rather than Entry: the form submits a change, so opening it
+	// asks whether this actor may make one. See the note there.
+	entry, err := s.svc.EntryForEdit(r.Context(), int64Param(r.PathValue("id")))
 	if err != nil {
 		s.fail(w, r, err)
 		return

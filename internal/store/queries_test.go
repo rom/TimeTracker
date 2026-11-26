@@ -841,7 +841,7 @@ func TestRenamingATagRenamesItEverywhere(t *testing.T) {
 	entry := entryAt(t, db, user, assignment, day, 3600, domain.StatusConfirmed)
 	retag(t, db, entry, "incident")
 
-	tags, err := db.ListTags(ctx)
+	tags, err := db.ListTags(ctx, UnrestrictedScope())
 	if err != nil {
 		t.Fatalf("list tags: %v", err)
 	}
@@ -867,7 +867,7 @@ func TestRenamingATagRenamesItEverywhere(t *testing.T) {
 		t.Errorf("the entry still carries %v after the rename, want [outage]", got)
 	}
 
-	renamed, err := db.ListTags(ctx)
+	renamed, err := db.ListTags(ctx, UnrestrictedScope())
 	if err != nil {
 		t.Fatalf("re-list tags: %v", err)
 	}

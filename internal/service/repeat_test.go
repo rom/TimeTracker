@@ -141,6 +141,62 @@ func TestCopyIntoALockedWeekIsRefused(t *testing.T) {
 	}
 }
 
+// TestADayIsNotCopiedOntoItself.
+//
+// A copy adds to whatever is already on the target rather than replacing it,
+// which is deliberate - replacing would silently delete work. It is also what
+// makes this case destructive in the quiet way: every row appears twice, the
+// day's total is twice what was worked, and nothing says so. The form has a
+// "copy from" field, so typing today's date into it is all it takes.
+//
+// CopyWeek has refused the same thing all along, which is what made the
+// omission hard to see.
+func TestADayIsNotCopiedOntoItself(t *testing.T) {
+	f := newFixture(t)
+
+	mustCreate(t, f, at(f.now, 9, 0), 3600)
+	mustCreate(t, f, at(f.now, 11, 0), 1800)
+
+	before, err := f.svc.Day(f.ctx, f.now)
+	if err != nil {
+		t.Fatalf("read the day: %v", err)
+	}
+
+	// The same instant, and any other instant inside the same day: the guard is
+	// about the day, not about the time of day it is expressed with.
+	for _, to := range []time.Time{f.now, at(f.now, 23, 59), at(f.now, 0, 0)} {
+		_, err := f.svc.CopyDay(f.ctx, f.now, to)
+		if err == nil {
+			t.Errorf("a day was copied onto itself (to %s)", to)
+			continue
+		}
+		if !errors.Is(err, ErrValidation) {
+			t.Errorf("error = %v, want a validation refusal: it is the caller's "+
+				"mistake and the form can say so", err)
+		}
+	}
+
+	// And nothing was written on the way to refusing.
+	after, err := f.svc.Day(f.ctx, f.now)
+	if err != nil {
+		t.Fatalf("read the day again: %v", err)
+	}
+	if after.Totals.SummedSeconds != before.Totals.SummedSeconds {
+		t.Errorf("the day went from %ds to %ds", before.Totals.SummedSeconds,
+			after.Totals.SummedSeconds)
+	}
+	if len(after.Entries) != len(before.Entries) {
+		t.Errorf("the day went from %d entries to %d", len(before.Entries),
+			len(after.Entries))
+	}
+
+	// The next day still accepts it, so the guard is about the same day rather
+	// than about copying.
+	if _, err := f.svc.CopyDay(f.ctx, f.now, f.now.AddDate(0, 0, 1)); err != nil {
+		t.Errorf("copying onto the next day was refused too: %v", err)
+	}
+}
+
 // TestCopyWeekAlignsDayForDay: Monday's entries land on the target Monday.
 func TestCopyWeekAlignsDayForDay(t *testing.T) {
 	f := newFixture(t)

@@ -46,7 +46,7 @@
 | 006 audit | `TestAuditTrailRecordsEveryMutation` walks the mutating service methods and asserts each leaves an audit row, written in the same transaction as the change - so a rolled-back change cannot leave a row claiming it happened. Authentication events are audited separately, and `TestPasswordsNeverAppearInAudit` is the redaction test. Both gaps are now closed, and closing the first one found a defect. `internal/service/audit_test.go` injects a failure with a SQLite trigger that aborts inserts into `audit_events`, and asserts the change is rolled back - and the converse, breaking the entry insert instead, to prove no audit row survives a change that never happened. A trigger rather than a fake store, because what is under test is whether the *database* rolls the other statement back. The scan half lives in `internal/repocheck`: no migration and no query anywhere in the tree issues `UPDATE`, `DELETE FROM` or `DROP TABLE` against `audit_events`, the table does not cascade on delete, and the insert takes a `*sql.Tx` rather than a connection - which is the mechanism, not an observation about one call. **The defect the first of those found, now fixed:** only the entry paths were atomic. The catalogue mutations wrote the record on one connection and then called `recordAudit`, which opened a second transaction - so a failed audit write reported failure to the caller with the change already committed, and a user who retried got two customers and no trail for either. The store's catalogue mutations gained transactional forms, and `Service.mutate` now runs the change and its audit row in one transaction, the same arrangement the entry paths use. Twenty paths are covered by the injection tests: start a timer, record an entry, add a customer, a project and an assignment, rename a customer, archive a customer, archive a project, import a CSV, import a calendar, attach a receipt, delete one, create a user, add and remove a project membership, submit a week, record an expense, correct one, withdraw one, and save a set of contract terms. Five more are asserted on the value rather than a row count, because the change is a rename, a status, a setting or a move: a tag rename (and the search index it rebuilds, which has to roll back with it or search stops finding a tag that is still there), a tag deletion, the instance settings, a user's own time zone, and moving an expense between projects. Three account paths are asserted the same way, because what changes is a status or a hash: approving a week rolls back to submitted, a failed password change leaves the old password working *and* the existing session alive, and a failed role change leaves both the role and the sessions as they were - the last two being the paths where a second write (the forced sign-out) has to commit with the first, or the account's privileges and its sessions disagree. The importers and attachments each needed a different answer rather than the same one. A CSV import prepares every row - which is where a refusal names a line in the user's spreadsheet - and then writes them all with their audit rows and the summary in one transaction, so `TestAnImportThatFailsPartWayImportsNothing` can inject a failure against the third row of three and find nothing behind it; that is the single-transaction import ADR-0022 listed as an outstanding want. A calendar import does the same while keeping the per-meeting refusals it is built around, because those happen during preparation, before anything is written. An attachment commits its row and its audit entry together, with the bytes written before the transaction and removed after it: two tests cover the halves, that a rolled-back attachment leaves only an orphaned file the sweep collects, and that a rolled-back deletion leaves the file where it was rather than deleted out from under a surviving row. `auditNotAtomic` is now empty and stays in the file because the test checks it in both directions - a path named there that becomes atomic fails too, so a list of known defects cannot quietly include fixed ones. Every mutating path in the service now goes through `Service.mutate`, and `recordAudit` - the older, weaker arrangement - has exactly one caller left: the summary row at the end of a restore, which records an operation rather than a change and whose failure is logged rather than returned. `TestARestoreIsRecordedButNotGatedOnItsSummary` pins that, including the part that makes it defensible: the individual records a restore creates carry audit rows of their own. |
 | 007 exports | An export covers the whole filter and never the page: the screen is paged at fifty rows and a test exports a 137-entry range from three different pages, asserting 137 rows each time. That one is a regression test - the screen's cap used to reach the export. There are golden files for the three text formats, in `internal/export/testdata/golden/`, regenerated with `go test ./internal/export/ -update`: they exist because a structural assertion passes on any output with the right shape, and CSV, JSON and Markdown are read by software somebody else wrote - a reordered column or a renamed header stays well-formed and breaks their importer. The two streaming writers are held to the same files as the collected ones, which catches the case `TestStreamedAndCollectedExportsAgree` cannot: both drifting together. The PDF and the DOCX deliberately have none, since a zip's per-entry metadata and a PDF's byte offsets move with any content change, and a golden file that has to be regenerated for every unrelated edit trains everybody to regenerate without reading. Those two are asserted on their structure instead - a PDF for its page breaks and repeating headers, a DOCX opened as a zip with its OOXML parts parsed, Markdown for the property its tables live or die by, and `TestFormatsAgree` for the totals across all of them. CSV and JSON stream and the other three do not, which is two paths through one handler and therefore the arrangement that drifts, so the same range is exported both ways and the documents compared byte for byte with only the generation stamp masked - a check that catches a difference in ordering, in metadata or in formatting, and did catch the two writers formatting JSON differently. The document formats are asserted to refuse an oversized range with 413 and to name a format that streams, rather than to attempt it. The streaming writers are tested against their collected equivalents for identical output, for propagating a mid-stream database error instead of emitting a truncated document that parses, for producing valid JSON when the range is empty, for escaping a title containing a quote, and for refusing entries that arrive out of order - the one input for which the one-pass elapsed total would be silently wrong. A streamed export of a malformed regular expression is asserted to be a 400 that is not typed as the download it refused, which without the pulled first row was a 200 CSV containing its header and nothing else; the pull itself is tested for telling an early failure apart from an empty range, and for stopping the source when a consumer abandons the download. Golden files per format; PDF page-break and repeating-header cases; DOCX opened and validated as a ZIP with well-formed OOXML parts; CSV BOM and non-ASCII names; JSON validated against the published schema. Markdown is checked for the property the format lives or dies by - every row of a table has as many cells as its header - plus escaping of the pipe that would otherwise split a cell, and padding by rune rather than byte so a table containing a non-ASCII name is not ragged. One test walks the offered format list and writes every one of them, because a format offered on screen with no writer behind it reaches a user as an empty download, which nobody reports as a bug. |
 | 008 proxy consent | `TestPendingProxyEntriesAreNotCounted` and `TestReportExcludesPendingFromTotals` assert that a proposal counts for nothing until it is accepted; `TestProxyWorkflow` covers accept, and `TestProxyRejectionIsKept` that a rejection is retained rather than deleted. They are now enumerated as well, in `internal/repocheck`, in both languages the totals are written in. Every function in `internal/store` whose query aggregates over `time_entries` must carry `status = 'confirmed'` and `flagged = 0`, or build its conditions from an `EntryFilter` whose `CountingOnly` the service sets; every function in the service and the export layer that accumulates a duration or an amount must consult `Counts()`. Both have an exemption map naming the reason each exception is not a total - a row count for a paged listing, a count of what is *awaiting* a decision, an assignment ranked by how often it was used, the arrow that reports how much work fell outside the visible window - and both check the map against the tree, so a name that no longer exists fails rather than quietly excusing the next function given it. |
-| 009 themes and accessibility | The logotype's two halves are aliases of the entity palette, so the contrast helper resolves one level of `var()` the way the cascade would, and both halves are held to AA on the header surface in every theme. Contrast ratios are computed from the stylesheet by the WCAG 2.1 formula and asserted for every text pair the interface uses, **in every theme** rather than only in the one named for contrast - two themes were below AA until that test was written, because looking at a colour is not a way of measuring it. The high-contrast theme additionally has its borders held to 3:1. Entity tints are recomputed in Go at each mix level the stylesheet uses, for every colour in every theme, so colouring a whole row cannot make the text on it unreadable. The contrast maths is itself verified against known reference points (black on white is exactly 21:1, `#767676` on white is the 4.5:1 boundary). Structural checks cover the skip link's position and target, the landmarks and their names, `aria-current` on the current page, an accessible name on every form control, `aria-live` on the totals, and text alternatives wherever colour or an icon carries meaning. None of this replaces the manual screen-reader pass in §5. |
+| 009 themes and accessibility | The logotype's two halves are aliases of the entity palette, so the contrast helper resolves one level of `var()` the way the cascade would, and both halves are held to AA on the header surface in every theme. Contrast ratios are computed from the stylesheet by the WCAG 2.1 formula and asserted for every text pair the interface uses, **in every theme** rather than only in the one named for contrast - two themes were below AA until that test was written, because looking at a colour is not a way of measuring it. The high-contrast theme additionally has its borders held to 3:1. Entity tints are recomputed in Go at each mix level the stylesheet uses, for every colour in every theme, so colouring a whole row cannot make the text on it unreadable. The weekend's raster is held to the same arithmetic from both sides: ordinary text is measured against the darkest point of the hatching, which is a stripe rather than an average, and the day numbers against the flat backdrop the stylesheet gives them. That test is the reason the day number *has* a backdrop - with the number on the raster, thirty-seven theme and colour pairs fell below AA and no percentage existed that was both visible and safe - and it found a pre-existing failure in the spring theme's green while doing it. The cascade is asserted too, by source position: the weekend's colour rule ties on specificity with the month grid's own, so it wins only by sitting later in the file, and a version that sat earlier produced correct markup, a correctly saved setting, and grey numbers on every screen. The contrast maths is itself verified against known reference points (black on white is exactly 21:1, `#767676` on white is the 4.5:1 boundary). Structural checks cover the skip link's position and target, the landmarks and their names, `aria-current` on the current page, an accessible name on every form control, `aria-live` on the totals, and text alternatives wherever colour or an icon carries meaning. None of this replaces the manual screen-reader pass in §5. |
 | 010 durability | Migrations apply from empty and from each released schema version; a tampered checksum fails startup; a newer database version fails startup; backup → wipe → restore reproduces database *and* attachments, with the receipt bytes compared rather than counted. Archive tests cover the round trip, that an encrypted archive does not contain its plaintext, that several wrong passwords are all refused, that a flipped bit is detected, and that restoring twice does not double the week or duplicate a receipt. Two guard the interoperability a round trip cannot see: the AE-2 header fields other archivers key on - method 99, zero CRC, no data descriptor, the encrypted flag bit, the 0x9901 extra field - and a known-answer vector pinning the counter as little-endian, since decrypting our own output would work equally well with it reversed. |
 | 011 readability | `gofmt -l` empty and `go vet` clean, both enforced by `make check`. `make lint` runs golangci-lint when it is installed and prints a note and continues when it is not, so "linter clean" is a property of the machine the command was run on rather than of the repository. There is now a doc-comment check: every package under `internal/` and `cmd/` says what it is for, and every exported function, type, constant and variable has a doc comment - with a member of a const or var block counting as documented when the block explains the set or the line carries a trailing comment, which is how the roles and the export formats are written. Methods on unexported types are exempt, since holding one means being inside the package already. Writing the check turned up thirty-one undocumented exported symbols, all of which now have comments. It is a floor rather than a standard: `// Foo does foo.` satisfies it. **Not covered:** there is no linter configuration file, and the default linter set does not include one. |
 | 012 performance | Against 100k entries seeded across three years: day view, week view and timer start/stop under 100 ms p95; a one-year report under 2 s. Measured through the HTTP handler rather than against the store, because the requirement's rationale is that it validates the server-rendered choice - a store benchmark would leave template rendering unmeasured. Every figure is logged whether or not it passes, so a run is a trend as well as a gate. Tagged `perf` and excluded from `make check` because it takes about a minute; `make test-perf` runs it. The fixture forces the reminder window open, so the day and week views are measured doing their most expensive work rather than the cheap version they do before four in the afternoon - a budget that passes or fails by the clock is not a budget. A three-year export additionally has its *memory* asserted, not its speed: peak heap is sampled while the export runs and held under 64 MB, which 40 MB of JSON output meets at about 9 MB and the same export buffered does not, at 294 MB. That assertion was checked by restoring the buffering and watching it fire. The suite found all three interactive budgets breached by three to four times on first writing, and the causes are recorded in [ADR-0032](adr/0032-measured-before-tuned.md). |
@@ -258,48 +258,137 @@ moves found something.
   was also hiding all of the above.
 * `service` 57% → 85%. The single-sign-on provisioning rules, the session
   lifecycle, damaged and tampered restores, the day pane's overflow, and the
-  refusals each operation makes. The scope sweep found three unscoped reads
-  (below).
+  refusals each operation makes. The scope sweep found three unscoped reads,
+  since fixed (below).
 * `i18n` and `logging`, from no tests at all to 90% and 88%. The first decides
   how every number and date on every screen is written - the two languages
   disagree about both separators, which at four figures is a different quantity.
   The second is the one function standing between a password and the log.
 
-### What is pinned rather than fixed
+### What the coverage work found, and what was done about it
 
-Some tests record what the application does today, with the discrepancy named
-in the test, because changing it is a decision rather than a coverage task. In
-each case the test logs and returns if the behaviour changes, so a fix reads as
-a prompt to invert the test rather than as a confusing failure.
+Raising the floor turned up nine discrepancies that no test had been looking
+for. Each was recorded first as a test that described what the application did,
+with the gap named - because changing behaviour is a decision and a coverage
+commit is not the place to make it - and each has since been fixed, with the
+test inverted to assert the new behaviour. They are listed here because the
+*kind* of defect is worth remembering: none of them was a mistake anybody would
+defend, and all of them were invisible from inside the code that caused them.
 
-* **Three reads are not scoped by project membership.**
-  `RoleAuthorizer.requireMembership` returns nil when `resource.ProjectID == 0`,
-  which is right for a resource that genuinely has no project. But
-  `entryResource` builds `auth.Resource{Type, ID, OwnerID}` with no project id,
-  and the customer and audit-trail resources carry none either - so a member
-  asking about somebody else's record falls through to a permissive check.
-  `Entry` gives another user's entry with its note and billing snapshot,
-  `Customer` gives any customer with its rate, and `AuditTrail` gives the trail
-  of any resource. The listings are unaffected: they go through
-  `effectiveScope` and are narrowed correctly, which is why this appears on no
-  screen that shows a list.
-* **Every amount is parsed as having two decimal places**, whatever the
-  currency, which ADR-0014 states as the model. The currency check accepts any
-  three letters, so an instance invoicing in JPY, KRW, ISK or CLP holds every
-  amount at a hundred times its value.
-* **`CopyDay` has no guard against a day being copied onto itself**, which
-  doubles it. The form has a "copy from" field, so it is reachable by typing
-  today's date into it.
-* **A bare `.json` backup that lists attachments reports nothing about them**,
-  although the `Attachments` field's own comment promises the restore "reports
-  rather than hides" it. The zip path does report it.
-* **Declining an expense does not cap the length of its reason**, where
-  declining a time entry or a week caps it at a thousand characters.
-* **`StopTimer`'s clamp for a backwards clock does not flag the entry**, though
-  its comment says "clamp and flag it for a human instead"; the only flag that
-  write sets is the long-timer one.
-* **A client is redirected to the entries listing from `/today` and `/month`,
-  and refused outright with 403 from `/week`.**
+* **Three reads were not scoped by project membership.**
+  `RoleAuthorizer.requireMembership` permits a resource that names no project,
+  which is right for one that genuinely has none - the instance settings, a user
+  account. But `entryResource` built `auth.Resource{Type, ID, OwnerID}` with no
+  project id, and the customer and audit-trail resources carried none either, so
+  a member asking about somebody else's record was answered as though they had
+  asked about a global setting. `Entry` gave another user's entry with its note
+  and billing snapshot, `Customer` gave any account with its negotiated rate,
+  and `AuditTrail` gave the history of any record of any type. The listings were
+  unaffected: they go through `effectiveScope` and are narrowed there, which is
+  why it appeared on no screen that shows a list.
+
+  The fix is in three parts, because filling in the field is not enough on its
+  own: the resources now say where they sit; a customer, which has no single
+  project, is scoped by membership of any of its projects; and a named record of
+  a project-scoped type that says nothing about where it sits is now *refused*
+  rather than permitted, so the next omission of this kind fails closed. The
+  audit trail resolves its own subject and asks the question that reading the
+  subject asks, with the history of a deleted record - which deliberately
+  outlives it - left to whoever administers the instance. The authoriser's client
+  branch also now checks that the customer is the acting client's own, which it
+  had never done: it was correct only because every call site happened to pass
+  the right id.
+
+  Failing closed turns a disclosure into a refusal, and a refusal somewhere no
+  test looks is still a bug - it breaks a manager instead of leaking to a
+  member. So a source scan
+  (`internal/repocheck/scoping_test.go`) reads every `auth.Resource` literal in
+  the service and web layers and requires one that names a record of a
+  project-scoped type to say where that record sits; a second test fails if that
+  scan's copy of the type list and the authoriser's own disagree. Both were
+  mutation-checked by reverting the fix.
+* **Every amount was parsed as having two decimal places**, whatever the
+  currency, and the currency check accepts any three letters - so an instance
+  invoicing in JPY, KRW, ISK or CLP held every amount, every rate and every
+  budget at a hundred times its value, with the arithmetic correct throughout
+  and nothing in the application disagreeing with itself. The exponent is now
+  the currency's own (`domain.CurrencyExponent`), read by parsing and rendering
+  alike, and the round trip - what is written can be typed back - is asserted
+  for a zero-, two-, three- and four-decimal currency.
+* **`CopyDay` had no guard against a day being copied onto itself**, which
+  doubles it: a copy adds to the target rather than replacing it, deliberately,
+  and that is what makes this case destructive in the quiet way. `CopyWeek` had
+  refused the same thing all along.
+* **A bare `.json` restore said nothing about the attachments it could not
+  carry**, although the `Attachments` field's own comment promised it "reports
+  rather than hides" them: the reporting lived in `restoreAttachments`, which is
+  reached only when there is an archive to read the files out of.
+* **Two of the four decisions that take a typed reason did not cap its
+  length** - declining an expense and reopening an approved week - where
+  declining a time entry and rejecting a week did. One function now, counting
+  characters rather than bytes, since that is what its message says.
+* **`StopTimer`'s clamp for a backwards clock did not flag the entry**, though
+  its comment said "clamp and flag it for a human instead". A zero-second entry
+  on a day somebody worked is not a plausible record, and the clamp made it look
+  like one. It is flagged now, kept out of totals until somebody corrects it,
+  and the trail records *why* - "ran for three days" and "ended before it
+  started" need different corrections.
+* **A client was redirected to the entries listing from `/today` and `/month`
+  and refused outright with 403 from `/week`**, because the redirect was four
+  lines copied twice rather than one helper. All the screens about somebody's own
+  timesheet now answer the same way; the administrative ones still refuse, which
+  is right - they have no client equivalent to be sent to.
+* **`blob.Acceptable` matched the text/plain family by prefix**, so
+  "text/plainish" was accepted. Nothing sniffs such a type, so it was looseness
+  rather than a hole - and two of the allow-list's keys carried a charset
+  parameter, which made the lookup miss for the same type sniffed without one
+  ("text/csv" alone was refused outright). Matched on the media type now, with
+  parameters cut and case folded.
+* **Swedish weekday names were capitalised**, against `FormatDateLong`'s own
+  comment ("lower case, as Swedish orthography requires"). Every long date on
+  every Swedish screen was written wrong, as were the weekday list in the
+  routine editor and the week-start option in settings.
+
+Nine more came from asking the same question of the screens rather than of the
+service: what does a *client* get from every route? The navigation has never
+offered them more than the entries listing and the guide, so nothing had ever
+walked the rest. Five were dead forms for recording time they do not record
+(`/routines`, `/move`, `/import`, `/calendar`, `/expenses`); four were
+disclosures (`/tags`, the four edit forms, `/settings`, `/attachments/{id}`), and
+the edit forms are the interesting ones: each loaded its record with a *view*
+check while the save it submits to requires update or manage, so an assignment's
+hourly rate arrived typed into a form field. The guard is a sweep over the route
+table (`internal/web/clientscreens_test.go`) requiring a decided answer for
+every GET - theirs, with a stated reason; redirected; or refused - and it was
+mutation-checked by reverting three of the fixes.
+
+Asking it of a *manager* found the last of the family: their authority is
+bounded by project membership, and the accounts, the instance settings, the
+backups and the tag vocabulary name no project, so the bound let them through.
+The role matrix gained the cases for all four, plus the ones that say what a
+manager keeps - their own projects, their own preferences, approving a
+timesheet - because a rule that refused them everything would have passed the
+first half alone.
+
+Asking the same question of a *member* found three more, and they are the same
+shape: the role table is written down and the code only implemented part of it.
+The catalogue screen showed them every rate and every budget, because the only
+narrowing that existed was the client's; the tag vocabulary was the whole
+instance's, names and counts; and the navigation offered them two links that
+refuse them. A fourth fell out of looking: `scopeFor` fills `OwnUserID` and
+promises "plus their own records", and the SQL never rendered it, so an account
+with no memberships could record an hour and find every screen empty. The
+projections now have a field-by-field test with a completeness guard - a field
+added to a catalogue struct that is in neither the removed nor the kept list
+fails it - and the scope has a direct test of all three of its dimensions as
+SQL. Both were mutation-checked.
+
+The backup screen was a tenth, found while building the preview of a stored
+archive: it was gated on "may you view time entries", which a member with no
+project memberships may. What they could *take* was narrowed by their own scope,
+so it was a weak gate rather than a disclosure - until a preview that reads a
+file on the server's disk, narrowed by nobody, made the difference matter. Every
+read of that directory is administrative now.
 
 ## 4. Practices
 

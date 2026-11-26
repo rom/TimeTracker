@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -593,10 +594,11 @@ func TestADecidedProposalCannotBeDecidedAgain(t *testing.T) {
 		t.Errorf("the refusal reads %q, which does not say it was already decided", err)
 	}
 
-	// The length of a decline's reason is capped for a time entry and for a
-	// week - both refuse over a thousand characters, since the reason is
-	// stored, shown and exported - and is *not* capped for an expense. Pinned
-	// as the inconsistency it is, and reported rather than changed here.
+	// The length of a decline's reason is capped, the same way for each of the
+	// four decisions that take one. It is stored, shown on a screen, carried
+	// into the audit trail and written into every export - and for a long time
+	// a time entry and a rejected week had the check while a declined expense
+	// and a reopened week did not.
 	huge := strings.Repeat("x", 2000)
 
 	entryReason, err := f.svc.CreateEntry(f.ctx, EntryInput{
@@ -619,9 +621,70 @@ func TestADecidedProposalCannotBeDecidedAgain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("propose another: %v", err)
 	}
-	if err := f.svc.RejectExpense(theirs, another.ID, huge); err != nil {
-		t.Logf("declining an expense now caps its reason (%v), matching the time "+
-			"entry and the week; this test's note is out of date", err)
+	if err := f.svc.RejectExpense(theirs, another.ID, huge); err == nil {
+		t.Error("a two-thousand-character reason was accepted for an expense")
+	}
+	// And the expense is still pending afterwards, rather than declined with
+	// the reason dropped: a refusal that half-applied would be worse than no
+	// cap at all.
+	pending, err := f.svc.Expense(f.ctx, another.ID)
+	if err != nil {
+		t.Fatalf("read the expense back: %v", err)
+	}
+	if pending.Status != domain.StatusPending {
+		t.Errorf("the expense is %s after a refused decline, want it untouched",
+			pending.Status)
+	}
+	// A reason just inside the cap is accepted, so the limit is a limit rather
+	// than a refusal of everything.
+	if err := f.svc.RejectExpense(theirs, another.ID, strings.Repeat("x", 1000)); err != nil {
+		t.Errorf("a thousand-character reason was refused: %v", err)
+	}
+}
+
+// TestEveryDecisionCapsItsReasonTheSameWay.
+//
+// Four operations take a typed explanation, and each stores it, shows it and
+// exports it. Two of them checked its length and two did not, which is the sort
+// of inconsistency nobody notices until somebody pastes a document into the
+// box - so the check is one function now, and this is the test that says all
+// four call it.
+//
+// The cap counts characters rather than bytes, which is what its message says:
+// a limit that silently shrinks to six hundred characters for one alphabet and
+// not another is not the limit it claims to be.
+func TestEveryDecisionCapsItsReasonTheSameWay(t *testing.T) {
+	// Just inside, just outside, and just outside in an alphabet where a
+	// character is more than one byte.
+	if err := checkReason(strings.Repeat("x", maxDecisionReason)); err != nil {
+		t.Errorf("a reason at the limit was refused: %v", err)
+	}
+	if err := checkReason(strings.Repeat("x", maxDecisionReason+1)); err == nil {
+		t.Error("a reason one character past the limit was accepted")
+	}
+	if err := checkReason(strings.Repeat("å", maxDecisionReason)); err != nil {
+		t.Errorf("a thousand Swedish characters were refused as two thousand "+
+			"bytes: %v", err)
+	}
+	if err := checkReason(strings.Repeat("日", maxDecisionReason+1)); err == nil {
+		t.Error("a reason past the limit was accepted because its characters " +
+			"are three bytes each")
+	}
+
+	// And the refusal says what the limit is and how far past it this was,
+	// because "too long" leaves somebody deleting words at random.
+	err := checkReason(strings.Repeat("x", 2000))
+	if err == nil {
+		t.Fatal("no refusal to read")
+	}
+	for _, mentioned := range []string{"2000", "1000"} {
+		if !strings.Contains(err.Error(), mentioned) {
+			t.Errorf("the refusal %q does not mention %s", err, mentioned)
+		}
+	}
+	if !errors.Is(err, ErrValidation) {
+		t.Errorf("the refusal is %v, want a validation error so the form can "+
+			"show it beside the field", err)
 	}
 }
 

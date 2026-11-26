@@ -16,6 +16,17 @@ import (
 
 // handleExpenses renders the expenses screen.
 func (s *Server) handleExpenses(w http.ResponseWriter, r *http.Request) {
+	// An expense is somebody's own claim throughout: this screen lists the
+	// acting user's, and the export carries none at all. A client records none
+	// and cannot, so the screen is empty for them by construction - an empty
+	// table with a recording form under it, the same answer the month screen
+	// used to give before it redirected. If a client is ever to see the costs
+	// charged to them, that is a listing scoped by customer rather than by
+	// claimant, and a different screen from this one.
+	if s.sentToTheirOwnListing(w, r) {
+		return
+	}
+
 	data, err := s.newPageData(r, "", "expenses")
 	if err != nil {
 		s.fail(w, r, err)

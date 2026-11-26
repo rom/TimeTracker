@@ -159,15 +159,45 @@
     <fieldset>
       <legend>{{.T "week.title" ""}}</legend>
 
+      {{/* Ordered by where the choice puts the weekend rather than by day
+           number: Monday ends the week with it, Saturday starts the week with
+           it, Sunday splits it across both ends. That is the question people
+           are actually answering here, and the help text below says so - "first
+           day of the week" alone leaves somebody to work out the consequence
+           for themselves. */}}
       <label>
         {{.T "settings.weekstart"}}
         {{$week := .Settings.WeekStart}}
         <select name="week_start">
           <option value="1" {{if eq $week 1}}selected{{end}}>{{.T "weekday.monday"}}</option>
-          <option value="7" {{if eq $week 7}}selected{{end}}>{{.T "weekday.sunday"}}</option>
           <option value="6" {{if eq $week 6}}selected{{end}}>{{.T "weekday.saturday"}}</option>
+          <option value="7" {{if eq $week 7}}selected{{end}}>{{.T "weekday.sunday"}}</option>
         </select>
       </label>
+      <p class="field-help">{{.T "settings.weekstart.hint"}}</p>
+
+      {{/* The weekend: whether it may be worked, and how it is drawn.
+
+           Both live here beside the week's first day because they are the same
+           subject - where the weekend is, whether it counts, what it looks
+           like - and somebody changing one usually wants to see the others. */}}
+      <label class="inline-check">
+        <input type="checkbox" name="weekend_recording"
+               {{if .Settings.WeekendRecording}}checked{{end}}>
+        {{.T "settings.weekendrecording"}}
+      </label>
+      <p class="field-help">{{.T "settings.weekendrecording.hint"}}</p>
+
+      <label>
+        {{.T "settings.weekendcolour"}}
+        {{$colour := .WeekendColour}}
+        <select name="weekend_colour">
+          {{range colours}}
+            <option value="{{.}}" {{if eq . $colour}}selected{{end}}>{{$.T (printf "colour.%s" .)}}</option>
+          {{end}}
+        </select>
+      </label>
+      <p class="field-help">{{.T "settings.weekendcolour.hint"}}</p>
 
       <label>
         {{.T "settings.maxtimer"}}

@@ -52,6 +52,16 @@ type SettingsInput struct {
 	DayEndHour   int
 	DayOverflow  string
 
+	// WeekendRecordingDisabled refuses time on a Saturday or a Sunday. Phrased
+	// as the refusal rather than the permission, like RemindersDisabled above
+	// and for the same reason: a caller that leaves the field out gets the
+	// permissive value. Spelt the other way round, every existing caller that
+	// does not know about this field - and there are several, in tests and in
+	// the importers' settings - would quietly start refusing weekends.
+	WeekendRecordingDisabled bool
+	// WeekendColour is a palette key for the day numbers of a weekend.
+	WeekendColour string
+
 	// BackupPassword is write-only from the form's point of view: it is never
 	// rendered back, so an empty field means "leave it as it is" rather than
 	// "clear it". ClearBackupPassword is how it is actually removed, because
@@ -135,6 +145,13 @@ func (s *Service) UpdateSettings(ctx context.Context, in SettingsInput) error {
 	// a class attribute.
 	window := domain.NormaliseDayWindow(in.DayStartHour, in.DayEndHour)
 
+	// The same reasoning for the weekend's colour: a key the stylesheet has no
+	// rule for would render as no colour at all, which is a setting that looks
+	// saved and does nothing. Falling back to the previous value keeps the
+	// screen honest about what is in force.
+	weekendColour := domain.ColourKeyOr(in.WeekendColour,
+		domain.ColourKeyOr(existing.WeekendColour, "red"))
+
 	// The backup password: absent means unchanged, because the form never shows
 	// it back and an empty field would otherwise silently disable encryption
 	// the first time somebody saved an unrelated setting.
@@ -163,6 +180,8 @@ func (s *Service) UpdateSettings(ctx context.Context, in SettingsInput) error {
 		DayStartHour:     window.StartHour,
 		DayEndHour:       window.EndHour,
 		DayOverflow:      string(domain.DayOverflow(in.DayOverflow).OrDefault()),
+		WeekendRecording: !in.WeekendRecordingDisabled,
+		WeekendColour:    weekendColour,
 		BackupPassword:   backupPassword,
 	}
 	// Audited: a rounding or rate default changes what future work is worth, so
@@ -174,6 +193,13 @@ func (s *Service) UpdateSettings(ctx context.Context, in SettingsInput) error {
 		"default_rounding": map[string]any{"from": existing.DefaultRounding, "to": rounding},
 		"default_rate":     map[string]any{"from": existing.DefaultRateMinor, "to": rate.Minor},
 		"week_start":       map[string]any{"from": existing.WeekStart, "to": weekStart},
+		// Audited because it is a policy rather than a preference: turning
+		// weekend recording off changes what the application will accept, and
+		// somebody whose Saturday entry was refused needs the trail to say
+		// when that became true and who decided it.
+		"weekend_recording": map[string]any{
+			"from": existing.WeekendRecording, "to": !in.WeekendRecordingDisabled,
+		},
 		"backup_encrypted": map[string]any{
 			"from": existing.BackupPassword != "", "to": backupPassword != "",
 		},

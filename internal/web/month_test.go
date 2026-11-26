@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -45,7 +46,8 @@ func TestTheMonthScreenIsACalendarOfTheMonth(t *testing.T) {
 		t.Errorf("the recorded hours are not on the calendar:\n%s", firstTable(body))
 	}
 	// The week rows link to the week view, which is where a thin week gets
-	// fixed.
+	// fixed. Which row opens which week, and what the link says, is
+	// TestTheMonthsWeekNumbersOpenTheirWeeks below.
 	if !strings.Contains(body, `href="/week?date=`) {
 		t.Error("the week rows do not link to the week view")
 	}
@@ -290,4 +292,225 @@ func monthHeadings(body string) string {
 		found = found[:12]
 	}
 	return strings.Join(found, "\n")
+}
+
+// TestTheWeekGridsDatesOpenTheirDays.
+//
+// A week is read to find the day something is wrong on, and the only way across
+// was the date picker - which means typing a date that is already on the screen
+// in front of you. Every heading in the grid is now that day's link, as the
+// month's squares already were.
+func TestTheWeekGridsDatesOpenTheirDays(t *testing.T) {
+	srv, _ := newTestServer(t)
+	seedCatalogue(t, srv)
+
+	// The fixture's clock sits in the week of Monday 2026-03-16.
+	post(t, srv, "/entries", url.Values{
+		"assignment_id": {"1"}, "date": {"2026-03-18"}, "start": {"09:00"},
+		"duration": {"2h"}, "billable": {"on"},
+	})
+
+	body := get(t, srv, "/week?date=2026-03-18").Body.String()
+
+	// Every day of the week, Monday to Sunday, and not a day outside it.
+	for day := 16; day <= 22; day++ {
+		date := fmt.Sprintf("2026-03-%02d", day)
+		if !strings.Contains(body, `href="/today?date=`+date+`"`) {
+			t.Errorf("the %s heading does not open its day:\n%s", date, firstTable(body))
+		}
+	}
+	for _, outside := range []string{"2026-03-15", "2026-03-23"} {
+		if strings.Contains(body, `href="/today?date=`+outside+`"`) {
+			t.Errorf("%s is linked from the week that does not contain it", outside)
+		}
+	}
+
+	// The title says which day and what is on it, because "Wed 18" is enough to
+	// click and not enough to be sure of.
+	if !strings.Contains(body, "Wednesday 18 March 2026: 2h 00m") {
+		t.Errorf("the heading does not say which day it opens and what is on "+
+			"it:\n%s", firstTable(body))
+	}
+	if !strings.Contains(body, "Monday 16 March 2026: nothing recorded") {
+		t.Errorf("an empty day's heading does not say so:\n%s", firstTable(body))
+	}
+
+	// And the link goes somewhere: the day it names, holding the entry.
+	day := get(t, srv, "/today?date=2026-03-18")
+	if day.Code != http.StatusOK {
+		t.Fatalf("following a week heading = %d", day.Code)
+	}
+	if !strings.Contains(day.Body.String(), "2026-03-18") {
+		t.Error("the day the heading opened is not the day it named")
+	}
+
+	// The submission review shares the grid, and the same reasoning applies
+	// there more strongly: it is the screen that tells you which day is short.
+	review := get(t, srv, "/week/review?week=2026-03-16").Body.String()
+	if !strings.Contains(review, `href="/today?date=2026-03-18"`) {
+		t.Error("the review's copy of the grid does not open its days")
+	}
+}
+
+// TestTheMonthsWeekNumbersOpenTheirWeeks.
+//
+// They have always been links - a month view is where somebody notices a thin
+// week and the week view is where they fix it - but the link was the digits
+// alone: ten pixels across for a single-digit week number, in a cell of
+// forty-eight by seventy-two. The whole cell is the target now, as the squares
+// beside it are, and the title says the link opens the week, which a bare "12"
+// in the margin of a calendar does not.
+func TestTheMonthsWeekNumbersOpenTheirWeeks(t *testing.T) {
+	srv, _ := newTestServer(t)
+	seedCatalogue(t, srv)
+
+	post(t, srv, "/entries", url.Values{
+		"assignment_id": {"1"}, "date": {"2026-03-18"}, "start": {"09:00"},
+		"duration": {"2h"}, "billable": {"on"},
+	})
+
+	body := get(t, srv, "/month?month=2026-03").Body.String()
+
+	// Every row of March, by the Monday it starts on. The first row begins in
+	// February and links to that week rather than to the first of March: it is
+	// the week the row is, and the week somebody wants when they click it.
+	for _, week := range []struct {
+		start  string
+		number int
+	}{
+		{"2026-02-23", 9}, {"2026-03-02", 10}, {"2026-03-09", 11},
+		{"2026-03-16", 12}, {"2026-03-23", 13}, {"2026-03-30", 14},
+	} {
+		if !strings.Contains(body, `href="/week?date=`+week.start+`"`) {
+			t.Errorf("the row starting %s does not open its week:\n%s",
+				week.start, firstTable(body))
+		}
+		if title := fmt.Sprintf("Open week %d", week.number); !strings.Contains(body, title) {
+			t.Errorf("no link is titled %q, so a bare number is all the cell "+
+				"says:\n%s", title, firstTable(body))
+		}
+	}
+
+	// And the link goes somewhere: the week it names, holding the entry.
+	week := get(t, srv, "/week?date=2026-03-16")
+	if week.Code != http.StatusOK {
+		t.Fatalf("following a week number = %d", week.Code)
+	}
+	if !strings.Contains(week.Body.String(), "2026-03-16") {
+		t.Error("the week the number opened is not the week it named")
+	}
+}
+
+// monthRows returns the month calendar's body rows, one string each.
+//
+// The assertions below are about which cell holds a link, not about whether the
+// page mentions a URL anywhere: the week number already links to the week, so a
+// plain substring search over the page would pass with the total cell inert.
+func monthRows(t *testing.T, body string) []string {
+	t.Helper()
+
+	grid := body[strings.Index(body, `class="month-grid"`):]
+	grid = grid[:strings.Index(grid, "</table>")]
+	rows := strings.Split(grid, "<tr>")
+	var found []string
+	for _, row := range rows[1:] {
+		if strings.Contains(row, "cell-weeknum") {
+			found = append(found, row)
+		}
+	}
+	if len(found) == 0 {
+		t.Fatalf("no week rows in the month grid:\n%s", firstTable(body))
+	}
+	return found
+}
+
+// cellOfClass returns the one cell of a row carrying the given class.
+func cellOfClass(t *testing.T, row, class string) string {
+	t.Helper()
+
+	at := strings.Index(row, `class="`+class+`"`)
+	if at < 0 {
+		t.Fatalf("no %s cell in the row:\n%s", class, row)
+	}
+	// Back to the tag the class belongs to, forward to the end of the cell.
+	start := strings.LastIndex(row[:at], "<")
+	end := strings.Index(row[start:], ">")
+	tag := row[start+1 : start+end]
+	closing := "</" + strings.Fields(tag)[0] + ">"
+	stop := strings.Index(row[start:], closing)
+	if stop < 0 {
+		t.Fatalf("the %s cell is never closed:\n%s", class, row)
+	}
+	return row[start : start+stop]
+}
+
+// hrefOf returns the single link target in a fragment of markup.
+func hrefOf(t *testing.T, fragment string) string {
+	t.Helper()
+
+	at := strings.Index(fragment, `href="`)
+	if at < 0 {
+		t.Fatalf("no link in:\n%s", fragment)
+	}
+	rest := fragment[at+len(`href="`):]
+	end := strings.Index(rest, `"`)
+	if end < 0 {
+		t.Fatalf("an unterminated href in:\n%s", fragment)
+	}
+	return rest[:end]
+}
+
+// TestTheMonthsWeekTotalsOpenTheirWeeks.
+//
+// The week number at one end of the row opens the week. The total at the other
+// end is the end somebody actually reads - the eye goes to the figure - so the
+// figure is a target too, and the two agree on where they lead.
+//
+// Linked on an empty week as well, which is the week most worth opening: a cell
+// that is a target on some rows and not others is a worse target than one that
+// always is.
+func TestTheMonthsWeekTotalsOpenTheirWeeks(t *testing.T) {
+	srv, _ := newTestServer(t)
+	seedCatalogue(t, srv)
+
+	// One week of March has time on it. The rest are empty.
+	post(t, srv, "/entries", url.Values{
+		"assignment_id": {"1"}, "date": {"2026-03-18"}, "start": {"09:00"},
+		"duration": {"2h"}, "billable": {"on"},
+	})
+
+	body := get(t, srv, "/month?month=2026-03").Body.String()
+
+	rows := monthRows(t, body)
+	if len(rows) != 6 {
+		t.Fatalf("March 2026 drew %d week rows, want 6", len(rows))
+	}
+
+	withFigure := 0
+	for _, row := range rows {
+		weeknum := cellOfClass(t, row, "cell-weeknum")
+		total := cellOfClass(t, row, "cell-total")
+
+		// The destination the week number names, read out of the row itself, so
+		// this test does not restate the calendar's arithmetic.
+		href := hrefOf(t, weeknum)
+
+		if !strings.Contains(total, `href="`+href+`"`) {
+			t.Errorf("the week total does not open the week its number does\n"+
+				"number: %s\ntotal:  %s", strings.TrimSpace(weeknum), strings.TrimSpace(total))
+		}
+		if strings.Contains(total, ">0.00<") {
+			t.Errorf("an empty week's total reads as a zero rather than a "+
+				"blank:\n%s", strings.TrimSpace(total))
+		}
+		if strings.Contains(total, "2.00") {
+			withFigure++
+		}
+	}
+
+	// The week with time on it still shows its figure: the cell became a link,
+	// not a link instead of a total.
+	if withFigure != 1 {
+		t.Errorf("%d week totals show 2.00, want exactly the week of the entry", withFigure)
+	}
 }

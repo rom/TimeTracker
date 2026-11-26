@@ -749,10 +749,24 @@
       <thead>
         <tr>
           <th scope="col" class="col-assignment">{{$page.T "week.assignment"}}</th>
-          {{range $week.Days}}
-            <th scope="col" class="col-day {{if isToday . $page.Now}}is-today{{end}}">
-              <span class="day-name">{{$page.Printer.FormatWeekday .}}</span>
-              <span class="day-num">{{dayNum .}}</span>
+          {{/* Each date opens its own day. A week is read to find the day
+               something is wrong on, and before this the only way across was
+               the date picker below the heading - which means typing a date
+               that is already on the screen in front of you. The whole heading
+               cell is the link, as the month's squares are, because the target
+               somebody aims at is the cell and not the four characters in it.
+
+               The title carries the date spelled out and the day's total: the
+               visible text is "Mon 16", which is enough to click and not enough
+               to be sure of. DayTotals is indexed in step with Days. */}}
+          {{range $i, $day := $week.Days}}
+            {{$totals := index $week.DayTotals $i}}
+            <th scope="col" class="col-day {{if isToday $day $page.Now}}is-today{{end}} {{if isWeekend $day}}is-weekend{{end}}">
+              <a href="/today?date={{date $day}}"
+                 title="{{if gt $totals.SummedSeconds 0}}{{$page.T "day.summary" ($page.Printer.FormatDateLong $day) ($page.Printer.FormatDuration $totals.SummedSeconds)}}{{else}}{{$page.T "day.summary.empty" ($page.Printer.FormatDateLong $day)}}{{end}}">
+                <span class="day-name">{{$page.Printer.FormatWeekday $day}}</span>
+                <span class="day-num">{{dayNum $day}}</span>
+              </a>
             </th>
           {{end}}
           <th scope="col" class="col-total">{{$page.T "week.total"}}</th>
@@ -771,7 +785,7 @@
             {{$row := .}}
             {{range $i, $d := $week.Days}}
               {{$seconds := nth $row.Seconds $i}}
-              <td class="cell-day {{if eq $seconds 0}}empty{{end}}">
+              <td class="cell-day {{if eq $seconds 0}}empty{{end}} {{if isWeekend $d}}is-weekend{{end}}">
                 {{if gt $seconds 0}}{{$page.Printer.FormatDecimal (hours $seconds)}}{{end}}
               </td>
             {{end}}
@@ -784,8 +798,12 @@
       <tfoot>
         <tr>
           <th scope="row">{{$page.T "week.daytotal"}}</th>
-          {{range $week.DayTotals}}
-            <td class="cell-day-total">{{if gt .SummedSeconds 0}}{{$page.Printer.FormatDecimal (hours .SummedSeconds)}}{{end}}</td>
+          {{/* Indexed rather than ranged over the totals alone, so the footer
+               can mark the weekend columns too: a raster that stopped above
+               the totals row would read as a shaded block rather than as a
+               column of days. */}}
+          {{range $i, $totals := $week.DayTotals}}
+            <td class="cell-day-total {{if isWeekend (index $week.Days $i)}}is-weekend{{end}}">{{if gt $totals.SummedSeconds 0}}{{$page.Printer.FormatDecimal (hours $totals.SummedSeconds)}}{{end}}</td>
           {{end}}
           <td class="cell-total">{{$page.Printer.FormatDecimal (hours $week.Totals.SummedSeconds)}}</td>
         </tr>

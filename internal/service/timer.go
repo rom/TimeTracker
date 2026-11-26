@@ -42,6 +42,12 @@ func (s *Service) StartTimer(ctx context.Context, assignmentID int64, note strin
 	if err := s.checkPeriodOpen(ctx, actor.ID, s.now()); err != nil {
 		return domain.TimeEntry{}, err
 	}
+	// And the same for a weekend the instance does not work. Told at the start
+	// for the same reason: refusing at Stop would be refusing after the fact,
+	// with an hour of work already done and nowhere to put it.
+	if err := s.checkWeekendAllowed(ctx, actor.ID, s.now()); err != nil {
+		return domain.TimeEntry{}, err
+	}
 
 	entry := domain.TimeEntry{
 		UserID:       actor.ID,
@@ -101,10 +107,18 @@ func (s *Service) StopTimer(ctx context.Context, entryID int64) (domain.TimeEntr
 
 	endedAt := s.now()
 	seconds := domain.SecondsBetween(entry.StartedAt, endedAt)
-	if seconds < 0 {
+	clamped := seconds < 0
+	if clamped {
 		// The clock moved backwards, or the entry was edited to start in the
 		// future. Recording a negative duration would poison every total, so
 		// clamp and flag it for a human instead.
+		//
+		// The flag is the half that was missing. A zero-second entry on a day
+		// somebody worked is not a plausible record, and the clamp made it look
+		// like one: the only way to find out that an hour had gone missing was
+		// to notice the day was short. It is flagged below with the long-timer
+		// case, which keeps it out of totals until a human says what the
+		// interval should have been.
 		seconds = 0
 	}
 
@@ -130,8 +144,10 @@ func (s *Service) StopTimer(ctx context.Context, entryID int64) (domain.TimeEntr
 	}
 	// A timer left running overnight is the dominant failure mode of any tracker.
 	// Rather than silently billing it, mark it for review; flagged entries are
-	// excluded from totals until a human resolves them.
-	flagged := settings.MaxTimerSeconds > 0 && seconds > settings.MaxTimerSeconds
+	// excluded from totals until a human resolves them. A clamped interval is
+	// the other case: both are "this duration is not what was worked".
+	tooLong := settings.MaxTimerSeconds > 0 && seconds > settings.MaxTimerSeconds
+	flagged := tooLong || clamped
 
 	err = s.db.InTx(ctx, func(tx *sql.Tx) error {
 		stopped, txErr := store.StopEntryTx(ctx, tx, entryID, endedAt, seconds, snapshot)
@@ -156,6 +172,10 @@ func (s *Service) StopTimer(ctx context.Context, entryID int64) (domain.TimeEntr
 			"amount_minor":     snapshot.AmountMinor,
 			"currency":         snapshot.Currency,
 			"flagged":          flagged,
+			// Why it was flagged, which is the difference between "this timer
+			// ran for three days" and "this timer ended before it started".
+			// The second needs the start time corrected and the first does not.
+			"clamped": clamped,
 		})
 	})
 	if err != nil {
@@ -303,6 +323,13 @@ func (s *Service) prepareEntry(ctx context.Context, in EntryInput) (domain.TimeE
 	if err := s.checkPeriodOpen(ctx, entry.UserID, entry.StartedAt); err != nil {
 		return domain.TimeEntry{}, domain.Assignment{}, err
 	}
+	// New time landing on a weekend the instance does not work. Here rather
+	// than in CreateEntry so that every way of making an entry is covered -
+	// the quick add, a copied day, a routine, the CSV and calendar importers -
+	// and so an importer can skip the row and still write the rest atomically.
+	if err := s.checkWeekendAllowed(ctx, entry.UserID, entry.StartedAt); err != nil {
+		return domain.TimeEntry{}, domain.Assignment{}, err
+	}
 	if err := s.applyBillingTo(ctx, &entry); err != nil {
 		return domain.TimeEntry{}, domain.Assignment{}, err
 	}
@@ -353,6 +380,16 @@ func (s *Service) UpdateEntry(ctx context.Context, entryID int64, in EntryInput)
 	}
 	if !in.StartedAt.IsZero() && !sameWeek(existing.StartedAt, in.StartedAt) {
 		if err := s.checkPeriodOpen(ctx, existing.UserID, in.StartedAt); err != nil {
+			return domain.TimeEntry{}, err
+		}
+	}
+	// The weekend policy applies to where the entry is going, and only when it
+	// is actually going somewhere. An entry that already sits on a Saturday
+	// must stay editable - its note corrected, its assignment changed, and
+	// above all its date moved to a working day - or turning the policy on
+	// would freeze every weekend entry already recorded.
+	if !in.StartedAt.IsZero() && !sameDay(existing.StartedAt, in.StartedAt) {
+		if err := s.checkWeekendAllowed(ctx, existing.UserID, in.StartedAt); err != nil {
 			return domain.TimeEntry{}, err
 		}
 	}
@@ -446,6 +483,30 @@ func (s *Service) Entry(ctx context.Context, entryID int64) (domain.TimeEntry, e
 	return s.narrowEntry(ctx, entry), nil
 }
 
+// EntryForEdit loads an entry for the correction form.
+//
+// Entry above asks whether the actor may read it, which a colleague on a shared
+// project may and a client may over their own customer's work. The form submits
+// to UpdateEntry, which asks whether they may change it - only the subject of
+// the entry can. So the form was reachable by two people who could not save it,
+// and for a client it also carried the whole instance's tag vocabulary in its
+// datalist, which the projection strips from their entries on purpose.
+//
+// Unnarrowed, deliberately: a form whose fields were narrowed would write the
+// narrowed values back on save. That is safe only because the check above has
+// already established that the actor may change this record, which is the whole
+// difference between this and Entry.
+func (s *Service) EntryForEdit(ctx context.Context, entryID int64) (domain.TimeEntry, error) {
+	entry, err := s.db.GetEntry(ctx, entryID)
+	if err != nil {
+		return domain.TimeEntry{}, err
+	}
+	if err := s.canModify(ctx, entry); err != nil {
+		return domain.TimeEntry{}, notFoundFor(err)
+	}
+	return entry, nil
+}
+
 // RunningTimers returns every timer currently running for the acting user. The
 // header renders this on every page, so losing track of a timer is hard.
 func (s *Service) RunningTimers(ctx context.Context) ([]domain.TimeEntry, error) {
@@ -493,8 +554,19 @@ func (s *Service) canDelete(ctx context.Context, entry domain.TimeEntry) error {
 // entryResource describes an entry for an authorisation decision. OwnerID is the
 // subject of the entry, not whoever typed it in, which is what stops a proxy
 // author from retaining editing rights over someone else's confirmed time.
+//
+// The project and the customer are named too, which is what scopes a read of
+// somebody else's entry. They were missing, and the authoriser permits a
+// resource that names no project - correctly, for a global setting - so a
+// member asking for a colleague's entry by id got it, with its note and its
+// billing snapshot. The fields are on the entry for exactly this: see the
+// "denormalised for display and for authorisation scoping" comment on
+// domain.TimeEntry.
 func entryResource(e domain.TimeEntry) auth.Resource {
-	return auth.Resource{Type: "time_entry", ID: e.ID, OwnerID: e.UserID}
+	return auth.Resource{
+		Type: "time_entry", ID: e.ID, OwnerID: e.UserID,
+		ProjectID: e.ProjectID, CustomerID: e.CustomerID,
+	}
 }
 
 // applyEnd fills in the end time and duration from whichever the caller supplied.
@@ -513,6 +585,18 @@ func applyEnd(entry *domain.TimeEntry, in EntryInput) {
 		entry.EndedAt = nil
 		entry.DurationSeconds = 0
 	}
+}
+
+// sameDay reports whether two instants fall on the same calendar day in UTC.
+//
+// Used to tell an edit that moves an entry from one that merely changes its
+// note. The zone is UTC rather than the owner's, which makes it conservative in
+// exactly the right direction: two instants that are the same day for the owner
+// but straddle midnight in UTC are treated as a move and checked, whereas the
+// reverse - calling a real move "unchanged" and skipping the check - cannot
+// happen.
+func sameDay(a, b time.Time) bool {
+	return a.UTC().Truncate(24 * time.Hour).Equal(b.UTC().Truncate(24 * time.Hour))
 }
 
 // sameWeek reports whether two instants fall in the same ISO week.

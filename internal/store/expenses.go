@@ -157,7 +157,9 @@ func (db *DB) ListExpenses(ctx context.Context, f ExpenseFilter) ([]domain.Expen
 			args = append(args, string(s))
 		}
 	}
-	if scoped, scopeArgs := f.Scope.condition("e.project_id", "p.customer_id"); scoped != "" {
+	// With the owner, as the entry listing: an expense somebody claimed is
+	// theirs to see wherever the project sits.
+	if scoped, scopeArgs := f.Scope.condition("e.project_id", "p.customer_id", "e.user_id"); scoped != "" {
 		conditions = append(conditions, scoped)
 		args = append(args, scopeArgs...)
 	}

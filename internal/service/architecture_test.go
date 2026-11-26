@@ -38,6 +38,11 @@ var exemptFromNarrowing = map[string]string{
 	"ApplyRoutine": "write: a client may not create",
 	"AcceptEntry":  "write: a client may not decide a proposal",
 	"Totals":       "pure arithmetic over entries the caller already has",
+	// Not a write, but authorised as one: it asks canModify, which is
+	// ActionUpdate, and the authoriser refuses that to a client outright. It
+	// has to be unnarrowed - it fills a form that saves its fields back, and a
+	// narrowed form would write the narrowing into the record.
+	"EntryForEdit": "authorised with ActionUpdate: a client may not update",
 }
 
 // TestEveryEntryReadIsNarrowed.

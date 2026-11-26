@@ -151,3 +151,124 @@ func TestMoneyString(t *testing.T) {
 		}
 	}
 }
+
+// A currency's minor unit is not always a hundredth.
+//
+// This application held every currency at two decimal places, and validates a
+// currency code as any three letters - so an instance invoicing in yen held
+// every amount, every rate and every budget at a hundred times its value, and
+// nothing in the application disagreed with itself. The arithmetic was right
+// throughout; the unit was wrong.
+
+// TestCurrencyExponents pins the three groups and the default.
+func TestCurrencyExponents(t *testing.T) {
+	for currency, want := range map[string]int{
+		// The ordinary case, which is most of the world.
+		"SEK": 2, "EUR": 2, "USD": 2, "GBP": 2, "NOK": 2,
+		// No subdivision at all.
+		"JPY": 0, "KRW": 0, "ISK": 0, "CLP": 0, "VND": 0, "XOF": 0,
+		// Thousandths.
+		"KWD": 3, "BHD": 3, "OMR": 3, "TND": 3,
+		// And the two units of account that use four.
+		"CLF": 4, "UYW": 4,
+		// Lower case and padded, as a form or an import might deliver it.
+		"jpy": 0, " JPY ": 0,
+		// An unlisted code gets two. Being wrong this way is the safe
+		// direction: an amount out by a hundred is noticed on the first
+		// invoice, and one out by nothing is not noticed at all.
+		"ZZZ": 2, "": 2,
+	} {
+		if got := CurrencyExponent(currency); got != want {
+			t.Errorf("CurrencyExponent(%q) = %d, want %d", currency, got, want)
+		}
+	}
+}
+
+// TestAnAmountIsParsedInItsCurrencysUnit.
+func TestAnAmountIsParsedInItsCurrencysUnit(t *testing.T) {
+	for _, tc := range []struct {
+		in       string
+		currency string
+		want     int64
+		why      string
+	}{
+		{"100", "SEK", 10000, "a hundred kronor is ten thousand öre"},
+		{"100", "JPY", 100, "a hundred yen is a hundred yen"},
+		{"1234", "ISK", 1234, "and krónur have no aurar either"},
+		{"100", "KWD", 100000, "a dinar is a thousand fils"},
+		{"1.5", "KWD", 1500, "and a decimal pads to three places, not two"},
+		{"1.234", "KWD", 1234, "all three of them"},
+		{"1.2345", "KWD", 1234, "and the fourth is more precision than it holds"},
+		// A figure typed with decimals in a currency that has none. Truncated
+		// rather than refused: the extra digits of a two-decimal currency
+		// already are, and a paste from a spreadsheet should not be an error.
+		{"100.50", "JPY", 100, "decimals in yen are not a hundredth of anything"},
+		{"-250", "JPY", -250, "and the sign survives"},
+		{"1 234", "JPY", 1234, "as do the thousands separators"},
+	} {
+		t.Run(tc.currency+" "+tc.in, func(t *testing.T) {
+			got, err := ParseMoney(tc.in, tc.currency)
+			if err != nil {
+				t.Fatalf("ParseMoney(%q, %q): %v", tc.in, tc.currency, err)
+			}
+			if got.Minor != tc.want {
+				t.Errorf("ParseMoney(%q, %q) = %d minor units, want %d - %s",
+					tc.in, tc.currency, got.Minor, tc.want, tc.why)
+			}
+		})
+	}
+}
+
+// TestAnAmountIsWrittenInItsCurrencysUnit.
+//
+// The other half, and the one an invoice shows: "1234.00 JPY" is not a smaller
+// amount than "1234 JPY", it is a figure nobody writing in yen would recognise.
+func TestAnAmountIsWrittenInItsCurrencysUnit(t *testing.T) {
+	for _, tc := range []struct {
+		money       Money
+		wantDecimal string
+		wantString  string
+	}{
+		{NewMoney(123450, "SEK"), "1234.50", "1234.50 SEK"},
+		{NewMoney(1234, "JPY"), "1234", "1234 JPY"},
+		{NewMoney(0, "JPY"), "0", "0 JPY"},
+		{NewMoney(-1234, "JPY"), "-1234", "-1234 JPY"},
+		{NewMoney(1234567, "KWD"), "1234.567", "1234.567 KWD"},
+		{NewMoney(7, "KWD"), "0.007", "0.007 KWD"},
+		{NewMoney(5, "SEK"), "0.05", "0.05 SEK"},
+		// No currency at all is a bare figure, and still two places: the zero
+		// value combines with anything, so it has to render as something.
+		{NewMoney(150, ""), "1.50", "1.50"},
+	} {
+		t.Run(tc.wantString, func(t *testing.T) {
+			if got := tc.money.Decimal(); got != tc.wantDecimal {
+				t.Errorf("Decimal() = %q, want %q", got, tc.wantDecimal)
+			}
+			if got := tc.money.String(); got != tc.wantString {
+				t.Errorf("String() = %q, want %q", got, tc.wantString)
+			}
+		})
+	}
+}
+
+// TestWhatIsWrittenCanBeTypedBack.
+//
+// The round trip, which is what makes a figure on a screen safe to retype into
+// a form. It has to hold in every currency, and it is the property the
+// two-decimal assumption broke: 1234 yen rendered as "1234.00" and read back as
+// 123400.
+func TestWhatIsWrittenCanBeTypedBack(t *testing.T) {
+	for _, currency := range []string{"SEK", "EUR", "JPY", "ISK", "KWD", "CLF", ""} {
+		for _, minor := range []int64{0, 1, 7, 50, 99, 100, 1234, 123450, -1234} {
+			original := NewMoney(minor, currency)
+			parsed, err := ParseMoney(original.Decimal(), currency)
+			if err != nil {
+				t.Fatalf("ParseMoney(%q, %q): %v", original.Decimal(), currency, err)
+			}
+			if parsed.Minor != minor {
+				t.Errorf("%d %s rendered as %q and read back as %d",
+					minor, currency, original.Decimal(), parsed.Minor)
+			}
+		}
+	}
+}

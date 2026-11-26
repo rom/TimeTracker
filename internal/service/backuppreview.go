@@ -101,16 +101,14 @@ func (p BackupPreview) Seconds() int64 { return p.seconds }
 // server's, and a caller naming a path would be choosing which file on the
 // machine to read.
 //
-// Administered rather than merely viewed, which is a stricter gate than
-// PreviewArchive below and deliberately so. An archive in that directory was
-// written by whoever runs the instance and holds the catalogue whole, unnarrowed
-// by anybody's scope - and unlike the download, which builds a fresh archive
-// through the acting user's scope, this reads a file the caller does not have.
-// AuthorizeBackup is not enough for that: it asks whether the caller may view
-// time entries, which a member with no project memberships may, so it would let
-// somebody read an instance-wide archive one name at a time.
+// Administrative, like every other read of the server's backup directory: an
+// archive in it was written by whoever runs the instance and holds the catalogue
+// whole, unnarrowed by anybody's scope. Unlike the download, which builds a
+// fresh archive through the acting user's scope, this reads a file the caller
+// does not have - which is what made AuthorizeBackup's old check, "may you view
+// time entries", too weak to stand here.
 func (s *Service) PreviewBackupFile(ctx context.Context, dir, name string) (BackupPreview, error) {
-	if err := s.authz.Can(ctx, auth.ActionManage, auth.Resource{Type: "backup"}); err != nil {
+	if err := s.AuthorizeBackup(ctx); err != nil {
 		return BackupPreview{}, err
 	}
 	// The name is taken as a name and never as a path: joining a caller's
@@ -150,8 +148,13 @@ func (s *Service) PreviewBackupFile(ctx context.Context, dir, name string) (Back
 // Separate from the file path above so an uploaded archive - one somebody is
 // about to restore from their own machine - can be described the same way,
 // through the same code, as one sitting in the backup directory.
+//
+// A signed-in caller and nothing more, which is the same gate RestoreArchive
+// applies, and for the same reason: the bytes came from them. Describing a file
+// somebody already holds withholds nothing, and a preview stricter than the
+// restore it precedes would leave them to merge it unseen.
 func (s *Service) PreviewArchive(ctx context.Context, r io.ReaderAt, size int64) (BackupPreview, error) {
-	if err := s.AuthorizeBackup(ctx); err != nil {
+	if _, err := auth.MustUser(ctx); err != nil {
 		return BackupPreview{}, err
 	}
 	if _, err := auth.MustUser(ctx); err != nil {

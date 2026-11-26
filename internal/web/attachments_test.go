@@ -29,6 +29,35 @@ func createEntryForAttachments(t *testing.T, srv *Server) int64 {
 	return 1
 }
 
+// uploadAs posts a file to an owner as a signed-in user, for the cases where
+// who is uploading is the point.
+func uploadAs(t *testing.T, srv *Server, as *client, ownerType string, ownerID int64,
+	filename string, content []byte) *httptest.ResponseRecorder {
+	t.Helper()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		t.Fatalf("create form file: %v", err)
+	}
+	if _, err := part.Write(content); err != nil {
+		t.Fatalf("write form file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close form: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost,
+		"/attachments/"+ownerType+"/"+strconv.FormatInt(ownerID, 10), &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.AddCookie(as.cookie)
+	req.Header.Set("X-CSRF-Token", as.token)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	return rec
+}
+
 // upload posts a file to an owner and returns the recorder.
 func upload(t *testing.T, srv *Server, ownerType string, ownerID int64, filename string, content []byte) *httptest.ResponseRecorder {
 	t.Helper()

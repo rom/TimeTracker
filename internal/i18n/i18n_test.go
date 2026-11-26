@@ -1,9 +1,11 @@
 package i18n
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 )
 
 // Writing numbers, dates and durations for a reader.
@@ -87,6 +89,15 @@ func TestMoneyIsWrittenWithItsCurrency(t *testing.T) {
 		{123450, "SEK", "1,234.50 SEK", "1\u00a0234,50\u00a0SEK"},
 		{-150, "EUR", "−1.50 EUR", "−1,50\u00a0EUR"},
 		{5, "EUR", "0.05 EUR", "0,05\u00a0EUR"},
+		// A currency with no minor unit is written without the two decimal
+		// places it does not have. The figure comes from domain.Money, which
+		// knows how many a currency has; writing it here as well is how this
+		// ended up with a second copy of that rule and a wrong one.
+		{1234, "JPY", "1,234 JPY", "1\u00a0234\u00a0JPY"},
+		{0, "JPY", "0 JPY", "0\u00a0JPY"},
+		{-1234, "JPY", "−1,234 JPY", "−1\u00a0234\u00a0JPY"},
+		// And one with three writes all three.
+		{1234567, "KWD", "1,234.567 KWD", "1\u00a0234,567\u00a0KWD"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.en, func(t *testing.T) {
@@ -433,4 +444,66 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// TestSwedishWritesItsCalendarInLowerCase.
+//
+// Swedish does not capitalise the names of weekdays or months. They are common
+// nouns: "måndag 12 oktober", never "Måndag 12 Oktober". FormatDateLong's own
+// comment said so - "lower case, as Swedish orthography requires" - while the
+// catalogue it reads from delivered "Måndag", so every long date on every
+// Swedish screen was written wrong, and so was the weekday list in the routine
+// editor and the week-start option in settings.
+//
+// Asserted as the rule rather than as fourteen expected strings, so a third
+// language that shares the rule can be added to the list below and a language
+// that does not is left alone.
+func TestSwedishWritesItsCalendarInLowerCase(t *testing.T) {
+	if err := LoadError(); err != nil {
+		t.Fatalf("the embedded catalogues did not load: %v", err)
+	}
+
+	// The keys that hold a name, listed rather than guessed at by prefix: the
+	// month.* family also holds headings and sentences ("Veckosumma"), which
+	// are capitalised like any other.
+	var names []string
+	for _, weekday := range []string{"monday", "tuesday", "wednesday", "thursday",
+		"friday", "saturday", "sunday"} {
+		names = append(names, "weekday."+weekday, "weekday.short."+weekday)
+	}
+	for _, month := range []string{"january", "february", "march", "april", "may",
+		"june", "july", "august", "september", "october", "november", "december"} {
+		names = append(names, "month."+month)
+	}
+	for number := 1; number <= 7; number++ {
+		names = append(names, fmt.Sprintf("weekday.short.%d", number))
+	}
+
+	printer := NewPrinter("sv")
+	for _, key := range names {
+		value := printer.T(key)
+		if value == key || value == "" {
+			t.Errorf("%s is missing from the Swedish catalogue", key)
+			continue
+		}
+		if first := []rune(value)[0]; first != unicode.ToLower(first) {
+			t.Errorf("%s = %q; Swedish writes a weekday or a month in lower case",
+				key, value)
+		}
+	}
+
+	// And the rendered date, which is what somebody actually sees.
+	when := time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC)
+	if got := printer.FormatDateLong(when); got != "måndag 12 oktober 2026" {
+		t.Errorf("FormatDateLong = %q, want the Swedish spelling", got)
+	}
+	if got := printer.FormatMonth(when); got != "oktober 2026" {
+		t.Errorf("FormatMonth = %q, want the Swedish spelling", got)
+	}
+
+	// English capitalises both, and must not have been swept along with it.
+	english := NewPrinter("en")
+	if got := english.FormatDateLong(when); got != "Monday 12 October 2026" {
+		t.Errorf("English FormatDateLong = %q, want the English spelling", got)
+	}
 }

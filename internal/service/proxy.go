@@ -198,8 +198,8 @@ func (s *Service) RejectEntry(ctx context.Context, entryID int64, reason string)
 	if err := s.canDecide(ctx, actor, entry); err != nil {
 		return err
 	}
-	if len(reason) > 1000 {
-		return fmt.Errorf("%w: the reason is too long", ErrValidation)
+	if err := checkReason(reason); err != nil {
+		return err
 	}
 
 	err = s.db.InTx(ctx, func(tx *sql.Tx) error {
@@ -264,6 +264,11 @@ func (s *Service) RejectExpense(ctx context.Context, expenseID int64, reason str
 	}
 	if expense.Status != domain.StatusPending {
 		return fmt.Errorf("%w: this expense has already been decided", ErrConflict)
+	}
+	// As for a declined time entry. This was the one decision of the four that
+	// took an unbounded reason.
+	if err := checkReason(reason); err != nil {
+		return err
 	}
 
 	expense.Status = domain.StatusRejected

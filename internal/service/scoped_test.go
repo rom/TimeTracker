@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rom/timetracker/internal/domain"
+	"github.com/rom/timetracker/internal/store"
 )
 
 // Reading somebody else's records, and taking a backup of part of the data.
@@ -235,16 +236,12 @@ func TestAnExpenseIsPricedInItsCustomersCurrency(t *testing.T) {
 			swedish.AmountMinor)
 	}
 
-	// The currency travels with the amount, and the *number of minor units*
-	// does not depend on it: every currency is parsed as having exactly two
-	// decimal places, which ADR-0014 states as the model ("cents, öre, pence").
-	//
-	// A currency with no minor unit is therefore held at a hundred times its
-	// value. The code validates a currency as any three letters, so an
-	// instance invoicing in JPY, KRW, ISK or CLP would be out by that factor
-	// everywhere. Pinned as what the application does and reported rather than
-	// changed: making the exponent per-currency touches every stored amount and
-	// every rate, and is not a coverage commit's business.
+	// The currency travels with the amount, and so does how many minor units a
+	// decimal place is worth. A yen has no subdivision, so a hundred yen is a
+	// hundred minor units and not ten thousand - which is what this held for a
+	// long time, because every currency was parsed at two decimal places.
+	// ADR-0014's "cents, öre, pence" is the model; it is not a claim that every
+	// currency has them.
 	japanese, err := f.svc.CreateExpense(f.ctx, ExpenseInput{
 		ProjectID: otherProject.ID, SpentOn: "2026-03-16", Category: "travel",
 		Description: "Taxi", Amount: "100", Billable: true,
@@ -255,9 +252,9 @@ func TestAnExpenseIsPricedInItsCustomersCurrency(t *testing.T) {
 	if japanese.Currency != "JPY" {
 		t.Errorf("the expense is in %q, want the customer's JPY", japanese.Currency)
 	}
-	if japanese.AmountMinor != 10000 {
-		t.Logf("100 JPY now comes to %d minor units rather than 10000; if the "+
-			"exponent is per-currency now, this note is out of date",
+	if japanese.AmountMinor != 100 {
+		t.Errorf("100 JPY came to %d minor units, want 100 - a yen has no "+
+			"subdivision to hold the other two decimal places",
 			japanese.AmountMinor)
 	}
 
@@ -273,9 +270,9 @@ func TestAnExpenseIsPricedInItsCustomersCurrency(t *testing.T) {
 		t.Errorf("the edited expense is in %q, want the JPY it was recorded in",
 			edited.Currency)
 	}
-	if edited.AmountMinor != 25000 {
-		t.Errorf("the edited amount is %d minor units; 250 parsed with two "+
-			"decimal places is 25000", edited.AmountMinor)
+	if edited.AmountMinor != 250 {
+		t.Errorf("the edited amount is %d minor units; 250 yen is 250 of them",
+			edited.AmountMinor)
 	}
 
 	// An amount that is not one is refused rather than priced at zero.
@@ -358,9 +355,10 @@ func TestAManagerReadsTheirTeamsTimesheets(t *testing.T) {
 	// effectiveScope after the permission check, so a permissive check cannot
 	// turn into a disclosure here.
 	//
-	// That is the difference from Entry, Customer and AuditTrail - see
-	// TestReadsThatAreNotScopedByProjectMembership - which return a record
-	// directly with no scope applied after.
+	// It is belt and braces with the authoriser rather than a substitute for
+	// it: Entry, Customer and AuditTrail return a record directly with no
+	// scope applied after, so they depend on the check alone - see
+	// TestReadsAreScopedByProjectMembership.
 	stranger, err := f.accounts.CreateUser(f.ctx, NewUserInput{
 		DisplayName: "Stranger", Email: "stranger@example.com",
 		Password: "a-long-enough-password", Role: domain.RoleMember,
@@ -382,5 +380,131 @@ func TestAManagerReadsTheirTeamsTimesheets(t *testing.T) {
 	// its early exit.
 	if _, err := f.svc.Entries(theirs, EntryFilter{UserID: colleague.ID}); err != nil {
 		t.Errorf("a member could not read their own timesheet by naming themselves: %v", err)
+	}
+}
+
+// TestAManagerAdministersTheirProjectsAndNotTheInstance.
+//
+// ADR-0008's table gives a manager "customers and projects they are a member
+// of" and gives the administrator "everything: users, roles, customers,
+// settings". The bound was membership, and requireMembership permits a resource
+// that names no project - rightly, for one that genuinely has none. The
+// accounts, the instance settings, the backups and the tag vocabulary genuinely
+// have none, so a manager's ActionManage fell straight through: they could
+// create an account and set its role, rewrite the instance settings, take a
+// backup carrying every customer's negotiated rates, and delete a tag off
+// entries on projects they have nothing to do with.
+//
+// Both halves are asserted, because a rule that refused a manager everything
+// would pass the first half alone.
+func TestAManagerAdministersTheirProjectsAndNotTheInstance(t *testing.T) {
+	f := newServerFixture(t)
+	assignment, _ := f.team(t)
+
+	project, err := f.svc.Project(f.ctx, assignment.ProjectID)
+	if err != nil {
+		t.Fatalf("read the project: %v", err)
+	}
+
+	manager, err := f.accounts.CreateUser(f.ctx, NewUserInput{
+		DisplayName: "Manager", Email: "manager@example.com",
+		Password: "a-long-enough-password", Role: domain.RoleManager,
+	})
+	if err != nil {
+		t.Fatalf("create the manager: %v", err)
+	}
+	if err := f.accounts.AddMember(f.ctx, store.ProjectMember{
+		ProjectID: project.ID, UserID: manager.ID,
+	}); err != nil {
+		t.Fatalf("put the manager on the project: %v", err)
+	}
+	theirs := f.asUser(manager)
+
+	// The instance is not theirs.
+	for _, refused := range []struct {
+		name string
+		call func() error
+	}{
+		{"create an account", func() error {
+			_, err := f.accounts.CreateUser(theirs, NewUserInput{
+				DisplayName: "Planted", Email: "planted@example.com",
+				Password: "a-long-enough-password", Role: domain.RoleAdmin,
+			})
+			return err
+		}},
+		{"list the accounts", func() error {
+			_, err := f.accounts.Users(theirs)
+			return err
+		}},
+		{"change somebody's role", func() error {
+			user := f.admin
+			user.Role = domain.RoleMember
+			return f.accounts.UpdateUser(theirs, user)
+		}},
+		{"read the instance settings", func() error {
+			_, err := f.svc.SettingsForAdmin(theirs)
+			return err
+		}},
+		{"write the instance settings", func() error {
+			return f.svc.UpdateSettings(theirs, SettingsInput{
+				DefaultCurrency: "SEK", WeekStart: 1,
+			})
+		}},
+		{"take a backup", func() error { return f.svc.AuthorizeBackup(theirs) }},
+		{"read the whole tag vocabulary", func() error {
+			_, err := f.svc.TagsForAdmin(theirs)
+			return err
+		}},
+		{"delete a tag", func() error { return f.svc.DeleteTag(theirs, 1) }},
+	} {
+		t.Run(refused.name, func(t *testing.T) {
+			if err := refused.call(); err == nil {
+				t.Errorf("a manager could %s", refused.name)
+			}
+		})
+	}
+
+	// Their own projects are, which is the authority the table gives them and
+	// the half a blunt refusal would have taken away.
+	for _, allowed := range []struct {
+		name string
+		call func() error
+	}{
+		{"administer their project", func() error {
+			return f.svc.UpdateProject(theirs, project)
+		}},
+		{"add an assignment to it", func() error {
+			_, err := f.svc.CreateAssignment(theirs, domain.Assignment{
+				ProjectID: project.ID, Name: "Support", BillableDefault: true,
+			})
+			return err
+		}},
+		{"put somebody on it", func() error {
+			return f.accounts.AddMember(theirs, store.ProjectMember{
+				ProjectID: project.ID, UserID: f.admin.ID,
+			})
+		}},
+		{"read its commercial terms", func() error {
+			_, err := f.svc.ContractTerms(theirs, domain.TermsForCustomer, project.CustomerID)
+			return err
+		}},
+		{"change their own preferences", func() error {
+			return f.svc.SetTheme(theirs, "dark")
+		}},
+	} {
+		t.Run(allowed.name, func(t *testing.T) {
+			if err := allowed.call(); err != nil {
+				t.Errorf("a manager could not %s: %v", allowed.name, err)
+			}
+		})
+	}
+
+	// And the administrator still administers all of it, so the rule is a bound
+	// on the role rather than on the action.
+	if err := f.svc.AuthorizeBackup(f.ctx); err != nil {
+		t.Errorf("the administrator can no longer take a backup: %v", err)
+	}
+	if _, err := f.accounts.Users(f.ctx); err != nil {
+		t.Errorf("the administrator can no longer list the accounts: %v", err)
 	}
 }

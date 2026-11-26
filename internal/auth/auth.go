@@ -145,6 +145,59 @@ type RoleAuthorizer struct {
 	// IsProjectMember reports whether a user belongs to a project. It is called
 	// only for decisions that need scoping.
 	IsProjectMember func(ctx context.Context, userID, projectID int64) (bool, error)
+	// IsCustomerMember reports whether a user belongs to any project of a
+	// customer. A customer record has no single project, so membership of one
+	// is the nearest true answer to "may this person read this account": the
+	// alternative was permitting it outright, which gave every member every
+	// customer's negotiated rate.
+	IsCustomerMember func(ctx context.Context, userID, customerID int64) (bool, error)
+}
+
+// scopedTypes are the resource types whose records belong to a customer, and
+// usually to a project within it.
+//
+// A resource naming one of these records - an id rather than a listing - must
+// also say where in the hierarchy it sits, or there is nothing to scope it by.
+// It is a deny list by construction: a type absent from here is administrative
+// (settings, a user account, a backup) and is gated by role alone, which is the
+// decision the role branches above have already made by the time scoping is
+// asked about.
+//
+// This exists because the permissive branch it guards was reached by accident.
+// requireMembership permits a resource with no project, which is right for a
+// global setting - and entryResource built a time entry without one, so a
+// member asking for another member's entry by id was answered as though they
+// had asked about the instance settings. The fix was to fill the field in; this
+// is what makes the next omission fail closed instead.
+var scopedTypes = map[string]bool{
+	"time_entry": true, "expense": true, "assignment": true,
+	"project": true, "customer": true, "contract_terms": true,
+	"attachment": true,
+}
+
+// instanceTypes are the resource types that are the instance itself rather than
+// any project's: the accounts and their roles, the instance-wide settings, the
+// backups, and the tag vocabulary every project shares.
+//
+// Administering one of these is the administrator's, which the decision table
+// above states and this list is what makes true. A manager's authority is
+// "customers and projects they are a member of" - real, and bounded by that
+// membership - and requireMembership permits a resource that names no project,
+// correctly, for a resource that genuinely has none. These genuinely have none,
+// so a manager's ActionManage fell straight through the bound: they could add an
+// account, change anybody's role, read and write the instance settings, take a
+// backup of every customer's catalogue, and delete a tag off entries on projects
+// they have nothing to do with.
+//
+// It is only about ActionManage. A manager views, records and approves across
+// these types as the table allows - and so does everybody else: changing your
+// own theme is an ActionUpdate on your own user record, which this does not
+// touch.
+//
+// The catalogue is deliberately absent. A customer and its projects are what a
+// manager administers, so they stay bounded by membership rather than refused.
+var instanceTypes = map[string]bool{
+	"user": true, "settings": true, "backup": true, "tag": true,
 }
 
 // Can implements Authorizer for server mode.
@@ -171,7 +224,15 @@ func (a RoleAuthorizer) Can(ctx context.Context, action Action, resource Resourc
 
 	case domain.RoleManager:
 		switch action {
-		case ActionManage, ActionApprove, ActionProxy, ActionViewMoney,
+		case ActionManage:
+			// Bounded twice: to the projects they are responsible for, and to
+			// what is a project's in the first place. The instance itself is
+			// the administrator's - see instanceTypes.
+			if instanceTypes[resource.Type] {
+				return deny("the instance is the administrator's to administer")
+			}
+			return a.requireMembership(ctx, actor.ID, resource, deny)
+		case ActionApprove, ActionProxy, ActionViewMoney,
 			ActionView, ActionCreate, ActionUpdate, ActionDelete:
 			// A manager's authority is real but bounded by membership: they act
 			// on the projects they are responsible for, not on every project.
@@ -219,6 +280,14 @@ func (a RoleAuthorizer) Can(ctx context.Context, action Action, resource Resourc
 		if resource.CustomerID == 0 {
 			return deny("client access is scoped to a customer")
 		}
+		// Their own customer, asked here rather than trusted from the caller.
+		// Every call site passes the acting client's own id today, which is the
+		// only reason "any customer" was ever safe - and a check that is
+		// correct because of what its callers happen to pass is one call site
+		// away from being wrong.
+		if resource.CustomerID != actor.ClientCustomerID {
+			return deny("a client reads their own customer and no other")
+		}
 		return nil
 
 	default:
@@ -227,23 +296,48 @@ func (a RoleAuthorizer) Can(ctx context.Context, action Action, resource Resourc
 }
 
 // requireMembership permits the action when the actor belongs to the resource's
-// project. A resource with no project (a global setting, a new record) is
-// permitted, because the caller has already established the actor's role allows
-// it in principle.
+// project, or - for a customer, which has no single project - to any project of
+// that customer.
+//
+// A resource with neither (a global setting, a new record, a listing that the
+// service narrows with effectiveScope instead) is permitted, because the caller
+// has already established the actor's role allows it in principle. The one
+// exception is a named record of a scopedType, which must say where it sits:
+// see the note there.
 func (a RoleAuthorizer) requireMembership(ctx context.Context, userID int64, resource Resource, deny func(string) error) error {
-	if resource.ProjectID == 0 {
+	switch {
+	case resource.ProjectID != 0:
+		if a.IsProjectMember == nil {
+			// Failing closed: a misconfigured authoriser must refuse, never
+			// allow.
+			return deny("membership lookup unavailable")
+		}
+		member, err := a.IsProjectMember(ctx, userID, resource.ProjectID)
+		if err != nil {
+			return fmt.Errorf("check project membership: %w", err)
+		}
+		if !member {
+			return deny("not a member of the project")
+		}
+		return nil
+
+	case resource.CustomerID != 0:
+		if a.IsCustomerMember == nil {
+			return deny("membership lookup unavailable")
+		}
+		member, err := a.IsCustomerMember(ctx, userID, resource.CustomerID)
+		if err != nil {
+			return fmt.Errorf("check customer membership: %w", err)
+		}
+		if !member {
+			return deny("not a member of any of the customer's projects")
+		}
+		return nil
+
+	case resource.ID != 0 && scopedTypes[resource.Type]:
+		return deny("the resource names no project or customer to scope it by")
+
+	default:
 		return nil
 	}
-	if a.IsProjectMember == nil {
-		// Failing closed: a misconfigured authoriser must refuse, never allow.
-		return deny("membership lookup unavailable")
-	}
-	member, err := a.IsProjectMember(ctx, userID, resource.ProjectID)
-	if err != nil {
-		return fmt.Errorf("check project membership: %w", err)
-	}
-	if !member {
-		return deny("not a member of the project")
-	}
-	return nil
 }

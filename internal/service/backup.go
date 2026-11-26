@@ -190,16 +190,24 @@ func (s *Service) AuthorizeBackup(ctx context.Context) error {
 	// carries the catalogue whole - including the customer's negotiated hourly
 	// rate - and "you may back up what you can see" is the wrong rule for
 	// somebody whose whole role is defined by not seeing that
-	// (docs/adr/0008-rbac-model.md). A client's route to their own data is the
+	// (docs/adr/0008-rbac-model.md). Anybody's route to their own data is the
 	// export, which is narrowed.
 	//
-	// Found by a test that asked what a client actually receives, rather than by
-	// reading the check: the check below passes for a client, because a client
-	// may view their customer's time.
+	// Kept as an explicit refusal ahead of the check below, for the message: a
+	// client told "you may not administer the instance" has been answered a
+	// question they did not ask. Found by a test that asked what a client
+	// actually receives, rather than by reading the check.
 	if actor.Role == domain.RoleClient {
 		return fmt.Errorf("%w: a backup is not a client report", ErrForbidden)
 	}
-	return s.authz.Can(ctx, auth.ActionView, listResource(ctx, "time_entry"))
+	// Administered, not viewed. This asked whether the actor may view time
+	// entries, which a member with no project memberships may - so the whole
+	// backup screen, including the list of archives on the server's disk, was
+	// open to somebody the instance shows nothing else to. What they could
+	// *take* was narrowed by their scope, which is why this was a weak gate
+	// rather than a disclosure; the preview of a stored archive, which is not
+	// narrowed by anybody's scope, is what made the difference matter.
+	return s.authz.Can(ctx, auth.ActionManage, auth.Resource{Type: "backup"})
 }
 
 // CreateBackup writes a backup archive of the database and the attachments.
@@ -656,7 +664,53 @@ func (s *Service) Restore(ctx context.Context, r io.Reader) (RestoreResult, erro
 		return RestoreResult{}, fmt.Errorf("%w: the backup file could not be read: %s",
 			ErrValidation, err)
 	}
-	return s.restoreDocument(ctx, document)
+	result, err := s.restoreDocument(ctx, document)
+	if err != nil {
+		return result, err
+	}
+
+	// A document is not an archive: the bytes of a receipt are not in it, by
+	// design, because base64 inside JSON would triple the size of a backup
+	// whose bulk is photographs. So the files it lists cannot come back, and
+	// saying so is the whole of what the Attachments field promises - "a bare
+	// .json file lists them and cannot restore them, which the restore reports
+	// rather than hides". It did not: the reporting lived in restoreAttachments,
+	// which is only reached when there is an archive to read the files out of,
+	// so this path put the records back and left the evidence silently absent.
+	result.noteUncarriedAttachments()
+	return result, nil
+}
+
+// noteUncarriedAttachments reports the files a document lists and cannot hold.
+func (r *RestoreResult) noteUncarriedAttachments() {
+	if len(r.pendingAttachments) == 0 {
+		return
+	}
+	// Named individually up to a handful, and counted past that: "receipt.txt
+	// and 400 others" is a sentence somebody can act on, and four hundred
+	// filenames is not.
+	const named = 3
+	names := make([]string, 0, named)
+	for _, attachment := range r.pendingAttachments {
+		if len(names) == named {
+			break
+		}
+		names = append(names, strconv.Quote(attachment.Filename))
+	}
+	listed := strings.Join(names, ", ")
+	if rest := len(r.pendingAttachments) - len(names); rest > 0 {
+		listed = fmt.Sprintf("%s and %d more", listed, rest)
+	}
+
+	subject := fmt.Sprintf("the %d attachments it lists (%s)",
+		len(r.pendingAttachments), listed)
+	if len(r.pendingAttachments) == 1 {
+		subject = fmt.Sprintf("the attachment it lists (%s)", listed)
+	}
+	r.Problems = append(r.Problems, fmt.Sprintf(
+		"this backup is a document rather than an archive, so %s could not be "+
+			"restored - the records they belong to are back, without their "+
+			"files. A .zip backup carries them", subject))
 }
 
 // restoreDocument is the merge itself, once the document has been obtained.

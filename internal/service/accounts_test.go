@@ -42,7 +42,10 @@ func newServerFixture(t *testing.T) *serverFixture {
 	clock := func() time.Time { return f.now }
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	f.svc = New(db, auth.RoleAuthorizer{IsProjectMember: db.IsProjectMember}, logger, clock)
+	f.svc = New(db, auth.RoleAuthorizer{
+		IsProjectMember:  db.IsProjectMember,
+		IsCustomerMember: db.IsCustomerMember,
+	}, logger, clock)
 	f.accounts = NewAccounts(db, f.svc, clock)
 
 	admin, err := f.accounts.BootstrapFirstAdmin(ctx, NewUserInput{

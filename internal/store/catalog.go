@@ -362,7 +362,11 @@ func (db *DB) ListProjects(ctx context.Context, scope Scope, customerID int64, i
 	query := projectSelect
 	var args []any
 	var conditions []string
-	if scoped, scopeArgs := scope.condition("p.id", "p.customer_id"); scoped != "" {
+	// No owner column: the catalogue is what somebody may work on, which is
+	// membership. An entry on a project does not add it to their catalogue -
+	// and the entry itself still lists the project's name, which is what they
+	// need to read their own timesheet.
+	if scoped, scopeArgs := scope.condition("p.id", "p.customer_id", ""); scoped != "" {
 		conditions = append(conditions, scoped)
 		args = append(args, scopeArgs...)
 	}
@@ -507,7 +511,8 @@ func (db *DB) ListAssignments(ctx context.Context, scope Scope, projectID int64,
 	query := assignmentSelect
 	var args []any
 	var conditions []string
-	if scoped, scopeArgs := scope.condition("a.project_id", "p.customer_id"); scoped != "" {
+	// As the project list above.
+	if scoped, scopeArgs := scope.condition("a.project_id", "p.customer_id", ""); scoped != "" {
 		conditions = append(conditions, scoped)
 		args = append(args, scopeArgs...)
 	}
@@ -600,6 +605,14 @@ type Settings struct {
 	// DayOverflow is "expand" or "arrows": what the day pane does with time
 	// recorded outside that window.
 	DayOverflow string
+	// WeekendRecording is whether time may be recorded on a Saturday or a
+	// Sunday at all. False refuses new and moved time there; it never touches
+	// time already recorded on one, which stays editable and deletable.
+	WeekendRecording bool
+	// WeekendColour is the entity palette key the day numbers of a weekend are
+	// drawn in: "red", "blue", "slate" and so on. A key rather than a colour,
+	// so each theme maps it to a value that works on its own background.
+	WeekendColour string
 	// BackupPassword encrypts a backup archive, or is empty for a plain one.
 	// It is deliberately never rendered back into a form
 	// (docs/adr/0030-encrypted-backup-archives.md).
@@ -609,25 +622,28 @@ type Settings struct {
 // GetSettings reads the single settings row.
 func (db *DB) GetSettings(ctx context.Context) (Settings, error) {
 	var s Settings
-	var showClock, showTimeAndDate, remindersEnabled int
+	var showClock, showTimeAndDate, remindersEnabled, weekendRecording int
 	err := db.read.QueryRowContext(ctx, `
 		SELECT default_currency, default_rounding, default_rate_minor, week_start,
 		       max_timer_seconds, idle_seconds, reminders_enabled, reminder_hour,
 		       show_clock, show_time_and_date,
 		       nav_position, clock_format, date_format,
-		       day_start_hour, day_end_hour, day_overflow, backup_password
+		       day_start_hour, day_end_hour, day_overflow,
+		       weekend_recording, weekend_colour, backup_password
 		FROM settings WHERE id = 1`).
 		Scan(&s.DefaultCurrency, &s.DefaultRounding, &s.DefaultRateMinor, &s.WeekStart,
 			&s.MaxTimerSeconds, &s.IdleSeconds, &remindersEnabled, &s.ReminderHour,
 			&showClock, &showTimeAndDate,
 			&s.NavPosition, &s.ClockFormat, &s.DateFormat,
-			&s.DayStartHour, &s.DayEndHour, &s.DayOverflow, &s.BackupPassword)
+			&s.DayStartHour, &s.DayEndHour, &s.DayOverflow,
+			&weekendRecording, &s.WeekendColour, &s.BackupPassword)
 	if err != nil {
 		return Settings{}, fmt.Errorf("read settings: %w", err)
 	}
 	s.RemindersEnabled = remindersEnabled != 0
 	s.ShowClock = showClock != 0
 	s.ShowTimeAndDate = showTimeAndDate != 0
+	s.WeekendRecording = weekendRecording != 0
 	return s, nil
 }
 
@@ -644,14 +660,16 @@ func UpdateSettingsTx(ctx context.Context, db Execer, s Settings) error {
 		       reminders_enabled = ?, reminder_hour = ?,
 		       show_clock = ?, show_time_and_date = ?,
 		       nav_position = ?, clock_format = ?, date_format = ?,
-		       day_start_hour = ?, day_end_hour = ?, day_overflow = ?, backup_password = ?
+		       day_start_hour = ?, day_end_hour = ?, day_overflow = ?,
+		       weekend_recording = ?, weekend_colour = ?, backup_password = ?
 		WHERE id = 1`,
 		s.DefaultCurrency, s.DefaultRounding, s.DefaultRateMinor, s.WeekStart,
 		s.MaxTimerSeconds, s.IdleSeconds,
 		boolToInt(s.RemindersEnabled), s.ReminderHour,
 		boolToInt(s.ShowClock), boolToInt(s.ShowTimeAndDate),
 		s.NavPosition, s.ClockFormat, s.DateFormat,
-		s.DayStartHour, s.DayEndHour, s.DayOverflow, s.BackupPassword)
+		s.DayStartHour, s.DayEndHour, s.DayOverflow,
+		boolToInt(s.WeekendRecording), s.WeekendColour, s.BackupPassword)
 	return err
 }
 

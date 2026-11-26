@@ -258,7 +258,25 @@ func (s *Service) SweepBlobs(ctx context.Context) (int, error) {
 }
 
 // authorizeOwner checks the actor against the record an attachment belongs to.
+//
+// Never for a client, whatever the record and whatever the action. The
+// projection states it as a premise - ForClient drops the attachment count
+// because "a client cannot fetch an attachment, and a count of files they
+// cannot see is an invitation to ask about them" - and it was not true: the
+// check below asks whether the actor may view the owning record, which a client
+// may for their own customer's expense, so a receipt came back in full to
+// anybody who guessed its id. They are never shown one to click, which is the
+// only reason it stayed unnoticed.
+//
+// It is also the right answer on the merits. A receipt is a document nobody
+// composed for a client: a hotel bill with a colleague's name on it, a taxi
+// receipt from somebody's home address, a photograph of a whiteboard. An
+// invoice is what a client is sent, deliberately, which is the same argument
+// the projection makes about money.
 func (s *Service) authorizeOwner(ctx context.Context, ownerType string, ownerID int64, action auth.Action) error {
+	if actingAsClient(ctx) {
+		return ErrNotFound
+	}
 	switch ownerType {
 	case domain.AttachmentOwnerTimeEntry:
 		entry, err := s.db.GetEntry(ctx, ownerID)

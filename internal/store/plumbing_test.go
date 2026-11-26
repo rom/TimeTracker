@@ -328,7 +328,7 @@ func TestRebuildingTheIndexInsideATransactionSeesTheChange(t *testing.T) {
 	}
 
 	// Rename and rebuild in one transaction, the way the tag editor does.
-	tags, err := db.ListTags(ctx)
+	tags, err := db.ListTags(ctx, UnrestrictedScope())
 	if err != nil {
 		t.Fatalf("list tags: %v", err)
 	}
@@ -589,7 +589,7 @@ func TestADeadDatabaseIsAnErrorAndNeverAnEmptyAnswer(t *testing.T) {
 			return 0, err
 		},
 		"list tags": func() (int, error) {
-			out, err := db.ListTags(ctx)
+			out, err := db.ListTags(ctx, UnrestrictedScope())
 			return len(out), err
 		},
 		"tags for entries": func() (int, error) {

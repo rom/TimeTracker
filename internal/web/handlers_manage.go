@@ -14,7 +14,7 @@ import (
 
 // handleEditCustomer returns the edit form for one customer.
 func (s *Server) handleEditCustomer(w http.ResponseWriter, r *http.Request) {
-	customer, err := s.svc.Customer(r.Context(), int64Param(r.PathValue("id")))
+	customer, err := s.svc.CustomerForEdit(r.Context(), int64Param(r.PathValue("id")))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -74,7 +74,7 @@ func (s *Server) handleUpdateCustomer(w http.ResponseWriter, r *http.Request) {
 
 // handleEditProject returns the edit form for one project.
 func (s *Server) handleEditProject(w http.ResponseWriter, r *http.Request) {
-	project, err := s.svc.Project(r.Context(), int64Param(r.PathValue("id")))
+	project, err := s.svc.ProjectForEdit(r.Context(), int64Param(r.PathValue("id")))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -142,7 +142,7 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 
 // handleEditAssignment returns the edit form for one assignment.
 func (s *Server) handleEditAssignment(w http.ResponseWriter, r *http.Request) {
-	assignment, err := s.svc.Assignment(r.Context(), int64Param(r.PathValue("id")))
+	assignment, err := s.svc.AssignmentForEdit(r.Context(), int64Param(r.PathValue("id")))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -225,6 +225,10 @@ func (s *Server) handleToggleFavourite(w http.ResponseWriter, r *http.Request) {
 
 // handleMoveForm shows where a selection of entries could go.
 func (s *Server) handleMoveForm(w http.ResponseWriter, r *http.Request) {
+	if s.sentToTheirOwnListing(w, r) {
+		return
+	}
+
 	data, err := s.newPageData(r, "", "entries")
 	if err != nil {
 		s.fail(w, r, err)
@@ -275,6 +279,15 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	// The settings on this screen are the instance's, and every control on it
+	// posts to UpdateSettings. newPageData has already loaded them - every page
+	// needs the theme and the week start - so the screen has to ask for itself,
+	// which it did not: a member read the instance's default hourly rate here,
+	// and so did a client.
+	if data.Settings, err = s.svc.SettingsForAdmin(r.Context()); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	data.Title = data.Printer.T("settings.title")
 	s.render(w, r, "page_settings.html", data)
 }
@@ -317,6 +330,12 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		DayEndHour:   dayEnd,
 		DayOverflow:  r.FormValue("day_overflow"),
 
+		// The checkbox is the permission and the input field is the refusal, so
+		// a form that omits the box entirely leaves weekends recordable rather
+		// than silently forbidding them.
+		WeekendRecordingDisabled: r.FormValue("weekend_recording") == "",
+		WeekendColour:            r.FormValue("weekend_colour"),
+
 		// The password field is blank unless somebody typed in it, and blank
 		// means "unchanged". Removing one is the checkbox's job.
 		BackupPassword:      r.FormValue("backup_password"),
@@ -333,6 +352,10 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 // handleImportForm renders the CSV import screen.
 func (s *Server) handleImportForm(w http.ResponseWriter, r *http.Request) {
+	if s.sentToTheirOwnListing(w, r) {
+		return
+	}
+
 	data, err := s.newPageData(r, "", "entries")
 	if err != nil {
 		s.fail(w, r, err)

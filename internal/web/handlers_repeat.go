@@ -100,6 +100,10 @@ func (s *Server) handleApplyAllRoutines(w http.ResponseWriter, r *http.Request) 
 
 // handleRoutines renders the routine management screen.
 func (s *Server) handleRoutines(w http.ResponseWriter, r *http.Request) {
+	if s.sentToTheirOwnListing(w, r) {
+		return
+	}
+
 	data, err := s.newPageData(r, "", "routines")
 	if err != nil {
 		s.fail(w, r, err)

@@ -16,6 +16,10 @@ import (
 
 // handleCalendarForm renders the calendar import screen.
 func (s *Server) handleCalendarForm(w http.ResponseWriter, r *http.Request) {
+	if s.sentToTheirOwnListing(w, r) {
+		return
+	}
+
 	data, err := s.newPageData(r, "", "entries")
 	if err != nil {
 		s.fail(w, r, err)

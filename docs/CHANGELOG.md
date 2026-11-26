@@ -152,6 +152,54 @@ the decision.
   date picker on the day, week and month views - previous/today/next answers
   "where was I in time" badly once the answer is more than a week away - and a
   month heading between the entries wherever a listing crosses a month.
+* **The month's week numbers are a target rather than two digits.** They have
+  linked to their week since the month view shipped — a month is where somebody
+  notices a thin week and the week view is where they fix it — but the link was
+  the digits alone: ten pixels across for a single-digit number, in a cell of
+  forty-eight by seventy-two, under the smallest target WCAG asks for and a poor
+  one to aim at with anything but a mouse. The whole cell is the link now, as
+  the squares beside it are, and its title says it opens the week, which a bare
+  "12" in the margin of a calendar does not.
+* **The weekend is drawn as a weekend**, in the week grid and the month
+  calendar alike: a diagonal grey raster over Saturday and Sunday, running from
+  the heading through the rows to the day totals so it reads as a column rather
+  than a shaded block, and the dates themselves in a colour of their own - red
+  by default. Hatching rather than a third flat grey, because the two flat
+  tints in these tables are already spoken for: today, and a day outside the
+  month. A weekend that is also today keeps both.
+* **Whether weekends may be worked is an instance setting**
+  ([ADR-0036](adr/0036-the-weekend-is-a-policy-not-a-lock.md)). Turning it off
+  refuses new time on a Saturday or a Sunday, naming the day it fell on, at
+  every point where time arrives - the quick add, the correction form, a copied
+  day, a routine, both importers, and a timer at the moment it starts rather
+  than when it stops. It deliberately does **not** cover stopping a running
+  timer, deleting, or correcting time already on a weekend: a policy that
+  stranded the rows it disapproves of could not be turned on. It is permissive
+  by default, because the column arrived in databases with years of weekends
+  already in them.
+* **The weekend's date colour is an instance setting**, chosen from the entity
+  palette rather than entered as a value, so each theme draws it in something
+  legible on its own background
+  ([ADR-0011](adr/0011-theming-via-css-custom-properties.md)).
+* **The choice of first day of the week says what it does to the weekend.** The
+  setting has offered Monday, Saturday and Sunday since the beginning and both
+  grids have honoured it, but it was labelled only "first day of the week" -
+  which leaves somebody to work out for themselves that Monday ends the week
+  with the weekend and Saturday starts it with one. It now says so.
+* **The month's week totals open their week too.** The week number at one end of
+  the row was already a link; the total at the other end is the end people
+  actually read, because the eye goes to the figure. Both ends of the row now
+  lead to the same place, and the total is linked on an empty week as well -
+  that is the week most worth opening, and a cell that is a target on some rows
+  and not others is a worse target than one that always is.
+* **Every date in the week grid opens its day.** A week is read to find the day
+  something is wrong on, and the only way across was the date picker — which
+  means typing a date that is already on the screen in front of you. The whole
+  heading cell is the link, as the month's squares are, and its title gives the
+  date spelled out with the day's total, since "Wed 18" is enough to click and
+  not enough to be sure of. The submission review shares the grid and gains it
+  too, where it matters more: that is the screen that tells you which day is
+  short.
 * **Four things can be looked at before they are acted on.** Each exists because
   the alternative is finding out afterwards:
   * **A week before submitting it** (`/week/review`): what will be submitted,
@@ -186,6 +234,175 @@ the decision.
 
 ### Fixed
 
+* **The spring theme's green was below AA as text** - 4.07:1 on a card and
+  3.77:1 on the page, in the one theme whose whole character is green and which
+  therefore makes that colour the likeliest to be chosen. Found by the new
+  weekend contrast test, which is the first check in this tree to hold the
+  entity palette to AA *as text* rather than only as a tint behind text.
+  Darkened one token; nothing else moved.
+* **A manager could administer the instance**, which the role table has never
+  said they may: add an account and set its role, rewrite the instance settings,
+  take a backup carrying every customer's negotiated rates, and delete a tag off
+  entries on projects they have nothing to do with. Their authority is bounded
+  by project membership, and those four resources name no project — so the bound
+  let them through, exactly as it did for the records fixed above. They are now
+  named as the instance's own and refused for administration alone: a manager
+  still views, records and approves across them, still administers the customers
+  and projects they are a member of, and still changes their own preferences,
+  which is an update of their own user record rather than administration of
+  anything ([ADR-0008](adr/0008-rbac-model.md)).
+
+  The navigation needed a second question to match: "may you administer the
+  catalogue" draws the catalogue's controls and a manager passes it, while "may
+  you administer the instance" offers the tag editor and the user list and they
+  do not. The role sweep over the rendered navigation now walks a manager too,
+  which is what caught the two links left pointing at refusals.
+* **A member read every customer's rate and every project's budget off the
+  catalogue screen**, beside create, edit and archive controls they cannot
+  submit. The only narrowing that existed was the client's, and nothing applied
+  it to anybody else — while ADR-0008's role table gives a member "own rates
+  only". The screen stays theirs, because reading the catalogue is in the role
+  and it is where a favourite is marked, but the figures are removed from the
+  value before it leaves the service and the administrative controls are left
+  out of the page. Who may see money is asked of the authoriser rather than
+  written as a role test, so the answer comes from the table rather than from a
+  second copy of it. Assignments had never been narrowed for any role, and an
+  assignment's rate is the most specific of the three — it overrides the
+  project's, which overrides the customer's.
+* **The tag vocabulary was the whole instance's**, names and counts, to anybody
+  with an account. A tag is created by being used, so the vocabulary describes
+  the work it labels: "globex-escalation" with forty entries behind it is a
+  sentence about somebody else's engagement. It is scoped like the entries
+  listing now, so the labels a filter offers are the labels it can match and a
+  tag's count agrees with the rows behind it. The administrative listing stays
+  whole, since tidying a vocabulary means seeing all of it.
+* **A member with no project memberships could record time and then not see
+  it.** `scopeFor` fills `OwnUserID` and documents "member — the projects they
+  are a member of, plus their own records"; the SQL never rendered it, so an
+  empty project list became `1 = 0` and the hour they had just recorded was
+  absent from the listing, the day and the week. ADR-0008 says every new and
+  every SSO-provisioned account starts exactly there, seeing "their own (empty)
+  timesheet". The own-records dimension is now a column each query names
+  explicitly, including as "": a member's timesheet includes the hour they
+  recorded off-project, and a project's budget does not appear to them because
+  of it.
+* **The navigation offered a member two links that refuse them**, the tag editor
+  and the user list. Its own comment states the rule — "offering a link whose
+  only outcome is a refusal is a worse answer than not offering it" — and it had
+  only ever been applied to a client. A sweep now walks the rendered navigation
+  for each role and follows every link.
+* **Nine screens were reachable by a client because nothing asked.** The
+  navigation has never offered them more than the entries listing and the guide,
+  and its own comment says that presentation is never the enforcement — for
+  these it was the only thing there, and typing the URL reached them
+  ([ADR-0008](adr/0008-rbac-model.md)).
+
+  Four were dead forms for recording time a client does not record (`/routines`,
+  `/move`, `/import`, `/calendar`), as was the expenses screen, which lists the
+  acting user's own claims and is therefore empty for them. Those now send a
+  client to their listing, as the day, week and month already did. The rest were
+  disclosures: `/tags` listed the whole instance's vocabulary, and tag names
+  carry other customers' work in them — which is exactly why the projection
+  strips tags from a client's entries, so the screen said the opposite of the
+  projection, and so did the correction form's datalist. `/settings` asked
+  nothing at all and carries the instance's default hourly rate, which any
+  member could read there. And `/attachments/{id}` served a receipt in full to
+  anybody who could view the record it hung on, against the projection's own
+  stated premise — it drops the attachment count because "a client cannot fetch
+  an attachment", and they could.
+* **Four edit forms were authorised as reads.** The entry, customer, project and
+  assignment forms loaded their record with a view check while the save they
+  submit to requires update or manage. So a client was handed an assignment's
+  negotiated hourly rate and a project's budget typed into form fields, and a
+  member on the project got the same — the figures the projection removes from
+  those very records elsewhere. A form cannot be narrowed instead: it writes its
+  fields back on save, so narrowing it would write the narrowing into the
+  record. The check is what had to change.
+
+  A sweep now walks the route table and requires a decided answer for every GET
+  a client makes, so a screen added later cannot be reachable merely because no
+  handler thought to ask.
+* **Three reads were not scoped by project membership**, so a member could read
+  a record from a project they are not on by its id — another user's time entry
+  with its note and billing snapshot, any customer with its negotiated rate, or
+  the audit trail of any record of any type, which carries the values each
+  change moved between. One cause: `requireMembership` permits a resource that
+  names no project, which is right for one that genuinely has none (the instance
+  settings, a user account), and `entryResource` built a time entry without one,
+  so the question was answered as though it had been asked about a global
+  setting. Ids are sequential; the listings were never affected, because they go
+  through `effectiveScope` and are narrowed there, which is why this appeared on
+  no screen that shows a list ([ADR-0008](adr/0008-rbac-model.md)).
+
+  The resources now say where they sit, a customer — which has no single
+  project — is scoped by membership of any of its projects, and a named record
+  of a project-scoped type that says nothing about where it sits is refused
+  rather than permitted, so the next omission of this kind fails closed. The
+  audit trail resolves its own subject and asks the question that reading the
+  subject asks; the history of a deleted record, which deliberately outlives it,
+  is left to whoever administers the instance. A failing membership lookup is an
+  error rather than a refusal, since a refusal reaches the caller as "not found"
+  and a database that is merely unreachable should not read as data loss.
+* **A client's access was checked against any customer rather than their own.**
+  The authoriser asked only that the resource name *a* customer; it was correct
+  because every call site happened to pass the acting client's own id, which is
+  one call site away from being wrong. One of the role matrix's own cases said
+  "client cannot read another customer" and expected that it could.
+* **Every amount was parsed as having two decimal places**, whatever the
+  currency, and a currency code is validated as any three letters — so an
+  instance invoicing in JPY, KRW, ISK or CLP held every amount, every rate and
+  every budget at a hundred times its value, with the arithmetic correct
+  throughout and nothing in the application disagreeing with itself. The
+  exponent is the currency's own now, in one function that parsing and rendering
+  both read ([ADR-0014](adr/0014-exact-money-and-duration.md)). A yen is written
+  and read as a whole number, a Kuwaiti dinar to three places, and what is
+  written can be typed back in every currency. (Pre-release only: there is no
+  released version whose stored amounts this reinterprets.)
+* **Copying a day onto itself doubled it.** A copy adds to the target rather
+  than replacing it — deliberately, since replacing would silently delete work —
+  which is what made this destructive in the quiet way: every row twice, the
+  day's total twice what was worked, and nothing saying so. The form has a "copy
+  from" field, so typing today's date into it was all it took. `CopyWeek` had
+  refused the same thing all along.
+* **Restoring a bare `.json` backup said nothing about the attachments it could
+  not carry**, although the field's own comment promised it "reports rather than
+  hides" them: the reporting lived in the archive path, which is reached only
+  when there are files to read. It now names them — a handful, then a count —
+  so a missing receipt is known at the restore rather than discovered by opening
+  a billed expense.
+* **Two of the four decisions that take a typed reason did not bound its
+  length**: declining an expense and reopening an approved week, where declining
+  a time entry and rejecting a week did. The reason is stored, shown, audited and
+  exported. One check now, counting characters rather than bytes, because that
+  is what its message says.
+* **A timer clamped for a backwards clock was not flagged**, though the comment
+  on the clamp said "clamp and flag it for a human instead". A zero-second entry
+  on a day somebody worked is not a plausible record, and the clamp made it look
+  like one. It is flagged now, excluded from totals until somebody corrects it,
+  and the trail records that the interval was clamped rather than merely long —
+  the two need different corrections.
+* **A client was refused outright from `/week` and redirected from `/today` and
+  `/month`**, because the redirect was four lines copied twice rather than one
+  helper: a client following a week link from anywhere got a bare "not
+  permitted" where the other two links took them somewhere useful. Every screen
+  about somebody's own timesheet answers the same way now. The administrative
+  screens still refuse, which is right — they have no client equivalent to be
+  sent to.
+* **The upload allow-list matched the text/plain family by prefix**, so
+  "text/plainish" passed, and two of its keys carried a charset parameter, which
+  made the lookup miss for the same type sniffed without one — "text/csv" alone
+  was refused outright. Matched on the media type now, parameters cut and case
+  folded.
+* **Swedish weekday names were capitalised**, against the date formatter's own
+  comment that Swedish orthography requires lower case. Every long date on every
+  Swedish screen was written wrong, as were the weekday list in the routine
+  editor and the week-start option in settings.
+* **The backup screen was open to a member with no project memberships.** It
+  asked whether the caller may view time entries, which such a member may. What
+  they could take was narrowed by their own scope, so it was a weak gate rather
+  than a disclosure — until the preview of a stored archive, narrowed by nobody,
+  made the difference matter. Every read of the backup directory is
+  administrative now.
 * **A backup described its own scope by database id and by the wrong day.** It
   said "customer 1", which is no answer to "which backup is this" and is not
   even the same number in the instance the file would be restored into; it now

@@ -217,6 +217,11 @@ func TestRoleMatrix(t *testing.T) {
 			// Every test user is a member of exactly project 1.
 			return projectID == memberProject, nil
 		},
+		// And project 1 belongs to customer 10, so that is the one account they
+		// work on.
+		IsCustomerMember: func(_ context.Context, userID, customerID int64) (bool, error) {
+			return customerID == ownCustomer, nil
+		},
 	}
 
 	const actorID = int64(7)
@@ -250,6 +255,53 @@ func TestRoleMatrix(t *testing.T) {
 		{"manager cannot read another project", domain.RoleManager, ActionView, colleagueEntryOutOfScope, false},
 		{"manager cannot approve outside their projects", domain.RoleManager, ActionApprove, colleagueEntryOutOfScope, false},
 
+		// A manager administers the customers and projects they are a member
+		// of. The instance is the administrator's, and these four resources are
+		// the instance: they name no project, so requireMembership permitted
+		// them - correctly, for a resource that genuinely has none, which is
+		// how a manager came to be able to add an account, change anybody's
+		// role, rewrite the instance settings, back up every customer's
+		// catalogue and delete a tag off work they have nothing to do with.
+		{"manager cannot administer accounts", domain.RoleManager, ActionManage,
+			Resource{Type: "user"}, false},
+		{"manager cannot administer one account either", domain.RoleManager, ActionManage,
+			Resource{Type: "user", ID: 99}, false},
+		{"manager cannot administer the instance settings", domain.RoleManager, ActionManage,
+			Resource{Type: "settings"}, false},
+		{"manager cannot take a backup", domain.RoleManager, ActionManage,
+			Resource{Type: "backup"}, false},
+		{"manager cannot administer the tag vocabulary", domain.RoleManager, ActionManage,
+			Resource{Type: "tag"}, false},
+		// The catalogue is theirs, which is the half the rule must not take:
+		// bounded by membership, not refused.
+		{"manager administers their own project", domain.RoleManager, ActionManage,
+			Resource{Type: "project", ID: memberProject, ProjectID: memberProject}, true},
+		{"manager does not administer another project", domain.RoleManager, ActionManage,
+			Resource{Type: "project", ID: otherProject, ProjectID: otherProject}, false},
+		{"manager administers the catalogue in general", domain.RoleManager, ActionManage,
+			Resource{Type: "customer"}, true},
+		// And the rule is about administering, not about every verb: changing
+		// your own theme is an update of your own user record.
+		{"manager changes their own preferences", domain.RoleManager, ActionUpdate,
+			Resource{Type: "user", ID: actorID, OwnerID: actorID}, true},
+		{"manager approves a timesheet in their project", domain.RoleManager, ActionApprove,
+			Resource{Type: "timesheet", OwnerID: 99, ProjectID: memberProject}, true},
+
+		// An administrator administers all four, which is what makes the rule a
+		// bound on the manager rather than on the action.
+		{"admin administers accounts", domain.RoleAdmin, ActionManage,
+			Resource{Type: "user"}, true},
+		{"admin administers the settings", domain.RoleAdmin, ActionManage,
+			Resource{Type: "settings"}, true},
+		{"admin takes a backup", domain.RoleAdmin, ActionManage,
+			Resource{Type: "backup"}, true},
+		{"admin administers the tags", domain.RoleAdmin, ActionManage,
+			Resource{Type: "tag"}, true},
+		// A member administers none of it, which was already true and is worth
+		// keeping true beside the manager's line.
+		{"member administers no instance", domain.RoleMember, ActionManage,
+			Resource{Type: "settings"}, false},
+
 		// Member: own records, plus read access to their projects.
 		{"member reads own entry", domain.RoleMember, ActionView, ownEntry, true},
 		{"member edits own entry", domain.RoleMember, ActionUpdate, ownEntry, true},
@@ -264,14 +316,37 @@ func TestRoleMatrix(t *testing.T) {
 		{"member cannot approve", domain.RoleMember, ActionApprove, ownEntry, false},
 		{"member cannot see a colleague's money", domain.RoleMember, ActionViewMoney, colleagueEntryInScope, false},
 
-		// Client: read-only, one customer.
+		// Client: read-only, one customer. Their own, which this branch now
+		// checks rather than assuming: the line below said "cannot" and
+		// expected "can" for as long as every call site happened to pass the
+		// acting client's own id.
 		{"client reads its own customer", domain.RoleClient, ActionView, ownCustomerResource, true},
-		{"client cannot read another customer", domain.RoleClient, ActionView, otherCustomerResource, true},
+		{"client cannot read another customer", domain.RoleClient, ActionView, otherCustomerResource, false},
 		{"client cannot write", domain.RoleClient, ActionCreate, ownCustomerResource, false},
 		{"client cannot update", domain.RoleClient, ActionUpdate, ownCustomerResource, false},
 		{"client cannot administer", domain.RoleClient, ActionManage, Resource{Type: "user"}, false},
 		{"client cannot approve", domain.RoleClient, ActionApprove, ownCustomerResource, false},
 		{"client with no customer scope is refused", domain.RoleClient, ActionView, Resource{Type: "report"}, false},
+
+		// A member reads an account they work on, and not one they do not: a
+		// customer record has no single project, so membership of any of its
+		// projects is what scopes it.
+		{"member reads a customer they work on", domain.RoleMember, ActionView,
+			Resource{Type: "customer", ID: ownCustomer, CustomerID: ownCustomer}, true},
+		{"member cannot read a customer they do not", domain.RoleMember, ActionView,
+			Resource{Type: "customer", ID: otherCustomer, CustomerID: otherCustomer}, false},
+
+		// And a named record of a scoped type that says where it sits nowhere
+		// is refused rather than treated as a global setting, which is how a
+		// colleague's entry was readable by its id alone.
+		{"a record that names no scope is refused", domain.RoleMember, ActionView,
+			Resource{Type: "time_entry", ID: 42, OwnerID: 99}, false},
+		{"a manager gets the same answer", domain.RoleManager, ActionView,
+			Resource{Type: "time_entry", ID: 42, OwnerID: 99}, false},
+		// A listing is not a record and is narrowed by the service instead, so
+		// it still passes: see effectiveScope.
+		{"a listing is not refused by that rule", domain.RoleMember, ActionView,
+			Resource{Type: "time_entry", OwnerID: actorID}, true},
 	}
 
 	for _, tc := range tests {
@@ -307,13 +382,56 @@ func TestInactiveUserIsRefused(t *testing.T) {
 
 // TestMissingMembershipLookupFailsClosed: a misconfigured authoriser must refuse,
 // never allow.
+//
+// Both lookups, because a customer record is scoped by the second one and an
+// authoriser wired up with only the first - which is how every test fixture
+// here was built before the customer scope existed - would otherwise answer
+// "permitted" for an account nobody works on.
 func TestMissingMembershipLookupFailsClosed(t *testing.T) {
-	authorizer := RoleAuthorizer{} // no lookup injected
+	authorizer := RoleAuthorizer{} // no lookups injected
 	ctx := WithUser(context.Background(), domain.User{ID: 1, Role: domain.RoleManager, Active: true})
 
-	err := authorizer.Can(ctx, ActionView, Resource{Type: "time_entry", ProjectID: 5})
-	if !errors.Is(err, ErrForbidden) {
-		t.Errorf("a missing membership lookup should refuse, got %v", err)
+	for _, resource := range []Resource{
+		{Type: "time_entry", ProjectID: 5},
+		{Type: "customer", ID: 9, CustomerID: 9},
+	} {
+		if err := authorizer.Can(ctx, ActionView, resource); !errors.Is(err, ErrForbidden) {
+			t.Errorf("a missing membership lookup should refuse %s, got %v",
+				resource.Type, err)
+		}
+	}
+}
+
+// TestAFailingMembershipLookupIsAnErrorRatherThanARefusal.
+//
+// The difference matters: a refusal is reported to the caller as "not found",
+// which for a database that is simply unreachable would be a lie that reads as
+// data loss. Both lookups propagate instead.
+func TestAFailingMembershipLookupIsAnErrorRatherThanARefusal(t *testing.T) {
+	broken := errors.New("the database is gone")
+	authorizer := RoleAuthorizer{
+		IsProjectMember: func(context.Context, int64, int64) (bool, error) {
+			return false, broken
+		},
+		IsCustomerMember: func(context.Context, int64, int64) (bool, error) {
+			return false, broken
+		},
+	}
+	ctx := WithUser(context.Background(), domain.User{ID: 1, Role: domain.RoleMember, Active: true})
+
+	for _, resource := range []Resource{
+		{Type: "time_entry", ID: 1, OwnerID: 99, ProjectID: 5},
+		{Type: "customer", ID: 9, CustomerID: 9},
+	} {
+		err := authorizer.Can(ctx, ActionView, resource)
+		if !errors.Is(err, broken) {
+			t.Errorf("a failing lookup for %s gave %v, want the underlying error",
+				resource.Type, err)
+		}
+		if errors.Is(err, ErrForbidden) {
+			t.Errorf("a failing lookup for %s was reported as a refusal, which "+
+				"a caller turns into \"not found\"", resource.Type)
+		}
 	}
 }
 

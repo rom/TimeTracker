@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -221,19 +222,15 @@ func TestRestoringTheSameArchiveTwiceChangesNothingTheSecondTime(t *testing.T) {
 // triple the size of a backup whose bulk is photographs. So a bare .json
 // backup can describe its attachments and cannot restore them.
 //
-// What the code does with that differs by path, and both are pinned here
-// because the difference is not visible from either one alone:
-//
-//   - The archive path reports it, which is what the Attachments field's own
-//     comment promises: "a bare .json file lists them and cannot restore them,
-//     which the restore reports rather than hides".
-//   - The bare-JSON path says nothing at all, because the reporting lives in
-//     restoreAttachments and that is only reached when there is an archive to
-//     read the files out of.
-//
-// The second is a gap against the documented intent rather than a danger: the
-// records all arrive, and only the receipts are silently absent. Pinned rather
-// than fixed, so closing it is a deliberate change.
+// Both paths now say so, which is what the Attachments field's own comment
+// promises: "a bare .json file lists them and cannot restore them, which the
+// restore reports rather than hides". For a long time only the archive path
+// did, because the reporting lived in restoreAttachments and that is reached
+// only when there is an archive to read the files out of - so restoring a
+// document put every record back and left the evidence silently absent. Not a
+// danger, since nothing was lost that the file held; a restore that does not
+// mention it is how somebody finds out by opening a billed expense and seeing
+// no receipt behind it.
 func TestAnArchiveListingAttachmentsItDoesNotCarry(t *testing.T) {
 	f := newFixture(t)
 
@@ -273,9 +270,76 @@ func TestAnArchiveListingAttachmentsItDoesNotCarry(t *testing.T) {
 		t.Errorf("restored %d attachments from a document that carries none",
 			result.Attachments)
 	}
-	if len(result.Problems) != 0 {
-		t.Errorf("the bare-JSON path now reports %v; if that is deliberate, this "+
-			"test and the note above it should say so", result.Problems)
+	// And it says which, so the one receipt that is missing can be found and
+	// re-attached rather than discovered later.
+	problems := strings.Join(result.Problems, "\n")
+	if !strings.Contains(problems, "receipt.txt") {
+		t.Errorf("the restore did not name the attachment it could not carry:\n%s",
+			problems)
+	}
+	if !strings.Contains(problems, "document rather than an archive") {
+		t.Errorf("the restore did not say why it could not carry it:\n%s", problems)
+	}
+	// Singular, because there is one of them. A message reading "the 1
+	// attachments it lists" is the sort of thing that makes a tool look
+	// careless at the moment somebody is already worried.
+	if strings.Contains(problems, "the 1 attachment") {
+		t.Errorf("the message counts one attachment as a plural:\n%s", problems)
+	}
+}
+
+// TestADocumentThatLostManyAttachmentsCountsThemRatherThanListingThem.
+//
+// The same message with four hundred receipts behind it. "receipt-1.txt and 397
+// more" is a sentence somebody can act on; four hundred filenames in a box on a
+// screen is not.
+func TestADocumentThatLostManyAttachmentsCountsThemRatherThanListingThem(t *testing.T) {
+	f := newFixture(t)
+
+	started := time.Date(2026, 3, 16, 9, 0, 0, 0, time.UTC)
+	backup := Backup{
+		Customers: []domain.Customer{{Name: "Globex", Currency: "EUR"}},
+		Projects: []domain.Project{
+			{CustomerName: "Globex", Name: "Rollout", BillableDefault: true},
+		},
+		Assignments: []domain.Assignment{
+			{CustomerName: "Globex", ProjectName: "Rollout", Name: "Support",
+				BillableDefault: true},
+		},
+		TimeEntries: []BackupEntry{{
+			Customer: "Globex", Project: "Rollout", Assignment: "Support",
+			StartedAt: started, Seconds: 3600, Status: "confirmed",
+			TimeZone: "UTC", Billable: true,
+		}},
+	}
+	for i := 0; i < 400; i++ {
+		backup.Attachments = append(backup.Attachments, BackupAttachment{
+			Path:      fmt.Sprintf("attachments/%d.txt", i),
+			OwnerType: domain.AttachmentOwnerTimeEntry,
+			OwnerKey:  entryOwnerKey("Globex", "Rollout", "Support", started),
+			SHA256:    fmt.Sprintf("%064d", i),
+			Filename:  fmt.Sprintf("receipt-%d.txt", i),
+			MIME:      "text/plain", SizeBytes: 9,
+		})
+	}
+
+	result, err := f.svc.Restore(f.ctx, bytes.NewReader(damagedBackup(t, backup)))
+	if err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+
+	problems := strings.Join(result.Problems, "\n")
+	if !strings.Contains(problems, "400 attachments") {
+		t.Errorf("the restore does not say how many it could not carry:\n%s", problems)
+	}
+	if !strings.Contains(problems, "more") {
+		t.Errorf("the restore does not say it is naming only some of them:\n%s",
+			problems)
+	}
+	if strings.Count(problems, "receipt-") > 4 {
+		t.Errorf("the restore named %d filenames; a handful is a sentence and "+
+			"four hundred is a wall:\n%s", strings.Count(problems, "receipt-"),
+			problems)
 	}
 }
 

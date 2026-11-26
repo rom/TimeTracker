@@ -80,6 +80,18 @@ func (s *Service) CopyDay(ctx context.Context, from, to time.Time) (CopyResult, 
 	source := dayRange(from, loc)
 	target := startOfDay(to, loc)
 
+	// Not onto itself, which doubles the day. A copy adds to whatever is
+	// already on the target rather than replacing it - deliberately, because
+	// replacing would silently delete work - and that is exactly what makes
+	// this case destructive in the quiet way: every row appears twice, the
+	// day's total is twice what was worked, and nothing says so. The form has
+	// a "copy from" field, so it is reachable by typing today's date into it.
+	// CopyWeek has refused the same thing all along.
+	if source.start.Equal(target) {
+		return CopyResult{}, fmt.Errorf(
+			"%w: that is the same day", ErrValidation)
+	}
+
 	entries, err := s.dayEntries(ctx, actor.ID, source)
 	if err != nil {
 		return CopyResult{}, err

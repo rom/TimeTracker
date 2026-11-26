@@ -38,7 +38,10 @@ func clientFixture(t *testing.T, f *fixture) *fixture {
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := New(f.db, auth.RoleAuthorizer{IsProjectMember: f.db.IsProjectMember}, logger,
+	svc := New(f.db, auth.RoleAuthorizer{
+		IsProjectMember:  f.db.IsProjectMember,
+		IsCustomerMember: f.db.IsCustomerMember,
+	}, logger,
 		func() time.Time { return f.now })
 	return &fixture{db: f.db, svc: svc, now: f.now, ctx: auth.WithUser(f.ctx, client),
 		assignment: f.assignment, user: client}
@@ -52,7 +55,10 @@ func clientFixture(t *testing.T, f *fixture) *fixture {
 func officeContext(t *testing.T, f *fixture) (*Service, context.Context) {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := New(f.db, auth.RoleAuthorizer{IsProjectMember: f.db.IsProjectMember}, logger,
+	svc := New(f.db, auth.RoleAuthorizer{
+		IsProjectMember:  f.db.IsProjectMember,
+		IsCustomerMember: f.db.IsCustomerMember,
+	}, logger,
 		func() time.Time { return f.now })
 	return svc, auth.WithUser(f.ctx, f.user)
 }
@@ -291,7 +297,10 @@ func TestClientSeesNothingOfAnotherCustomer(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := New(f.db, auth.RoleAuthorizer{IsProjectMember: f.db.IsProjectMember}, logger,
+	svc := New(f.db, auth.RoleAuthorizer{
+		IsProjectMember:  f.db.IsProjectMember,
+		IsCustomerMember: f.db.IsCustomerMember,
+	}, logger,
 		func() time.Time { return f.now })
 
 	if entries, err := svc.Entries(auth.WithUser(f.ctx, stranger), wholeRange(f)); err != nil || len(entries) != 0 {

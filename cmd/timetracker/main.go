@@ -374,7 +374,10 @@ func buildMode(ctx context.Context, cfg config.Config, db *store.DB, log *slog.L
 		// The RBAC authoriser needs a membership lookup. Injecting the store
 		// method keeps internal/auth free of any database dependency, so the
 		// decision table can be tested exhaustively without fixtures.
-		authorizer := auth.RoleAuthorizer{IsProjectMember: db.IsProjectMember}
+		authorizer := auth.RoleAuthorizer{
+			IsProjectMember:  db.IsProjectMember,
+			IsCustomerMember: db.IsCustomerMember,
+		}
 		svc := service.New(db, authorizer, log, time.Now)
 		blobs, err := openBlobStore(cfg)
 		if err != nil {

@@ -1,0 +1,25 @@
+-- 0014_weekends.sql - the weekend as a thing the instance has an opinion about.
+--
+-- Two settings, both instance-wide rather than per-user, for the same reason
+-- the week's first day is: a timesheet is read by somebody other than the
+-- person who filled it in. Whether Saturday counts as a working day is a fact
+-- about the organisation, and an approver looking at a week needs the same
+-- answer the person recording it had.
+--
+-- weekend_recording is the policy: may time be recorded on a Saturday or a
+-- Sunday at all. It defaults to 1 - allowed - because that is what the
+-- application did before this column existed, and a migration that silently
+-- starts refusing entries would be a migration that loses somebody's weekend.
+--
+-- It governs new and moved time only. Time already on a weekend stays editable
+-- and deletable whatever this says: a policy that stranded existing rows would
+-- make turning it on an irreversible act.
+--
+-- weekend_colour is presentation: which of the entity palette's keys the day
+-- numbers of a weekend are drawn in. A key rather than a colour, because the
+-- stylesheet maps each key to a value that works on the current theme's
+-- background (docs/adr/0011-theming-via-css-custom-properties.md), and a stored
+-- #rrggbb would be a value chosen against one theme and wrong in the other six.
+-- Red by default: it is the colour this palette already uses for "no".
+ALTER TABLE settings ADD COLUMN weekend_recording INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE settings ADD COLUMN weekend_colour    TEXT    NOT NULL DEFAULT 'red';

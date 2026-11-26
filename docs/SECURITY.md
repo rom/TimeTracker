@@ -79,6 +79,41 @@ internal notes, cost data and colleague identities are removed before the data
 leaves it, so no template bug can leak them. Resources a user may not know exist
 return "not found" rather than "forbidden".
 
+Commercial figures — a customer's negotiated rate, a project's budget, an
+assignment's rate — are removed from the catalogue before it leaves the service
+for any reader who may not see money, which the authoriser answers rather than a
+role test. Only the client projection existed for a long time, so a member read
+all three off the catalogue screen against the role table's "own rates only".
+The tag vocabulary is scoped the same way the entries listing is, because a tag
+is created by being used and so describes the work it labels.
+
+Administering the instance — the accounts and their roles, the instance
+settings, the backups, the tag vocabulary every project shares — is the
+administrator's. A manager's authority is real and bounded by project
+membership, and those four resources name no project, so the bound let a manager
+through until they were named as the instance's own. The verb is what is
+refused: a manager still views, records and approves across them, and changing
+your own preferences is an update of your own user record.
+
+A screen is not an action, so opening one has to be asked about separately: every
+registered GET has a decided answer for a client, checked by a sweep over the
+route table (`internal/web/clientscreens_test.go`). Nine screens were reachable
+by a client because the navigation hid the links and no handler asked — among
+them four edit forms that loaded their record with a *view* check while the save
+they submit to requires manage, so an assignment's hourly rate arrived typed
+into a field; the instance settings screen, which asked nothing and carries the
+default rate; and an attachment route that served a receipt to anybody who could
+view the record it hung on, against the projection's own stated premise that a
+client cannot fetch one.
+
+A read of a single record must name the project or customer it belongs to, and a
+record of a project-scoped type that does not is **refused** rather than
+permitted. The authoriser does permit a resource with no place in the hierarchy —
+the instance settings, a user account, a listing the service narrows itself — and
+for three reads it was reached by a resource that simply forgot to say where it
+sat, which made a colleague's entry readable by its id. Forgetting now fails
+closed; see ADR-0008 for the three and for what each disclosed.
+
 ### Approval and period locking ([ADR-0023](adr/0023-week-as-the-unit-of-approval.md))
 
 Submitted and approved weeks refuse every mutation of the time inside them, and

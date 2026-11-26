@@ -280,18 +280,24 @@ func validHash(hash string) bool {
 // ones nobody thought of. Notably absent: image/svg+xml, which is script-capable
 // and is therefore treated as hostile - a stored SVG served inline is a stored
 // cross-site scripting vector.
+//
+// Keyed by media type alone, with no parameters: a sniffed type arrives as
+// "text/plain; charset=utf-8" and the charset is not what is being decided.
+// Two of these keys carried one, which made the lookup miss for the same type
+// sniffed without it - "text/csv" was refused outright, and "text/plain" was
+// accepted only through a prefix match that also accepted "text/plainish".
 var acceptedTypes = map[string]bool{
-	"image/jpeg":                true,
-	"image/png":                 true,
-	"image/gif":                 true,
-	"image/webp":                true,
-	"image/bmp":                 true,
-	"image/tiff":                true,
-	"image/svg+xml":             true,
-	"application/pdf":           true,
-	"text/plain; charset=utf-8": true,
-	"text/csv; charset=utf-8":   true,
-	"application/zip":           true, // covers .docx, .xlsx and .odt
+	"image/jpeg":      true,
+	"image/png":       true,
+	"image/gif":       true,
+	"image/webp":      true,
+	"image/bmp":       true,
+	"image/tiff":      true,
+	"image/svg+xml":   true,
+	"application/pdf": true,
+	"text/plain":      true,
+	"text/csv":        true,
+	"application/zip": true, // covers .docx, .xlsx and .odt
 	// A pre-2007 Word or Excel file. One type for both, because the container
 	// is identical and this is a store rather than a parser.
 	"application/x-ole-storage": true,
@@ -344,8 +350,7 @@ func checkExtensionAgrees(filename, mime string) error {
 
 	// The sniffed type carries parameters ("text/plain; charset=utf-8"), so the
 	// comparison is on the media type alone.
-	base, _, _ := strings.Cut(mime, ";")
-	base = strings.TrimSpace(base)
+	base := mediaType(mime)
 
 	for _, candidate := range expected {
 		if base == candidate {
@@ -357,15 +362,26 @@ func checkExtensionAgrees(filename, mime string) error {
 }
 
 // Acceptable reports whether a sniffed content type may be stored.
+//
+// Matched on the media type, exactly, after the parameters are cut off and the
+// case folded - as verifyType above does it, and for the same reason. It used to
+// fall back to a prefix match for the text/plain family, which accepted
+// "text/plainish" and anything else beginning that way. Nothing sniffs such a
+// type, so it was looseness rather than a hole; a type that is accepted because
+// of how its name starts is still the wrong rule for an allow-list whose point
+// is the types nobody thought of.
 func Acceptable(mime string) bool {
-	if accepted, known := acceptedTypes[mime]; known {
-		return accepted
-	}
-	// text/plain arrives with various charset parameters; accept the family.
-	if strings.HasPrefix(mime, "text/plain") {
-		return true
-	}
-	return false
+	return acceptedTypes[mediaType(mime)]
+}
+
+// mediaType is a content type with its parameters removed and its case folded.
+//
+// A media type is case-insensitive and the sniffer emits lower case, so this
+// matters only for a type that came from somewhere else - which is exactly the
+// input an allow-list should not be lenient about reading.
+func mediaType(mime string) string {
+	base, _, _ := strings.Cut(mime, ";")
+	return strings.ToLower(strings.TrimSpace(base))
 }
 
 // staleUploadAge is how long a temporary upload file may linger before the sweep

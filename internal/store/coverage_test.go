@@ -444,6 +444,26 @@ func TestProjectMembershipIsTheScopeTheAuthoriserReads(t *testing.T) {
 		t.Errorf("IsProjectMember = %v, %v for somebody who is not one", member, err)
 	}
 
+	// The authoriser's second lookup, for a customer record: an account has no
+	// single project, so "do you work on anything of theirs" is the nearest
+	// true answer to whether somebody may read it - including its negotiated
+	// rate, which is why the question is asked at all.
+	onAccount, err := db.IsCustomerMember(ctx, user.ID, 1)
+	if err != nil || !onAccount {
+		t.Errorf("IsCustomerMember = %v, %v for somebody on one of its projects",
+			onAccount, err)
+	}
+	if onAccount, err = db.IsCustomerMember(ctx, other.ID, 1); err != nil || onAccount {
+		t.Errorf("IsCustomerMember = %v, %v for somebody on none of them",
+			onAccount, err)
+	}
+	// A customer that does not exist is not somebody's, rather than an error:
+	// the authoriser asks about whatever id it was handed.
+	if onAccount, err = db.IsCustomerMember(ctx, user.ID, 9999); err != nil || onAccount {
+		t.Errorf("IsCustomerMember = %v, %v for a customer that is not there",
+			onAccount, err)
+	}
+
 	projects, err := db.ProjectIDsForUser(ctx, user.ID)
 	if err != nil {
 		t.Fatalf("project ids: %v", err)
@@ -495,6 +515,20 @@ func TestProjectMembershipIsTheScopeTheAuthoriserReads(t *testing.T) {
 	}
 	if member, err = db.IsProjectMember(ctx, user.ID, assignment.ProjectID); err != nil || member {
 		t.Error("a removed member is still a member")
+	}
+	// Still on the account, through the second project. One removal is not a
+	// removal from the customer, which is the case a join written with the
+	// wrong cardinality gets wrong.
+	if onAccount, err := db.IsCustomerMember(ctx, user.ID, 1); err != nil || !onAccount {
+		t.Errorf("IsCustomerMember = %v, %v after one of two memberships was "+
+			"removed", onAccount, err)
+	}
+	if err := db.RemoveProjectMember(ctx, second.ID, user.ID); err != nil {
+		t.Fatalf("remove the second membership: %v", err)
+	}
+	if onAccount, err := db.IsCustomerMember(ctx, user.ID, 1); err != nil || onAccount {
+		t.Errorf("IsCustomerMember = %v, %v with no memberships left",
+			onAccount, err)
 	}
 }
 

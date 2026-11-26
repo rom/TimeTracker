@@ -32,6 +32,48 @@ type Money struct {
 	Currency string
 }
 
+// CurrencyExponent is how many decimal places a currency's minor unit is worth,
+// as ISO 4217 defines it.
+//
+// Two for most of the world, and this application held every currency at two
+// for a long time - which means an instance invoicing in yen held every amount
+// at a hundred times its value, because a yen has no subdivision to hold. The
+// currency code is validated as any three letters, so nothing stopped it.
+//
+// The exceptions are a short, stable list rather than a lookup: it has changed
+// perhaps a dozen times in forty years, and a table in the source can be read
+// and disagreed with. An unlisted code gets two, which is right for every
+// currency not named here and is the safe way to be wrong about a new one - the
+// amount is then out by a factor people notice immediately on the first
+// invoice, rather than by one they do not.
+func CurrencyExponent(currency string) int {
+	switch strings.ToUpper(strings.TrimSpace(currency)) {
+	// No minor unit at all. An amount is a whole number of them.
+	case "BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF", "KRW", "PYG",
+		"RWF", "UGX", "UYI", "VND", "VUV", "XAF", "XOF", "XPF":
+		return 0
+	// A thousandth, written with three decimal places. The Gulf dinars and the
+	// Tunisian and Libyan dinar.
+	case "BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND":
+		return 3
+	// Four, for the two units of account that use them.
+	case "CLF", "UYW":
+		return 4
+	default:
+		return 2
+	}
+}
+
+// minorUnitsPer is 10^CurrencyExponent: how many minor units make one whole
+// unit of the currency.
+func minorUnitsPer(currency string) int64 {
+	scale := int64(1)
+	for i := 0; i < CurrencyExponent(currency); i++ {
+		scale *= 10
+	}
+	return scale
+}
+
 // NewMoney builds an amount from a whole number of minor units.
 func NewMoney(minor int64, currency string) Money {
 	return Money{Minor: minor, Currency: strings.ToUpper(strings.TrimSpace(currency))}
@@ -153,26 +195,24 @@ func (m Money) ScalePercent(pct int64) Money {
 	return Money{Minor: quotient, Currency: m.Currency}
 }
 
-// String renders the amount with two decimal places and its currency code, e.g.
-// "1234.50 SEK". Display formatting for a locale is a presentation concern and
-// belongs in the web layer; this is for logs, exports and debugging.
+// String renders the amount with its currency's own number of decimal places and
+// its code, e.g. "1234.50 SEK" or "1234 JPY". Display formatting for a locale is
+// a presentation concern and belongs in the web layer; this is for logs, exports
+// and debugging.
 func (m Money) String() string {
-	sign := ""
-	minor := m.Minor
-	if minor < 0 {
-		sign = "-"
-		minor = -minor
-	}
-	major := minor / 100
-	frac := minor % 100
 	if m.Currency == "" {
-		return fmt.Sprintf("%s%d.%02d", sign, major, frac)
+		return m.Decimal()
 	}
-	return fmt.Sprintf("%s%d.%02d %s", sign, major, frac, m.Currency)
+	return m.Decimal() + " " + m.Currency
 }
 
 // Decimal renders just the numeric part, e.g. "1234.50", for CSV and JSON export
 // where the currency travels in its own column or field.
+//
+// As many decimal places as the currency has minor units, which for a yen is
+// none: "1234.00 JPY" is not a smaller amount than "1234 JPY", it is a figure
+// nobody writing in yen would recognise, and a spreadsheet column that mixes
+// the two cannot be summed.
 func (m Money) Decimal() string {
 	sign := ""
 	minor := m.Minor
@@ -180,7 +220,15 @@ func (m Money) Decimal() string {
 		sign = "-"
 		minor = -minor
 	}
-	return sign + strconv.FormatInt(minor/100, 10) + "." + fmt.Sprintf("%02d", minor%100)
+
+	scale := minorUnitsPer(m.Currency)
+	whole := strconv.FormatInt(minor/scale, 10)
+	if scale == 1 {
+		return sign + whole
+	}
+	exponent := CurrencyExponent(m.Currency)
+	return sign + whole + "." +
+		fmt.Sprintf("%0*d", exponent, minor%scale)
 }
 
 // ParseMoney reads a human-entered amount such as "1234.50", "1234,50" or "1 234"
@@ -188,6 +236,11 @@ func (m Money) Decimal() string {
 // separator because this application is used across locales, and spaces (including
 // the non-breaking space some spreadsheets emit) are stripped as thousands
 // separators.
+//
+// How many minor units a decimal place is worth depends on the currency: "100"
+// in yen is a hundred minor units and in euro ten thousand of them. Parsing
+// every currency at two decimals - which this did - meant a yen instance held
+// every figure at a hundred times what was typed.
 func ParseMoney(s, currency string) (Money, error) {
 	cleaned := strings.NewReplacer(" ", "", " ", "", " ", "", ",", ".").Replace(strings.TrimSpace(s))
 	if cleaned == "" {
@@ -206,24 +259,32 @@ func ParseMoney(s, currency string) (Money, error) {
 		return Money{}, fmt.Errorf("invalid amount %q", s)
 	}
 
+	exponent := CurrencyExponent(currency)
 	var fracVal int64
-	if hasFrac {
-		// Pad or truncate to exactly two digits: "5" means 50 minor units, and
-		// "505" is more precision than a minor unit can hold, so it is truncated.
-		switch {
-		case len(frac) == 0:
-			frac = "00"
-		case len(frac) == 1:
+	if hasFrac && exponent > 0 {
+		// Pad or truncate to exactly the currency's number of digits: in euro
+		// "5" means 50 minor units, and "505" is more precision than a minor
+		// unit can hold, so it is truncated.
+		for len(frac) < exponent {
 			frac += "0"
-		case len(frac) > 2:
-			frac = frac[:2]
+		}
+		if len(frac) > exponent {
+			frac = frac[:exponent]
 		}
 		if fracVal, err = strconv.ParseInt(frac, 10, 64); err != nil {
 			return Money{}, fmt.Errorf("invalid amount %q", s)
 		}
+	} else if hasFrac && frac != "" {
+		// A currency with no minor unit, given decimals anyway - "100.5" yen.
+		// Truncated rather than refused, which is what the extra digits of a
+		// two-decimal currency already get, and refusing would turn a harmless
+		// paste from a spreadsheet into an error on a form.
+		if _, err := strconv.ParseInt(frac, 10, 64); err != nil {
+			return Money{}, fmt.Errorf("invalid amount %q", s)
+		}
 	}
 
-	minor := majorVal*100 + fracVal
+	minor := majorVal*minorUnitsPer(currency) + fracVal
 	if negative {
 		minor = -minor
 	}

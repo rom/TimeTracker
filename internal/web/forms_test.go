@@ -229,17 +229,19 @@ func setZone(t *testing.T, srv *Server, zone string) {
 	}
 }
 
-// TestAClientIsSentToTheListingRatherThanTheirOwnMonth.
+// TestAClientIsSentToTheListingRatherThanTheirOwnTimesheet.
 //
-// The month overview summarises somebody's own timesheet, and a client has
-// none: they are looking at work done for them, by other people. A month grid
-// of empty squares with their own name on it is a worse answer than the listing
-// that does have something in it.
+// The day, week and month screens are about somebody's own timesheet, and a
+// client has none: they are looking at work done for them, by other people. A
+// month grid of empty squares with their own name on it is a worse answer than
+// the listing that does have something in it.
 //
-// The week and day screens refuse a client outright instead. Both are asserted
-// here, because the difference between them is a deliberate choice and not
-// something to discover by clicking.
-func TestAClientIsSentToTheListingRatherThanTheirOwnMonth(t *testing.T) {
+// All of them send a client to that listing now. The week and the submission
+// review used to refuse outright, so a client following a week link from
+// anywhere got a bare "not permitted" where the day and month links took them
+// somewhere useful - the day and month had the redirect and the week never did,
+// because it was the same four lines copied twice rather than one helper.
+func TestAClientIsSentToTheListingRatherThanTheirOwnTimesheet(t *testing.T) {
 	srv, accounts := newServerModeTestServer(t)
 	admin := newClient(t, srv)
 
@@ -270,18 +272,29 @@ func TestAClientIsSentToTheListingRatherThanTheirOwnMonth(t *testing.T) {
 			rec.Code, truncate(rec.Body.String()))
 	}
 
-	// The day screen does the same thing as the month.
-	if rec := reviewer.get(t, "/today"); rec.Code != http.StatusSeeOther {
-		t.Errorf("a client's GET /today = %d, want the same redirect the month gives",
-			rec.Code)
+	// Every screen about their own time answers the same way, including the
+	// week with a date on it and the review in front of a submission they
+	// cannot make.
+	for _, path := range []string{"/", "/today", "/today?date=2026-03-16",
+		"/week", "/week?date=2026-03-16", "/week/review"} {
+		rec := reviewer.get(t, path)
+		if rec.Code != http.StatusSeeOther {
+			t.Errorf("a client's GET %s = %d, want the same redirect the month "+
+				"gives\n%s", path, rec.Code, truncate(rec.Body.String()))
+			continue
+		}
+		if target := rec.Header().Get("Location"); !strings.HasPrefix(target, "/entries") {
+			t.Errorf("a client asking for %s lands on %q, want the listing", path, target)
+		}
 	}
 
-	// The week screen does not: it refuses outright. That is pinned here as
-	// what the application does rather than as what it should do - a client
-	// following the week link from anywhere gets a bare "not permitted" where
-	// the day and month links take them somewhere useful.
-	if rec := reviewer.get(t, "/week"); rec.Code != http.StatusForbidden {
-		t.Errorf("a client's GET /week = %d, want 403 (the behaviour this pins)", rec.Code)
+	// A screen that is administrative rather than personal still refuses
+	// outright, which is the right answer there: it has no client equivalent to
+	// be sent to, and a redirect would claim it does.
+	for _, path := range []string{"/approvals", "/users", "/backup", "/admin"} {
+		if rec := reviewer.get(t, path); rec.Code != http.StatusForbidden {
+			t.Errorf("a client's GET %s = %d, want 403", path, rec.Code)
+		}
 	}
 }
 
