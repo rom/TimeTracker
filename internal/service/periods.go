@@ -377,6 +377,51 @@ func (s *Service) RecentPeriods(ctx context.Context) ([]domain.TimesheetPeriod, 
 
 // ---------------------------------------------------------------- locking ---
 
+// checkWeekendAllowed refuses new time that would land on a weekend, when the
+// instance says weekends are not worked.
+//
+// Deliberately NOT folded into checkPeriodOpen, although the two look alike and
+// are called from the same places. checkPeriodOpen's callers include deleting
+// an entry and stopping a running timer, and those must not be refused here: an
+// entry already sitting on a Saturday - recorded before the policy was turned
+// on, imported from a calendar, or left running past midnight on Friday - would
+// become impossible to stop, correct or remove, which would strand the data the
+// policy was meant to discourage. The lock and the policy answer different
+// questions ("has this week been signed off" and "should this day be worked
+// at all"), so they are different functions with different call sites.
+//
+// It governs where time arrives, not where it already is: creating an entry,
+// starting a timer, and moving an existing entry onto a weekend. Moving one
+// OFF a weekend, editing it in place, and deleting it are all untouched.
+//
+// The day is judged in the owner's zone, like everything else about which day
+// an entry belongs to: 22:00 on Friday in Stockholm is Friday for a Swedish
+// employee whatever the server thinks.
+func (s *Service) checkWeekendAllowed(ctx context.Context, userID int64, when time.Time) error {
+	settings, err := s.db.GetSettings(ctx)
+	if err != nil {
+		return err
+	}
+	if settings.WeekendRecording {
+		return nil
+	}
+	owner, err := s.db.GetUser(ctx, userID)
+	if err != nil {
+		// A user that cannot be loaded is not a reason to allow the change.
+		return err
+	}
+
+	local := when.In(locationFor(owner))
+	if !domain.IsWeekend(local) {
+		return nil
+	}
+	// Named rather than "the weekend", because the refusal is read by somebody
+	// who believes they picked a working day, and the day they actually picked
+	// is the useful half of the answer.
+	return fmt.Errorf("%w: %s is a weekend, and this instance does not record time on weekends",
+		ErrValidation, local.Format("Monday 2 January 2006"))
+}
+
 // checkPeriodOpen refuses a change that falls inside a locked week.
 //
 // Every mutation of a time entry goes through here. That is the whole mechanism:

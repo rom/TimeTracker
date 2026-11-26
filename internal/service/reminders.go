@@ -196,7 +196,7 @@ func (s *Service) emptyWeekdays(ctx context.Context, actor domain.User, weekStar
 		if day.After(now) {
 			break
 		}
-		if day.Weekday() == time.Saturday || day.Weekday() == time.Sunday {
+		if domain.IsWeekend(day) {
 			continue
 		}
 		count, err := s.CountEntries(ctx, EntryFilter{

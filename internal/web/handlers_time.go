@@ -40,6 +40,12 @@ type pageData struct {
 	// interface needs to know. The password itself is stripped from Settings
 	// before it reaches here.
 	BackupEncrypted bool
+	// WeekendColour is the palette key the day numbers of a Saturday and a
+	// Sunday are drawn in, already reduced to a key the stylesheet has a rule
+	// for. It is written into an attribute on the document, like the theme and
+	// the navigation position, so every grid on every screen picks it up
+	// without being passed anything.
+	WeekendColour string
 
 	// Help is the context-sensitive help for the current screen.
 	Help       []helpSection
@@ -315,6 +321,7 @@ func (s *Server) newPageData(r *http.Request, title, active string) (pageData, e
 		IdleSeconds:     settings.IdleSeconds,
 		BackupEncrypted: backupEncrypted,
 		Nav:             domain.NavPosition(settings.NavPosition).OrDefault(),
+		WeekendColour:   domain.ColourKeyOr(settings.WeekendColour, "red"),
 		Rounding:        service.RoundingPresets(),
 		InboxCount:      inboxCount,
 		IsClient:        user.Role == domain.RoleClient,

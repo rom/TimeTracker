@@ -52,6 +52,31 @@
   --brand-time:    var(--entity-red);
   --brand-tracker: var(--entity-blue);
 
+  /* The weekend wash and its hatch. Derived from each theme's own --text and
+     --surface-raised rather than given seven literal values, so a weekend
+     reads as "the same surface, shaded" in every theme and an eighth theme
+     needs no entry here. Both are mixed into `transparent` rather than into
+     the surface, so a cell that already has a background of its own - today's
+     accent tint, a neighbouring month's sunken grey - keeps it and takes the
+     raster on top instead of having it replaced.
+
+     Kept faint on purpose, and the percentages are not a matter of taste: the
+     hours on a weekend that WAS worked still have to be as readable as any
+     other day's, and the figures sit directly on the hatching. These are the
+     strongest values at which every theme's --text and --text-muted stay at
+     AA against a stripe, with margin, and a test reads these percentages back
+     out of this file and checks exactly that. The stripe is half the period
+     rather than a third, so the pattern still reads at a colour this light. */
+  --weekend-wash:  color-mix(in srgb, var(--text) 3%, transparent);
+  --weekend-hatch: color-mix(in srgb, var(--text) 6%, transparent);
+
+  /* The weekend's day numbers. Red by default - the palette already uses it
+     for "no" - and redefined by the data-weekend attribute the server writes
+     onto <html> from the instance setting. Declared here as well so a document
+     that somehow carries no attribute still gets a colour rather than an
+     unresolved var() and therefore no colour at all. */
+  --weekend-ink: var(--entity-red);
+
   /* Non-colour tokens: shared so themes cannot drift structurally.
      A theme may still override one deliberately - terminal takes the monospace
      face, squares the radius and drops the shadow, because there its structure
@@ -159,7 +184,12 @@
   --warning:        #97701a;
 
   --entity-blue:   #2f6fa8;
-  --entity-green:  #2f8f4e;
+  /* Darkened from #2f8f4e, which was 4.07:1 as text on this theme's raised
+     surface and 3.77:1 on its page - below AA in the one theme whose whole
+     character is green, and therefore the colour most likely to be chosen in
+     it. Found by the weekend contrast test, which is the first check to hold
+     the entity palette to AA as text rather than only as a tint behind it. */
+  --entity-green:  #277d42;
   --entity-amber:  #97701a;
   --entity-red:    #b8352c;
   --entity-purple: #6b4f9e;
@@ -1115,7 +1145,7 @@ input[type="text"], input[type="date"], input[type="time"], select {
 .col-day, .cell-day, .cell-day-total, .cell-total {
   text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;
 }
-.col-day.is-today { background: var(--accent-soft); }
+.col-day.is-today { background-color: var(--accent-soft); }
 .day-name { display: block; }
 .day-num { display: block; font-size: 1.1em; color: var(--text); }
 /* The heading cell is a link to that day. The whole cell rather than the text
@@ -1188,11 +1218,16 @@ input[type="text"], input[type="date"], input[type="time"], select {
 /* A day with nothing on it is left blank rather than showing a zero: a month of
    "0.00" reads as data, and the gaps are the point of the view. */
 .cell-month-day.empty .day-hours { display: none; }
-.cell-month-day.is-today { background: var(--accent-soft); }
+/* background-color and not the background shorthand, here and on .outside and
+   .col-day.is-today below: the shorthand resets background-image, which is
+   where the weekend raster lives. A weekend that is also today, or a weekend
+   outside the month, would lose its hatching to a property that was only ever
+   meant to set a colour. */
+.cell-month-day.is-today { background-color: var(--accent-soft); }
 .cell-month-day.is-today .day-num { color: var(--text); font-weight: 600; }
 /* Outside the month: present so the first and last rows are not ragged, and
    deliberately inert. */
-.cell-month-day.outside { background: var(--surface-sunken); }
+.cell-month-day.outside { background-color: var(--surface-sunken); }
 .cell-month-day.flagged { box-shadow: inset 3px 0 0 var(--danger); }
 .day-flag { color: var(--danger); font-weight: 700; }
 .month-summary { color: var(--text-muted); margin: 0 0 var(--gap); }
@@ -1203,6 +1238,103 @@ input[type="text"], input[type="date"], input[type="time"], select {
 .month-breakdown .cell-total { text-align: right; font-variant-numeric: tabular-nums; }
 .month-breakdown .cell-share { width: 14rem; }
 .share-figure { color: var(--text-muted); font-size: 0.88em; }
+
+/* ----------------------------------------------------------- weekend ----- */
+
+/* Saturday and Sunday, in both grids.
+
+   A diagonal raster rather than a flat tint, because the two flat tints in
+   these tables are already spoken for - --accent-soft is today and
+   --surface-sunken is a day outside the month - and a third grey would read as
+   a fourth state nobody can name. Hatching is the convention for "unavailable"
+   in a calendar, and it survives being the only difference between two cells
+   when the reader cannot distinguish the greys.
+
+   background-image, not background: a weekend that is also today keeps its
+   accent tint underneath, and a weekend outside the month keeps its sunken
+   grey, because both stripe layers are mixed into transparent. The raster
+   composes with whatever is behind it instead of competing for the property.
+
+   repeating-linear-gradient is a stylesheet rule, not an inline style, so none
+   of this touches the Content Security Policy
+   (docs/adr/0021-content-security-policy.md). */
+.is-weekend {
+  background-image:
+    repeating-linear-gradient(135deg,
+      transparent 0 3px, var(--weekend-hatch) 3px 6px),
+    linear-gradient(var(--weekend-wash), var(--weekend-wash));
+}
+
+/* The day number of a weekend, in the colour the instance chose.
+
+   The choice has to be made in the stylesheet, not in the markup: the Content
+   Security Policy has no 'unsafe-inline' for styles, so a server-written
+   style="color: ..." is dropped by the browser and the setting would appear to
+   do nothing (docs/adr/0021-content-security-policy.md). What the server
+   writes is the KEY, on <html>, and the seven lines below turn the key into
+   this theme's value - the same trick the entity palette already uses, one
+   level up.
+
+   Which leaves one rule that uses it, rather than seven repeated at every
+   specificity the grids happen to have. --weekend-ink is a token like any
+   other, so the day number is written once and reads correctly in all eight
+   themes and all seven colours. */
+[data-weekend="blue"]   { --weekend-ink: var(--entity-blue); }
+[data-weekend="green"]  { --weekend-ink: var(--entity-green); }
+[data-weekend="amber"]  { --weekend-ink: var(--entity-amber); }
+[data-weekend="red"]    { --weekend-ink: var(--entity-red); }
+[data-weekend="purple"] { --weekend-ink: var(--entity-purple); }
+[data-weekend="teal"]   { --weekend-ink: var(--entity-teal); }
+[data-weekend="slate"]  { --weekend-ink: var(--entity-slate); }
+
+/* Both selectors matter, and so does this block's position in the file.
+
+   .is-weekend .day-num ties with .cell-month-day .day-num on specificity, so
+   the weekend section sits AFTER the month grid to win the tie - the first
+   version of this put it before, and every weekend number came out muted grey
+   while the setting appeared to do nothing.
+
+   The second selector is today's Saturday. .cell-month-day.is-today .day-num
+   is one class more specific than the first selector and would otherwise win,
+   and that cell is the one where the weekend colour matters most: it is the
+   day somebody is looking at. */
+.is-weekend .day-num,
+.cell-month-day.is-today.is-weekend .day-num {
+  color: var(--weekend-ink);
+  /* The number sits on flat colour rather than on the raster.
+
+     Contrast is measured against the darkest point of the background a glyph
+     can land on, and that is a hatch stripe. Measured that way, a raster
+     strong enough to read as "do not work here" costs most of the palette its
+     AA rating in most themes - the contrast test found thirty-seven failing
+     pairs, and no percentage existed that was both visible and safe, because
+     two colours sit within 0.2 of the floor before any raster at all.
+
+     Backing just the number solves it without weakening the raster: the
+     coloured glyphs sit on the cell's own surface, and the hatching runs
+     behind everything else. It also reads the way a calendar normally prints
+     a date, as a small label in the corner, so the fix is not a visible
+     compromise.
+
+     One surface serves both grids. This was two declarations until the second
+     was measured in a browser: the week grid's heading row paints nothing of
+     its own and inherits the table's surface, so giving it the page colour
+     drew a tinted tile on a white header. */
+  background-color: var(--surface-raised);
+  border-radius: var(--radius);
+  padding: 0 4px;
+}
+/* The backdrop hugs the digits rather than filling the cell, which it would
+   otherwise do in both grids for different reasons: the month square is a
+   column flex and stretches its children, and the week grid's number is a
+   block. A band across the cell reads as a control; two or three characters on
+   a tile read as a date, which is what it is. */
+.cell-month-day.is-weekend .day-num { align-self: flex-start; }
+.col-day.is-weekend .day-num { width: fit-content; margin-left: auto; }
+
+/* A day of a neighbouring month needs nothing further: it carries no number,
+   so there is nothing to colour, and the raster alone is what keeps the
+   weekend reading as a column rather than stopping at the month's edge. */
 
 /* A month boundary inside the entries listing. Quiet rather than loud: it is a
    structural marker in a table people read for the rows, and a heavy band every

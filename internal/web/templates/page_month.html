@@ -45,7 +45,7 @@
         <tr>
           <th scope="col" class="col-weeknum"><span class="visually-hidden">{{.T "month.week"}}</span></th>
           {{range $month.Weekdays}}
-            <th scope="col" class="col-day">{{$.Printer.FormatWeekday .}}</th>
+            <th scope="col" class="col-day {{if isWeekend .}}is-weekend{{end}}">{{$.Printer.FormatWeekday .}}</th>
           {{end}}
           <th scope="col" class="col-total">{{.T "month.weektotal"}}</th>
         </tr>
@@ -73,7 +73,7 @@
             </th>
             {{range .Days}}
               {{if .InMonth}}
-                <td class="cell-month-day {{if eq .Seconds 0}}empty{{end}} {{if isToday .Date $.Now}}is-today{{end}} {{if .Flagged}}flagged{{end}}">
+                <td class="cell-month-day {{if eq .Seconds 0}}empty{{end}} {{if isToday .Date $.Now}}is-today{{end}} {{if isWeekend .Date}}is-weekend{{end}} {{if .Flagged}}flagged{{end}}">
                   {{/* The whole square is the link, so the target is the square
                        rather than the four characters of the date. */}}
                   <a href="/today?date={{date .Date}}"
@@ -89,7 +89,7 @@
                 {{/* A day of a neighbouring month: drawn as a blank so the first
                      and last rows are not ragged, and marked as not part of
                      this table's data for anything reading it aloud. */}}
-                <td class="cell-month-day outside" aria-hidden="true"></td>
+                <td class="cell-month-day outside {{if isWeekend .Date}}is-weekend{{end}}" aria-hidden="true"></td>
               {{end}}
             {{end}}
             {{/* The row's total opens the same week its number does. The two

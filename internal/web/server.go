@@ -306,6 +306,11 @@ func templateFuncs() template.FuncMap {
 		"isToday": func(t time.Time, now time.Time) bool {
 			return t.Year() == now.Year() && t.YearDay() == now.YearDay()
 		},
+		// isWeekend marks the days a calendar should show as days off. The
+		// dates the grids hold are already in the zone the week is being read
+		// in, so no conversion happens here - doing one would be the bug, not
+		// the fix.
+		"isWeekend": func(t time.Time) bool { return domain.IsWeekend(t) },
 		// barStep turns a percentage into the width class a bar is drawn with.
 		//
 		// A class rather than style="width: 42%", because the Content Security
@@ -395,9 +400,7 @@ func templateFuncs() template.FuncMap {
 		// colours are the palette keys an entity may carry. Stored as keys
 		// rather than values so each theme maps them to something legible on
 		// its own background (docs/adr/0011-theming-via-css-custom-properties.md).
-		"colours": func() []string {
-			return []string{"blue", "green", "amber", "red", "purple", "teal", "slate"}
-		},
+		"colours": func() []string { return domain.ColourKeys },
 	}
 }
 

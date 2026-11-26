@@ -160,6 +160,32 @@ the decision.
   one to aim at with anything but a mouse. The whole cell is the link now, as
   the squares beside it are, and its title says it opens the week, which a bare
   "12" in the margin of a calendar does not.
+* **The weekend is drawn as a weekend**, in the week grid and the month
+  calendar alike: a diagonal grey raster over Saturday and Sunday, running from
+  the heading through the rows to the day totals so it reads as a column rather
+  than a shaded block, and the dates themselves in a colour of their own - red
+  by default. Hatching rather than a third flat grey, because the two flat
+  tints in these tables are already spoken for: today, and a day outside the
+  month. A weekend that is also today keeps both.
+* **Whether weekends may be worked is an instance setting**
+  ([ADR-0036](adr/0036-the-weekend-is-a-policy-not-a-lock.md)). Turning it off
+  refuses new time on a Saturday or a Sunday, naming the day it fell on, at
+  every point where time arrives - the quick add, the correction form, a copied
+  day, a routine, both importers, and a timer at the moment it starts rather
+  than when it stops. It deliberately does **not** cover stopping a running
+  timer, deleting, or correcting time already on a weekend: a policy that
+  stranded the rows it disapproves of could not be turned on. It is permissive
+  by default, because the column arrived in databases with years of weekends
+  already in them.
+* **The weekend's date colour is an instance setting**, chosen from the entity
+  palette rather than entered as a value, so each theme draws it in something
+  legible on its own background
+  ([ADR-0011](adr/0011-theming-via-css-custom-properties.md)).
+* **The choice of first day of the week says what it does to the weekend.** The
+  setting has offered Monday, Saturday and Sunday since the beginning and both
+  grids have honoured it, but it was labelled only "first day of the week" -
+  which leaves somebody to work out for themselves that Monday ends the week
+  with the weekend and Saturday starts it with one. It now says so.
 * **The month's week totals open their week too.** The week number at one end of
   the row was already a link; the total at the other end is the end people
   actually read, because the eye goes to the figure. Both ends of the row now
@@ -208,6 +234,12 @@ the decision.
 
 ### Fixed
 
+* **The spring theme's green was below AA as text** - 4.07:1 on a card and
+  3.77:1 on the page, in the one theme whose whole character is green and which
+  therefore makes that colour the likeliest to be chosen. Found by the new
+  weekend contrast test, which is the first check in this tree to hold the
+  entity palette to AA *as text* rather than only as a tint behind text.
+  Darkened one token; nothing else moved.
 * **A manager could administer the instance**, which the role table has never
   said they may: add an account and set its role, rewrite the instance settings,
   take a backup carrying every customer's negotiated rates, and delete a tag off

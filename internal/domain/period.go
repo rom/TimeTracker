@@ -117,6 +117,22 @@ func ParseWeekStart(value string, loc *time.Location) (time.Time, error) {
 	return parsed, nil
 }
 
+// IsWeekend reports whether a day falls on a Saturday or a Sunday.
+//
+// Saturday and Sunday rather than a configurable pair. Which days are the
+// weekend is a question with a different answer in a few parts of the world,
+// but the application has no other setting that varies by country, and a pair
+// of day numbers in the settings table would be a second week-shaped concept
+// sitting beside WeekStart without being connected to it. If that need arrives
+// it arrives as one change, here, and every caller below gets it.
+//
+// Call it with the day already in the zone it is being judged in. A timestamp
+// is on a Saturday in one zone and a Friday in another, and this function
+// cannot know which one the caller means.
+func IsWeekend(t time.Time) bool {
+	return t.Weekday() == time.Saturday || t.Weekday() == time.Sunday
+}
+
 // WeekEnd returns the exclusive end of a week beginning at start.
 func WeekEnd(start time.Time) time.Time { return start.AddDate(0, 0, 7) }
 

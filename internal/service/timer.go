@@ -42,6 +42,12 @@ func (s *Service) StartTimer(ctx context.Context, assignmentID int64, note strin
 	if err := s.checkPeriodOpen(ctx, actor.ID, s.now()); err != nil {
 		return domain.TimeEntry{}, err
 	}
+	// And the same for a weekend the instance does not work. Told at the start
+	// for the same reason: refusing at Stop would be refusing after the fact,
+	// with an hour of work already done and nowhere to put it.
+	if err := s.checkWeekendAllowed(ctx, actor.ID, s.now()); err != nil {
+		return domain.TimeEntry{}, err
+	}
 
 	entry := domain.TimeEntry{
 		UserID:       actor.ID,
@@ -317,6 +323,13 @@ func (s *Service) prepareEntry(ctx context.Context, in EntryInput) (domain.TimeE
 	if err := s.checkPeriodOpen(ctx, entry.UserID, entry.StartedAt); err != nil {
 		return domain.TimeEntry{}, domain.Assignment{}, err
 	}
+	// New time landing on a weekend the instance does not work. Here rather
+	// than in CreateEntry so that every way of making an entry is covered -
+	// the quick add, a copied day, a routine, the CSV and calendar importers -
+	// and so an importer can skip the row and still write the rest atomically.
+	if err := s.checkWeekendAllowed(ctx, entry.UserID, entry.StartedAt); err != nil {
+		return domain.TimeEntry{}, domain.Assignment{}, err
+	}
 	if err := s.applyBillingTo(ctx, &entry); err != nil {
 		return domain.TimeEntry{}, domain.Assignment{}, err
 	}
@@ -367,6 +380,16 @@ func (s *Service) UpdateEntry(ctx context.Context, entryID int64, in EntryInput)
 	}
 	if !in.StartedAt.IsZero() && !sameWeek(existing.StartedAt, in.StartedAt) {
 		if err := s.checkPeriodOpen(ctx, existing.UserID, in.StartedAt); err != nil {
+			return domain.TimeEntry{}, err
+		}
+	}
+	// The weekend policy applies to where the entry is going, and only when it
+	// is actually going somewhere. An entry that already sits on a Saturday
+	// must stay editable - its note corrected, its assignment changed, and
+	// above all its date moved to a working day - or turning the policy on
+	// would freeze every weekend entry already recorded.
+	if !in.StartedAt.IsZero() && !sameDay(existing.StartedAt, in.StartedAt) {
+		if err := s.checkWeekendAllowed(ctx, existing.UserID, in.StartedAt); err != nil {
 			return domain.TimeEntry{}, err
 		}
 	}
@@ -562,6 +585,18 @@ func applyEnd(entry *domain.TimeEntry, in EntryInput) {
 		entry.EndedAt = nil
 		entry.DurationSeconds = 0
 	}
+}
+
+// sameDay reports whether two instants fall on the same calendar day in UTC.
+//
+// Used to tell an edit that moves an entry from one that merely changes its
+// note. The zone is UTC rather than the owner's, which makes it conservative in
+// exactly the right direction: two instants that are the same day for the owner
+// but straddle midnight in UTC are treated as a move and checked, whereas the
+// reverse - calling a real move "unchanged" and skipping the check - cannot
+// happen.
+func sameDay(a, b time.Time) bool {
+	return a.UTC().Truncate(24 * time.Hour).Equal(b.UTC().Truncate(24 * time.Hour))
 }
 
 // sameWeek reports whether two instants fall in the same ISO week.

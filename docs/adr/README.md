@@ -61,6 +61,7 @@ Statuses: `proposed` → `accepted` → `superseded by ADR-NNNN` | `deprecated`.
 | [0033](0033-idle-time-is-observed.md) | Idle time is observed, never inferred | accepted | 2026-08-20 | ASR-026 |
 | [0034](0034-reminders-are-shown-not-sent.md) | Reminders are shown, not sent | accepted | 2026-08-29 | ASR-027 |
 | [0035](0035-burn-is-a-projection.md) | A burn rate is a projection, and says so | accepted | 2026-08-30 | ASR-028 |
+| [0036](0036-the-weekend-is-a-policy-not-a-lock.md) | The weekend is a policy about arrival, not a lock on what is there | accepted | 2026-11-26 | ASR-020 |
 
 ## Writing a new one
 

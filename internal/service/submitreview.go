@@ -181,7 +181,7 @@ func (s *Service) ReviewSubmission(ctx context.Context, date time.Time) (SubmitR
 			break
 		}
 		// Weekdays only. A quiet Saturday is not an omission.
-		if weekday := day.In(loc).Weekday(); weekday == time.Saturday || weekday == time.Sunday {
+		if domain.IsWeekend(day.In(loc)) {
 			continue
 		}
 		var seconds int64

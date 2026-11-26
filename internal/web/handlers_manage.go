@@ -330,6 +330,12 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		DayEndHour:   dayEnd,
 		DayOverflow:  r.FormValue("day_overflow"),
 
+		// The checkbox is the permission and the input field is the refusal, so
+		// a form that omits the box entirely leaves weekends recordable rather
+		// than silently forbidding them.
+		WeekendRecordingDisabled: r.FormValue("weekend_recording") == "",
+		WeekendColour:            r.FormValue("weekend_colour"),
+
 		// The password field is blank unless somebody typed in it, and blank
 		// means "unchanged". Removing one is the checkbox's job.
 		BackupPassword:      r.FormValue("backup_password"),
