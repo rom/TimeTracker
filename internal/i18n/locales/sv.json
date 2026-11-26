@@ -414,6 +414,7 @@
   "month.thismonth": "Denna månad",
   "month.title": "%s",
   "month.week": "Vecka",
+  "month.week.open": "Öppna vecka %d",
   "month.weektotal": "Veckosumma",
   "month.went": "Vad månaden gick till",
   "move.count.one": "%d post vald",

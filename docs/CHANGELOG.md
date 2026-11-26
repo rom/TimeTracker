@@ -152,6 +152,14 @@ the decision.
   date picker on the day, week and month views - previous/today/next answers
   "where was I in time" badly once the answer is more than a week away - and a
   month heading between the entries wherever a listing crosses a month.
+* **The month's week numbers are a target rather than two digits.** They have
+  linked to their week since the month view shipped — a month is where somebody
+  notices a thin week and the week view is where they fix it — but the link was
+  the digits alone: ten pixels across for a single-digit number, in a cell of
+  forty-eight by seventy-two, under the smallest target WCAG asks for and a poor
+  one to aim at with anything but a mouse. The whole cell is the link now, as
+  the squares beside it are, and its title says it opens the week, which a bare
+  "12" in the margin of a calendar does not.
 * **Every date in the week grid opens its day.** A week is read to find the day
   something is wrong on, and the only way across was the date picker — which
   means typing a date that is already on the screen in front of you. The whole

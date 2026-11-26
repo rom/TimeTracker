@@ -1144,7 +1144,24 @@ input[type="text"], input[type="date"], input[type="time"], select {
   width: 3rem; text-align: right; color: var(--text-muted);
   font-variant-numeric: tabular-nums; font-weight: 400;
 }
-.cell-weeknum a { color: var(--text-muted); }
+/* The week number is the row's link to its week, and the whole cell is the
+   target rather than the one or two digits in it - the same reasoning as the
+   squares, and the same as the dates in the week grid. Undecorated at rest so
+   the margin of the calendar does not read as a column of links; the hover
+   tint, the underline and the focus ring say it is one. */
+/* The height on the cell is what lets the link inside fill it: a child resolves
+   height:100% against a table cell that has a height of its own and against
+   nothing otherwise, which would leave the hover tint as a band floating in the
+   middle of the row. It is the squares' height, so the two agree. */
+.cell-weeknum { padding: 0; height: 4.5rem; }
+.cell-weeknum a {
+  display: flex; align-items: center; justify-content: flex-end;
+  height: 100%; padding: 6px 8px;
+  color: var(--text-muted); text-decoration: none;
+}
+.cell-weeknum a:hover {
+  background: var(--surface-sunken); color: var(--text); text-decoration: underline;
+}
 .cell-month-day { padding: 0; height: 4.5rem; vertical-align: top; }
 .cell-month-day a {
   display: flex; flex-direction: column; gap: 2px;

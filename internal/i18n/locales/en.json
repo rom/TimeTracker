@@ -414,6 +414,7 @@
   "month.thismonth": "This month",
   "month.title": "%s",
   "month.week": "Week",
+  "month.week.open": "Open week %d",
   "month.weektotal": "Week total",
   "month.went": "Where the month went",
   "move.count.one": "%d entry selected",

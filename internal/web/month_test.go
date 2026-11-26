@@ -46,7 +46,8 @@ func TestTheMonthScreenIsACalendarOfTheMonth(t *testing.T) {
 		t.Errorf("the recorded hours are not on the calendar:\n%s", firstTable(body))
 	}
 	// The week rows link to the week view, which is where a thin week gets
-	// fixed.
+	// fixed. Which row opens which week, and what the link says, is
+	// TestTheMonthsWeekNumbersOpenTheirWeeks below.
 	if !strings.Contains(body, `href="/week?date=`) {
 		t.Error("the week rows do not link to the week view")
 	}
@@ -348,5 +349,54 @@ func TestTheWeekGridsDatesOpenTheirDays(t *testing.T) {
 	review := get(t, srv, "/week/review?week=2026-03-16").Body.String()
 	if !strings.Contains(review, `href="/today?date=2026-03-18"`) {
 		t.Error("the review's copy of the grid does not open its days")
+	}
+}
+
+// TestTheMonthsWeekNumbersOpenTheirWeeks.
+//
+// They have always been links - a month view is where somebody notices a thin
+// week and the week view is where they fix it - but the link was the digits
+// alone: ten pixels across for a single-digit week number, in a cell of
+// forty-eight by seventy-two. The whole cell is the target now, as the squares
+// beside it are, and the title says the link opens the week, which a bare "12"
+// in the margin of a calendar does not.
+func TestTheMonthsWeekNumbersOpenTheirWeeks(t *testing.T) {
+	srv, _ := newTestServer(t)
+	seedCatalogue(t, srv)
+
+	post(t, srv, "/entries", url.Values{
+		"assignment_id": {"1"}, "date": {"2026-03-18"}, "start": {"09:00"},
+		"duration": {"2h"}, "billable": {"on"},
+	})
+
+	body := get(t, srv, "/month?month=2026-03").Body.String()
+
+	// Every row of March, by the Monday it starts on. The first row begins in
+	// February and links to that week rather than to the first of March: it is
+	// the week the row is, and the week somebody wants when they click it.
+	for _, week := range []struct {
+		start  string
+		number int
+	}{
+		{"2026-02-23", 9}, {"2026-03-02", 10}, {"2026-03-09", 11},
+		{"2026-03-16", 12}, {"2026-03-23", 13}, {"2026-03-30", 14},
+	} {
+		if !strings.Contains(body, `href="/week?date=`+week.start+`"`) {
+			t.Errorf("the row starting %s does not open its week:\n%s",
+				week.start, firstTable(body))
+		}
+		if title := fmt.Sprintf("Open week %d", week.number); !strings.Contains(body, title) {
+			t.Errorf("no link is titled %q, so a bare number is all the cell "+
+				"says:\n%s", title, firstTable(body))
+		}
+	}
+
+	// And the link goes somewhere: the week it names, holding the entry.
+	week := get(t, srv, "/week?date=2026-03-16")
+	if week.Code != http.StatusOK {
+		t.Fatalf("following a week number = %d", week.Code)
+	}
+	if !strings.Contains(week.Body.String(), "2026-03-16") {
+		t.Error("the week the number opened is not the week it named")
 	}
 }

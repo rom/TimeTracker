@@ -54,9 +54,22 @@
         {{range $month.Weeks}}
           <tr>
             {{/* The row's own week, linked: a month view is where somebody
-                 notices a thin week, and the week view is where they fix it. */}}
+                 notices a thin week, and the week view is where they fix it.
+
+                 The whole cell is the target, as the squares beside it are. It
+                 was the digits alone - ten pixels wide for a single-digit week
+                 number, in a cell of forty-eight by seventy-two - which is
+                 under the smallest target WCAG asks for and a poor one to aim
+                 at with anything but a mouse.
+
+                 The title says the link opens the week, which is what the cell
+                 does not: a bare "12" in the margin of a calendar reads as a
+                 label. The squares' titles spell out their date instead,
+                 because that is what is missing there - a tooltip is worth the
+                 room only when it says something the cell does not. */}}
             <th scope="row" class="cell-weeknum">
-              <a href="/week?date={{date .Start}}" title="{{$.T "month.week"}}">{{.Number}}</a>
+              <a href="/week?date={{date .Start}}"
+                 title="{{$.T "month.week.open" .Number}}">{{.Number}}</a>
             </th>
             {{range .Days}}
               {{if .InMonth}}
