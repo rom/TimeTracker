@@ -160,6 +160,12 @@ the decision.
   one to aim at with anything but a mouse. The whole cell is the link now, as
   the squares beside it are, and its title says it opens the week, which a bare
   "12" in the margin of a calendar does not.
+* **The month's week totals open their week too.** The week number at one end of
+  the row was already a link; the total at the other end is the end people
+  actually read, because the eye goes to the figure. Both ends of the row now
+  lead to the same place, and the total is linked on an empty week as well -
+  that is the week most worth opening, and a cell that is a target on some rows
+  and not others is a worse target than one that always is.
 * **Every date in the week grid opens its day.** A week is read to find the day
   something is wrong on, and the only way across was the date picker — which
   means typing a date that is already on the screen in front of you. The whole

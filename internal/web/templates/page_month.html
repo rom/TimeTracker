@@ -92,7 +92,18 @@
                 <td class="cell-month-day outside" aria-hidden="true"></td>
               {{end}}
             {{end}}
-            <td class="cell-total">{{if gt .Seconds 0}}{{$.Printer.FormatDecimal (hours .Seconds)}}{{end}}</td>
+            {{/* The row's total opens the same week its number does. The two
+                 are the ends of one row, and the end somebody reads is the
+                 total: the eye goes to the figure, so the figure should be the
+                 thing you can act on.
+
+                 Linked even when the week is empty, because an empty week is
+                 the one most worth opening, and a cell that is a target on some
+                 rows and not others is a worse target than one that always is. */}}
+            <td class="cell-total">
+              <a href="/week?date={{date .Start}}"
+                 title="{{$.T "month.week.open" .Number}}">{{if gt .Seconds 0}}{{$.Printer.FormatDecimal (hours .Seconds)}}{{end}}</a>
+            </td>
           </tr>
         {{end}}
       </tbody>

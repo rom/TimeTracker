@@ -400,3 +400,117 @@ func TestTheMonthsWeekNumbersOpenTheirWeeks(t *testing.T) {
 		t.Error("the week the number opened is not the week it named")
 	}
 }
+
+// monthRows returns the month calendar's body rows, one string each.
+//
+// The assertions below are about which cell holds a link, not about whether the
+// page mentions a URL anywhere: the week number already links to the week, so a
+// plain substring search over the page would pass with the total cell inert.
+func monthRows(t *testing.T, body string) []string {
+	t.Helper()
+
+	grid := body[strings.Index(body, `class="month-grid"`):]
+	grid = grid[:strings.Index(grid, "</table>")]
+	rows := strings.Split(grid, "<tr>")
+	var found []string
+	for _, row := range rows[1:] {
+		if strings.Contains(row, "cell-weeknum") {
+			found = append(found, row)
+		}
+	}
+	if len(found) == 0 {
+		t.Fatalf("no week rows in the month grid:\n%s", firstTable(body))
+	}
+	return found
+}
+
+// cellOfClass returns the one cell of a row carrying the given class.
+func cellOfClass(t *testing.T, row, class string) string {
+	t.Helper()
+
+	at := strings.Index(row, `class="`+class+`"`)
+	if at < 0 {
+		t.Fatalf("no %s cell in the row:\n%s", class, row)
+	}
+	// Back to the tag the class belongs to, forward to the end of the cell.
+	start := strings.LastIndex(row[:at], "<")
+	end := strings.Index(row[start:], ">")
+	tag := row[start+1 : start+end]
+	closing := "</" + strings.Fields(tag)[0] + ">"
+	stop := strings.Index(row[start:], closing)
+	if stop < 0 {
+		t.Fatalf("the %s cell is never closed:\n%s", class, row)
+	}
+	return row[start : start+stop]
+}
+
+// hrefOf returns the single link target in a fragment of markup.
+func hrefOf(t *testing.T, fragment string) string {
+	t.Helper()
+
+	at := strings.Index(fragment, `href="`)
+	if at < 0 {
+		t.Fatalf("no link in:\n%s", fragment)
+	}
+	rest := fragment[at+len(`href="`):]
+	end := strings.Index(rest, `"`)
+	if end < 0 {
+		t.Fatalf("an unterminated href in:\n%s", fragment)
+	}
+	return rest[:end]
+}
+
+// TestTheMonthsWeekTotalsOpenTheirWeeks.
+//
+// The week number at one end of the row opens the week. The total at the other
+// end is the end somebody actually reads - the eye goes to the figure - so the
+// figure is a target too, and the two agree on where they lead.
+//
+// Linked on an empty week as well, which is the week most worth opening: a cell
+// that is a target on some rows and not others is a worse target than one that
+// always is.
+func TestTheMonthsWeekTotalsOpenTheirWeeks(t *testing.T) {
+	srv, _ := newTestServer(t)
+	seedCatalogue(t, srv)
+
+	// One week of March has time on it. The rest are empty.
+	post(t, srv, "/entries", url.Values{
+		"assignment_id": {"1"}, "date": {"2026-03-18"}, "start": {"09:00"},
+		"duration": {"2h"}, "billable": {"on"},
+	})
+
+	body := get(t, srv, "/month?month=2026-03").Body.String()
+
+	rows := monthRows(t, body)
+	if len(rows) != 6 {
+		t.Fatalf("March 2026 drew %d week rows, want 6", len(rows))
+	}
+
+	withFigure := 0
+	for _, row := range rows {
+		weeknum := cellOfClass(t, row, "cell-weeknum")
+		total := cellOfClass(t, row, "cell-total")
+
+		// The destination the week number names, read out of the row itself, so
+		// this test does not restate the calendar's arithmetic.
+		href := hrefOf(t, weeknum)
+
+		if !strings.Contains(total, `href="`+href+`"`) {
+			t.Errorf("the week total does not open the week its number does\n"+
+				"number: %s\ntotal:  %s", strings.TrimSpace(weeknum), strings.TrimSpace(total))
+		}
+		if strings.Contains(total, ">0.00<") {
+			t.Errorf("an empty week's total reads as a zero rather than a "+
+				"blank:\n%s", strings.TrimSpace(total))
+		}
+		if strings.Contains(total, "2.00") {
+			withFigure++
+		}
+	}
+
+	// The week with time on it still shows its figure: the cell became a link,
+	// not a link instead of a total.
+	if withFigure != 1 {
+		t.Errorf("%d week totals show 2.00, want exactly the week of the entry", withFigure)
+	}
+}

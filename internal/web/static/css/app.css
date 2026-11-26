@@ -1162,6 +1162,18 @@ input[type="text"], input[type="date"], input[type="time"], select {
 .cell-weeknum a:hover {
   background: var(--surface-sunken); color: var(--text); text-decoration: underline;
 }
+/* The row's total is the row's second link to the same week, at the end people
+   actually read. Filled out to the cell for the reason above, and carrying the
+   squares' height for the same reason they do. */
+.month-grid .cell-total { padding: 0; height: 4.5rem; }
+.month-grid .cell-total a {
+  display: flex; align-items: center; justify-content: flex-end;
+  height: 100%; padding: 6px 8px;
+  color: inherit; text-decoration: none;
+}
+.month-grid .cell-total a:hover {
+  background: var(--surface-sunken); text-decoration: underline;
+}
 .cell-month-day { padding: 0; height: 4.5rem; vertical-align: top; }
 .cell-month-day a {
   display: flex; flex-direction: column; gap: 2px;
