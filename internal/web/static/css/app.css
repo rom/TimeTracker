@@ -1118,6 +1118,16 @@ input[type="text"], input[type="date"], input[type="time"], select {
 .col-day.is-today { background: var(--accent-soft); }
 .day-name { display: block; }
 .day-num { display: block; font-size: 1.1em; color: var(--text); }
+/* The heading cell is a link to that day. The whole cell rather than the text
+   inside it, so the target is the size of the column, and undecorated so a row
+   of seven dates does not read as a row of links - the hover and the focus ring
+   say it is one when somebody goes looking. */
+.col-day a {
+  display: block; margin: -8px -10px; padding: 8px 10px;
+  text-decoration: none; color: inherit;
+}
+.col-day a:hover { background: var(--surface-sunken); }
+.col-day a:hover .day-num { text-decoration: underline; }
 .cell-day.empty { color: var(--text-muted); }
 .cell-total { font-weight: 600; }
 .cell-assignment { font-weight: 500; }

@@ -152,6 +152,14 @@ the decision.
   date picker on the day, week and month views - previous/today/next answers
   "where was I in time" badly once the answer is more than a week away - and a
   month heading between the entries wherever a listing crosses a month.
+* **Every date in the week grid opens its day.** A week is read to find the day
+  something is wrong on, and the only way across was the date picker — which
+  means typing a date that is already on the screen in front of you. The whole
+  heading cell is the link, as the month's squares are, and its title gives the
+  date spelled out with the day's total, since "Wed 18" is enough to click and
+  not enough to be sure of. The submission review shares the grid and gains it
+  too, where it matters more: that is the screen that tells you which day is
+  short.
 * **Four things can be looked at before they are acted on.** Each exists because
   the alternative is finding out afterwards:
   * **A week before submitting it** (`/week/review`): what will be submitted,

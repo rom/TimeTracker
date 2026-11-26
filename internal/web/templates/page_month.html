@@ -64,7 +64,7 @@
                   {{/* The whole square is the link, so the target is the square
                        rather than the four characters of the date. */}}
                   <a href="/today?date={{date .Date}}"
-                     title="{{if gt .Seconds 0}}{{$.T "month.day.title" ($.Printer.FormatDate .Date) ($.Printer.FormatDuration .Seconds)}}{{else}}{{$.T "month.day.empty" ($.Printer.FormatDate .Date)}}{{end}}">
+                     title="{{if gt .Seconds 0}}{{$.T "day.summary" ($.Printer.FormatDate .Date) ($.Printer.FormatDuration .Seconds)}}{{else}}{{$.T "day.summary.empty" ($.Printer.FormatDate .Date)}}{{end}}">
                     <span class="day-num">{{dayNum .Date}}</span>
                     {{if gt .Seconds 0}}
                       <span class="day-hours">{{$.Printer.FormatDecimal (hours .Seconds)}}</span>

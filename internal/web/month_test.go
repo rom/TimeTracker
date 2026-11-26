@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -290,4 +291,62 @@ func monthHeadings(body string) string {
 		found = found[:12]
 	}
 	return strings.Join(found, "\n")
+}
+
+// TestTheWeekGridsDatesOpenTheirDays.
+//
+// A week is read to find the day something is wrong on, and the only way across
+// was the date picker - which means typing a date that is already on the screen
+// in front of you. Every heading in the grid is now that day's link, as the
+// month's squares already were.
+func TestTheWeekGridsDatesOpenTheirDays(t *testing.T) {
+	srv, _ := newTestServer(t)
+	seedCatalogue(t, srv)
+
+	// The fixture's clock sits in the week of Monday 2026-03-16.
+	post(t, srv, "/entries", url.Values{
+		"assignment_id": {"1"}, "date": {"2026-03-18"}, "start": {"09:00"},
+		"duration": {"2h"}, "billable": {"on"},
+	})
+
+	body := get(t, srv, "/week?date=2026-03-18").Body.String()
+
+	// Every day of the week, Monday to Sunday, and not a day outside it.
+	for day := 16; day <= 22; day++ {
+		date := fmt.Sprintf("2026-03-%02d", day)
+		if !strings.Contains(body, `href="/today?date=`+date+`"`) {
+			t.Errorf("the %s heading does not open its day:\n%s", date, firstTable(body))
+		}
+	}
+	for _, outside := range []string{"2026-03-15", "2026-03-23"} {
+		if strings.Contains(body, `href="/today?date=`+outside+`"`) {
+			t.Errorf("%s is linked from the week that does not contain it", outside)
+		}
+	}
+
+	// The title says which day and what is on it, because "Wed 18" is enough to
+	// click and not enough to be sure of.
+	if !strings.Contains(body, "Wednesday 18 March 2026: 2h 00m") {
+		t.Errorf("the heading does not say which day it opens and what is on "+
+			"it:\n%s", firstTable(body))
+	}
+	if !strings.Contains(body, "Monday 16 March 2026: nothing recorded") {
+		t.Errorf("an empty day's heading does not say so:\n%s", firstTable(body))
+	}
+
+	// And the link goes somewhere: the day it names, holding the entry.
+	day := get(t, srv, "/today?date=2026-03-18")
+	if day.Code != http.StatusOK {
+		t.Fatalf("following a week heading = %d", day.Code)
+	}
+	if !strings.Contains(day.Body.String(), "2026-03-18") {
+		t.Error("the day the heading opened is not the day it named")
+	}
+
+	// The submission review shares the grid, and the same reasoning applies
+	// there more strongly: it is the screen that tells you which day is short.
+	review := get(t, srv, "/week/review?week=2026-03-16").Body.String()
+	if !strings.Contains(review, `href="/today?date=2026-03-18"`) {
+		t.Error("the review's copy of the grid does not open its days")
+	}
 }
