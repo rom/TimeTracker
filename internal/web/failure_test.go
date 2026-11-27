@@ -67,6 +67,7 @@ var writes = []struct {
 		"start": {"09:00"}, "duration": {"2h"}}},
 	{"/entries/1/move", url.Values{"start": {"10:00"}}},
 	{"/entries/1/delete", url.Values{"confirmed": {"1"}}},
+	{"/entries/bulk", url.Values{"id": {"1"}, "action": {"add_tag"}, "value": {"incident"}}},
 	{"/deleted/1/restore", nil},
 	{"/timers/start", url.Values{"assignment_id": {"1"}}},
 	{"/timers/1/stop", nil},

@@ -55,6 +55,8 @@ type pageData struct {
 	// Summary is the grouped report, and Groupings are the dimensions offered.
 	Summary   service.SummaryReport
 	Groupings []service.GroupBy
+	// Bulk is the outcome of a change applied to many entries at once.
+	Bulk service.BulkResult
 
 	// Help is the context-sensitive help for the current screen.
 	Help       []helpSection

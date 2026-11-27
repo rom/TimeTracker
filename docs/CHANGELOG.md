@@ -186,6 +186,14 @@ the decision.
   grids have honoured it, but it was labelled only "first day of the week" -
   which leaves somebody to work out for themselves that Monday ends the week
   with the weekend and Saturday starts it with one. It now says so.
+* **Changing many entries at once.** Tick rows on the entries screen and move
+  them to another assignment, add or remove a tag, or delete them. Re-tagging a
+  week of misfiled time was thirty round trips through a correction form. Every
+  change goes through the single-entry path that already exists rather than
+  through SQL of its own, so the authorisation, the week lock, the weekend
+  policy, the billing recomputation and the audit row are the ones already
+  written and tested. A selection spanning a locked week changes the rest and
+  reports what it would not change and why, rather than refusing the lot.
 * **A summary report** (`/reports`): hours, billable hours and amount over any
   range, grouped by customer, project, assignment or person, with each group's
   share of the total and a link through to the entries behind it. The budget

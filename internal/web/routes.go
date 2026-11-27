@@ -153,6 +153,9 @@ func (s *Server) routes() {
 	mux.HandleFunc("POST /tags/{id}", s.handleUpdateTag)
 	mux.HandleFunc("POST /tags/{id}/delete", s.handleDeleteTag)
 
+	// One change applied to many entries at once.
+	mux.HandleFunc("POST /entries/bulk", s.handleBulkEntries)
+
 	// Where the time went, over a range, grouped. The budget report beside it
 	// answers a different question: how much of a cap has been used.
 	mux.HandleFunc("GET /reports", s.handleReports)

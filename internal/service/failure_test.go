@@ -312,7 +312,11 @@ func TestEveryServiceMethodReportsADeadDatabase(t *testing.T) {
 		"SubmitWeek":            func() error { _, err := svc.SubmitWeek(ctx, f.now); return err },
 		"SweepBlobs":            func() error { _, err := svc.SweepBlobs(ctx); return err },
 		"SwitchTo":              func() error { _, err := svc.SwitchTo(ctx, f.assignment.ID, ""); return err },
-		"RecentlyDeleted":       func() error { _, err := svc.RecentlyDeleted(ctx); return err },
+		"BulkEntries": func() error {
+			_, err := svc.BulkEntries(ctx, []int64{1}, BulkAddTag, "incident")
+			return err
+		},
+		"RecentlyDeleted": func() error { _, err := svc.RecentlyDeleted(ctx); return err },
 		"Summarise": func() error {
 			_, err := svc.Summarise(ctx, f.now.AddDate(0, 0, -30), f.now, GroupByCustomer)
 			return err

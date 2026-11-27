@@ -1449,6 +1449,17 @@ input[type="text"], input[type="date"], input[type="time"], select {
 .empty-setup p { margin: 0 0 var(--gap); color: var(--text-muted); max-width: 48ch; }
 .empty-setup-actions { display: flex; flex-wrap: wrap; gap: var(--gap-sm); margin-bottom: 0; }
 
+/* Selecting rows, and the bar that acts on them. */
+.cell-select { width: 2.2rem; text-align: center; }
+.bulk-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-sm);
+  margin: var(--gap) 0 var(--gap-lg); padding: var(--gap);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border); border-radius: var(--radius);
+}
+.bulk-label { font-weight: 600; }
+.bulk-result .bulk-count { font-size: 1.1em; margin-bottom: var(--gap); }
+
 /* -------------------------------------------------------------- notes ----- */
 
 .gaps {

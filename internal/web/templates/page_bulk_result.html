@@ -1,0 +1,45 @@
+{{define "content"}}
+{{$bulk := .Bulk}}
+<section class="bulk-result">
+
+  <h1>{{.T "bulk.result.title"}}</h1>
+
+  <p class="bulk-count">
+    {{.Printer.N "bulk.result.changed" $bulk.Changed}}
+    {{if $bulk.Refused}}· {{.Printer.N "bulk.result.refused" (len $bulk.Refused)}}{{end}}
+  </p>
+
+  {{if $bulk.Refused}}
+    {{/* The reasons, in full. This is the whole point of giving the outcome a
+         page: a bulk change that refused two of forty is useful information,
+         and a banner that scrolls away loses the half somebody has to act
+         on. */}}
+    <div class="grid-scroll">
+      <table class="entries">
+        <thead>
+          <tr>
+            <th scope="col">{{.T "bulk.result.entry"}}</th>
+            <th scope="col">{{.T "bulk.result.why"}}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range $bulk.Refused}}
+            <tr>
+              <td>
+                {{/* An entry the person may not read is named by nothing but
+                     its id: naming it would be the leak the refusal exists to
+                     prevent. */}}
+                {{if .Label}}{{.Label}}{{else}}#{{.EntryID}}{{end}}
+              </td>
+              <td>{{.Reason}}</td>
+            </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  {{end}}
+
+  <p><a class="btn btn-primary" href="/entries">{{.T "bulk.result.back"}}</a></p>
+
+</section>
+{{end}}

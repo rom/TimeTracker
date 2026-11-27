@@ -97,6 +97,11 @@
 {{- /* The date is shown wherever a row could be from any day. On the day
        screen it would repeat the heading forty times and say nothing. */ -}}
 {{- $showDate := .ShowDate -}}
+{{- /* Select adds a checkbox for the bulk bar. It is only set on the entries
+       listing: the day view has one day's worth of rows and a correction form
+       beside each, and a column of checkboxes there would be furniture nobody
+       uses. */ -}}
+{{- $select := .Select -}}
   {{/* The row accepts a pasted image, which attaches it to this entry. It posts
        to the same endpoint a file input does, so there is no second, laxer path
        into the blob store. */}}
@@ -106,6 +111,17 @@
   <tr class="entry-row {{if $e.Flagged}}flagged{{end}} {{if eq (printf "%s" $e.Status) "pending"}}pending{{end}}"
       data-colour="{{$e.ColourKey}}"
       data-paste-target="/attachments/time_entry/{{$e.ID}}" tabindex="0">
+    {{if $select}}
+      {{/* form= rather than a wrapping <form>: the row already contains forms
+           of its own - stop, delete, attach - and a form inside a form is
+           invalid markup that browsers resolve by dropping one of them. The
+           attribute associates the checkbox with the bulk form further down
+           the page, which is plain HTML and needs no script. */}}
+      <td class="cell-select">
+        <input type="checkbox" name="id" value="{{$e.ID}}" form="bulk-form"
+               aria-label="{{$page.T "bulk.select"}}">
+      </td>
+    {{end}}
     <td class="cell-chip">
       <span class="chip" data-colour="{{$e.ColourKey}}" title="{{$e.CustomerName}}">
         {{if $e.Icon}}{{$e.Icon}}{{else}}●{{end}}
