@@ -52,6 +52,9 @@ type pageData struct {
 	// Confirm is the second ask, rendered when a destructive request arrives
 	// without the script's confirmation.
 	Confirm Confirmation
+	// Summary is the grouped report, and Groupings are the dimensions offered.
+	Summary   service.SummaryReport
+	Groupings []service.GroupBy
 
 	// Help is the context-sensitive help for the current screen.
 	Help       []helpSection

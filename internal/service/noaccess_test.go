@@ -243,6 +243,14 @@ func TestSomebodyWithNoProjectsReachesNoneOfThem(t *testing.T) {
 			out, err := svc.Tags(ctx)
 			return answer{len(out), ""}, err
 		},
+		"Summarise": func() (answer, error) {
+			// Built on the same entry search every listing uses, so this is
+			// really asserting that it inherits that path's scoping rather
+			// than having opened a second one of its own - which is the whole
+			// reason it is not written as SQL.
+			out, err := svc.Summarise(ctx, f.now.AddDate(0, 0, -30), f.now, GroupByCustomer)
+			return answer{len(out.Rows), ""}, err
+		},
 		"Routines": func() (answer, error) {
 			out, err := svc.Routines(ctx, false)
 			return answer{len(out), ""}, err
@@ -553,6 +561,7 @@ var strangerReads = map[string]bool{
 	"Projects": true, "Project": true, "Assignments": true, "Assignment": true,
 	"RecentAssignments": true, "QuickStart": true, "Day": true, "Week": true,
 	"Month": true, "BudgetReportFor": true, "ApprovalReportFor": true,
+	"Summarise": true,
 	"Inbox": true, "PendingCount": true, "ProposedByMe": true,
 	"PendingIdle": true, "RunningIdle": true, "RunningTimers": true,
 	"Tags": true, "Routines": true, "ContractTerms": true, "ReviewSubmission": true,

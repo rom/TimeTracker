@@ -129,6 +129,7 @@
     {{if .CanAdminister}}
       <a href="/tags"  {{if eq .Active "tags"}}class="active" aria-current="page"{{end}}>{{.T "nav.tags"}}</a>
     {{end}}
+    <a href="/reports" {{if eq .Active "reports"}}class="active" aria-current="page"{{end}}>{{.T "nav.reports"}}</a>
     {{/* The recycle bin. Offered to everybody who can delete anything, which is
          everybody but a client: what a person sees there is their own
          deletions, and a record belonging to the instance rather than to a

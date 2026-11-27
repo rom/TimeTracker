@@ -153,6 +153,10 @@ func (s *Server) routes() {
 	mux.HandleFunc("POST /tags/{id}", s.handleUpdateTag)
 	mux.HandleFunc("POST /tags/{id}/delete", s.handleDeleteTag)
 
+	// Where the time went, over a range, grouped. The budget report beside it
+	// answers a different question: how much of a cap has been used.
+	mux.HandleFunc("GET /reports", s.handleReports)
+
 	// The recycle bin. A deletion is recoverable rather than merely recorded
 	// (docs/adr/0037-deletion-is-recoverable.md).
 	mux.HandleFunc("GET /deleted", s.handleDeleted)

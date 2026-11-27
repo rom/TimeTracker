@@ -46,6 +46,7 @@ var screens = []string{
 	"/", "/today", "/today?date=2026-03-16", "/week", "/week?date=2026-03-16",
 	"/month", "/month?month=2026-03", "/week/review", "/entries", "/entries?q=anything",
 	"/admin", "/approvals", "/approvals/report", "/reports/budgets",
+	"/reports", "/reports?group=person&from=2026-03-01&to=2026-03-31",
 	"/expenses", "/routines", "/tags", "/inbox", "/move", "/settings", "/deleted",
 	"/import", "/calendar", "/users",
 	"/entries/1/edit", "/customers/1/edit", "/projects/1/edit", "/assignments/1/edit",

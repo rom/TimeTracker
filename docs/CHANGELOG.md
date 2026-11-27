@@ -186,6 +186,17 @@ the decision.
   grids have honoured it, but it was labelled only "first day of the week" -
   which leaves somebody to work out for themselves that Monday ends the week
   with the weekend and Saturday starts it with one. It now says so.
+* **A summary report** (`/reports`): hours, billable hours and amount over any
+  range, grouped by customer, project, assignment or person, with each group's
+  share of the total and a link through to the entries behind it. The budget
+  report beside it answers a different question - how much of a cap has been
+  used - and the month view answers this one for a single month and a single
+  person. It is built on the same entry search every listing uses rather than
+  on SQL of its own, so the scope rules, the client narrowing and the money
+  projection are the ones already enforced there; amounts are stripped in the
+  service for somebody who may not see money rather than hidden by the
+  template. A range holding more than one currency says so instead of printing
+  a sum of kronor and euros.
 * **A deletion can be undone** ([ADR-0037](adr/0037-deletion-is-recoverable.md)).
   Deleting a time entry, an expense, a tag, a routine or a set of contract
   terms moves it to **Recently deleted** rather than destroying it, in the same
