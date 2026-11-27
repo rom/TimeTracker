@@ -34,6 +34,30 @@
        before it. */}}
   {{template "period-banner" .}}
 
+  {{/* Nothing to record against yet.
+
+       Everything below this point needs an assignment, and on a new instance
+       there are none: the quick-add box advertised an example naming a
+       customer and a project that did not exist, so the first thing anybody
+       typed came back "could not read that: no assignment matched". True, and
+       useless - it describes what the parser did rather than what is missing
+       or where to go.
+
+       So the screen says what is missing instead, and the setup guide it
+       points at was already written and translated; nothing linked to it. */}}
+  {{if not .Assignments}}
+    <div class="empty-setup">
+      <h2>{{.T "setup.needed.title"}}</h2>
+      <p>{{.T "setup.needed.body"}}</p>
+      <p class="empty-setup-actions">
+        {{if .CanManage}}
+          <a class="btn btn-primary" href="/admin">{{.T "setup.needed.action"}}</a>
+        {{end}}
+        <a class="btn btn-quiet" href="/guide/setup">{{.T "setup.needed.guide"}}</a>
+      </p>
+    </div>
+  {{else}}
+
   {{/* Quick add: the two-second path. A leading duration or time range, an
        assignment reference, #tags, and the rest is the note. Anything ambiguous
        comes back as an error rather than a guess - a wrong guess that silently
@@ -49,6 +73,7 @@
   {{/* Field-level help, associated with the input by aria-describedby so a
        screen reader reads it as part of the field rather than as stray text. */}}
   <p class="field-help" id="quick-add-help">{{.T "quickadd.help"}}</p>
+  {{end}}
 
   {{/* One-click start on what this person actually works on: favourites first,
        then whatever they have used most in the last six weeks. Frequency before
@@ -124,7 +149,12 @@
   {{end}}
 
   {{/* Copy yesterday. A day that repeats is the commonest shape a timesheet
-       has, and retyping it is what makes people fill the week in on Friday. */}}
+       has, and retyping it is what makes people fill the week in on Friday.
+
+       Hidden with no catalogue, like the quick add above and the manual form
+       below: a button whose only possible outcome is a refusal is worse than
+       no button, and on a new instance all three of them were that. */}}
+  {{if .Assignments}}
   <form class="copy-day" method="post" action="/days/copy?date={{date $day.Date}}"
         hx-post="/days/copy?date={{date $day.Date}}"
         hx-confirm="{{.T "day.copy.confirm"}}">
@@ -132,6 +162,7 @@
     <input type="hidden" name="from" value="{{date (addDays $day.Date -1)}}">
     <button type="submit" class="btn btn-small btn-quiet">{{.T "day.copy"}}</button>
   </form>
+  {{end}}
 
   {{/* The nudges come before the day itself: they are the reason somebody
        opened this screen at five o'clock. */}}
@@ -255,6 +286,7 @@
     <p class="empty">{{.T "day.empty"}}</p>
   {{end}}
 
+  {{if .Assignments}}
   <details class="manual-entry">
     <summary>{{.T "day.addmanually"}}</summary>
     <form class="entry-form" method="post" action="/entries" hx-post="/entries">
@@ -283,6 +315,7 @@
       <button type="submit" class="btn btn-primary">{{.T "entry.add"}}</button>
     </form>
   </details>
+  {{end}}
 
 </section>
 {{end}}

@@ -28,7 +28,16 @@ func (s *Service) CreateCustomer(ctx context.Context, c domain.Customer) (domain
 		return domain.Customer{}, err
 	}
 	if c.ColourKey == "" {
-		c.ColourKey = "slate"
+		// The next colour in the palette rather than the neutral one, so a new
+		// instance is legible at a glance instead of grey until somebody
+		// colours it in by hand. Counting what is already there, archived
+		// included: a colour freed by archiving is not worth reusing while the
+		// archived customer is still visible in a filter.
+		existing, err := s.db.ListCustomers(ctx, store.Scope{Unrestricted: true}, true)
+		if err != nil {
+			return domain.Customer{}, err
+		}
+		c.ColourKey = domain.NextColourKey(len(existing))
 	}
 
 	var created domain.Customer
@@ -147,16 +156,23 @@ func (s *Service) CreateProject(ctx context.Context, p domain.Project) (domain.P
 		return domain.Project{}, err
 	}
 	// Confirm the customer exists before creating a child of it, so the user gets
-	// a clear message rather than a foreign key error.
-	if _, err := s.db.GetCustomer(ctx, p.CustomerID); err != nil {
+	// a clear message rather than a foreign key error. The record is wanted
+	// just below as well, for the colour.
+	customer, err := s.db.GetCustomer(ctx, p.CustomerID)
+	if err != nil {
 		return domain.Project{}, err
 	}
 	if p.ColourKey == "" {
-		p.ColourKey = "slate"
+		// A project takes its customer's colour. Everything under one customer
+		// reading as one colour is the point of the palette: a project coloured
+		// independently of the customer it belongs to makes the week grid a
+		// sweet-shop that carries no information. An assignment already
+		// inherits from its project, below.
+		p.ColourKey = domain.ColourKeyOr(customer.ColourKey, domain.DefaultColourKey)
 	}
 
 	var created domain.Project
-	err := s.mutate(ctx, "project.create", "project", map[string]any{
+	err = s.mutate(ctx, "project.create", "project", map[string]any{
 		"name": p.Name, "customer_id": p.CustomerID,
 	}, func(tx *sql.Tx) (int64, error) {
 		var txErr error

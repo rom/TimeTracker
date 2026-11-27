@@ -23,6 +23,28 @@ var ColourKeys = []string{"blue", "green", "amber", "red", "purple", "teal", "sl
 // earned.
 const DefaultColourKey = "slate"
 
+// NextColourKey returns the palette entry for the nth thing created.
+//
+// So that an instance is not monochrome. Customers and projects defaulted to
+// the neutral key, which meant a seven-colour palette - contrast-tested in
+// eight themes, carried by the chips, the week grid, the month calendar and
+// every timeline block - showed exactly one colour until somebody went and set
+// each customer by hand. Almost nobody did, so almost every instance was grey,
+// and the feature that makes a dense screen readable at a glance was off by
+// default.
+//
+// Cycling by position rather than hashing the name: a hash spreads the palette
+// evenly over many customers but says nothing about the first three, and two
+// adjacent rows in the same colour is exactly the collision that matters on a
+// screen holding four. The caller still overrides it - this is the default,
+// not a policy.
+func NextColourKey(existing int) string {
+	if existing < 0 {
+		existing = 0
+	}
+	return ColourKeys[existing%len(ColourKeys)]
+}
+
 // IsColourKey reports whether a string names a palette entry.
 func IsColourKey(key string) bool {
 	for _, known := range ColourKeys {

@@ -767,6 +767,16 @@ input[type="text"], input[type="date"], input[type="time"], select {
   color: var(--text-muted); font-style: italic;
 }
 
+/* A day with nothing on it. The pane reserves 24rem of ruled hours so that a
+   normal day has somewhere to be drawn; an empty one does not need them, and
+   reserving them anyway put a screen of empty grid between the quick-add box
+   and everything below it - on a new instance, where every day is empty, that
+   was most of the first screen anybody saw. */
+.timeline.is-empty { min-height: 0; grid-template-columns: 1fr; }
+.timeline.is-empty .timeline-hours { display: none; }
+.timeline.is-empty .timeline-blocks { grid-template-rows: auto; }
+.timeline.is-empty .timeline-empty { padding: var(--gap-lg) var(--gap); }
+
 /* How many quarter-hour rows the visible window has. Whole hours only, so
    these come in fours. */
 .timeline[data-slots="4"] .timeline-hours,
@@ -1414,6 +1424,20 @@ input[type="text"], input[type="date"], input[type="time"], select {
 /* Six export formats and a preview link is more than a phone's width, and the
    row was the last thing on any screen still pushing the page sideways. */
 .export-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-sm); margin-bottom: var(--gap); }
+
+/* The screen a new instance opens on.
+
+   Given room rather than tucked away: on a fresh install this is the only
+   thing on the page that can be acted on, and it is competing with nothing. */
+.empty-setup {
+  margin: var(--gap) 0 var(--gap-lg);
+  padding: var(--gap-lg);
+  background: var(--surface-raised);
+  border: 1px solid var(--border); border-radius: var(--radius);
+}
+.empty-setup h2 { margin: 0 0 var(--gap-sm); border: none; }
+.empty-setup p { margin: 0 0 var(--gap); color: var(--text-muted); max-width: 48ch; }
+.empty-setup-actions { display: flex; flex-wrap: wrap; gap: var(--gap-sm); margin-bottom: 0; }
 
 /* -------------------------------------------------------------- notes ----- */
 

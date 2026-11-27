@@ -234,6 +234,31 @@ the decision.
 
 ### Fixed
 
+* **A new instance taught nothing and offered three controls that could only
+  fail.** The quick-add box carried a worked example naming a customer and a
+  project that did not exist, so the first thing anybody typed came back "could
+  not read that: no assignment matched" - true about the parser, useless about
+  the situation. Beside it sat copy-yesterday with no yesterday to copy, and a
+  manual entry form with an empty assignment list. The screen now says what is
+  missing, links to where a customer is created and to the setup guide that was
+  already written for this moment and reachable only by knowing it was there,
+  and the three dead controls appear once there is a catalogue to use them on.
+* **Every instance was grey.** Customers and projects defaulted to the neutral
+  palette key, so the seven colours - contrast-tested in eight themes, and
+  carried by the chips, the week grid, the month calendar and every timeline
+  block - showed one colour until somebody set each customer by hand. Customers
+  now take the next colour in the palette as they are created, and a project
+  takes its customer's, so everything under one customer reads as one colour.
+* **Billable time was marked with a euro sign** whatever the currency, so every
+  billable row of a Swedish instance was stamped with a currency it has never
+  used. It is the generic currency sign now, which is the one that means
+  "money, unspecified" - which is what the column was always saying.
+* **The day pane reserved a screen of ruled hours for a day with nothing on
+  it**, which on a new instance, where every day is empty, was most of the
+  first screen anybody saw. An empty day collapses to its sentence. The
+  timeline blocks also stopped repeating the note printed in the table below
+  them: the pane is a picture of the shape of the day, and the table is the
+  list.
 * **The interface was not responsive, on any screen, at any size below a large
   laptop.** DESIGN.md has claimed it since the first draft. The top bar was a
   flex row with no wrap holding thirteen navigation links, two pickers, a
