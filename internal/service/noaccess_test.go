@@ -535,7 +535,11 @@ func TestBothSweepsCoverTheSameSurface(t *testing.T) {
 		"BillingCandidatesFor": true, "RecordBillingRun": true,
 		"VoidBillingRun": true, "BillingRuns": true, "BillingRun": true,
 		"BillingRunSummary": true,
-		"ReindexSearch":     true, "SaveContractTerms": true,
+		// The instance's whole history, which is administration: it crosses
+		// every project by definition, so there is no project scope to sweep.
+		// That everybody else is refused it is asserted in audit_read_test.go.
+		"AuditLog":      true,
+		"ReindexSearch": true, "SaveContractTerms": true,
 		"DeleteContractTerms": true, "SaveRoutine": true, "DeleteRoutine": true,
 		"ApplyRoutine": true, "ApplyAllRoutines": true, "CopyDay": true,
 		"CopyWeek": true, "MoveEntries": true, "MoveExpenses": true,

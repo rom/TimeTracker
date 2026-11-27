@@ -186,6 +186,34 @@ the decision.
   grids have honoured it, but it was labelled only "first day of the week" -
   which leaves somebody to work out for themselves that Monday ends the week
   with the weekend and Saturday starts it with one. It now says so.
+* **The audit trail can be read** (`/audit`, and a history panel on an entry).
+  Every mutation has written a row since the first migration, in the same
+  transaction as the change, and nothing in the application ever showed one:
+  the only query was for a single record's history, the only service method
+  that called it had no caller outside the tests, and no screen, export or
+  backup touched it. In server mode an operator could read the mirror in
+  syslog; the person looking at a corrected entry and wondering who corrected
+  it could not, and in local mode - where nothing is forwarded anywhere -
+  neither could anybody. ASR-006 promises attribution, and an attribution
+  nobody can look at is a promise kept in private.
+
+  Two readers, because there are two questions. "Who changed this" is asked of
+  a record and is answered beside it, bounded by whoever may read that record.
+  "What happened here" is the instance's history, filterable by person, action
+  and date, and is administration: the listing crosses every project and names
+  people whose work a manager has no business reading, which is the same
+  reasoning that keeps the user list out of their reach. No total is shown -
+  this is the largest table in the schema and nothing prunes it, so a count
+  would cost a full scan to say a number nobody acts on.
+* **The inbox query walked the whole table.** Found by a new scan detector in
+  the ordinary test suite, which times the page shell's queries against a
+  hundred entries and against twenty thousand and refuses a ratio: 124
+  microseconds against 1.9 milliseconds, fifteen times the work for two hundred
+  times the data. A partial index on the predicate the query actually writes
+  (`0021_proxy_index.sql`) makes it flat. The budgets themselves were already
+  proved by the tagged suite `make test-perf` runs; what was missing was
+  anything that notices a regression without somebody first saying a screen
+  feels slow.
 * **A backup said "everything" and meant five sixths of it.** It carried the
   catalogue, the entries, the expenses and the attachments; the schema has
   twenty-one tables. Missing were the tag vocabulary and every tag on every

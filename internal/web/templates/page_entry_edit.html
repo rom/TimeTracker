@@ -57,5 +57,30 @@
       "Page" . "OwnerType" "time_entry" "OwnerID" $entry.ID
       "Attachments" .Attachments)}}
 
+
+  {{/* What has happened to this entry. The trail has recorded every change
+       since the first migration and nothing ever showed one, so "who
+       shortened this by an hour, and when" was answerable only by reading
+       syslog - and in local mode, where nothing is forwarded anywhere, not
+       at all. Shown here rather than on a screen of its own because it is
+       read while looking at the record it is about. */}}
+  <details class="entry-history">
+    <summary>{{.T "audit.record"}}</summary>
+    {{if .Trail}}
+      <ol class="trail">
+        {{range .Trail}}
+          <li>
+            <span class="trail-when">{{$.Printer.FormatDate .At}} {{clock .At $.Zone}}</span>
+            <span class="trail-what">{{.Action}}</span>
+            <span class="trail-who">{{.ActorName}}</span>
+            {{if .Detail}}<code class="trail-detail">{{.Detail}}</code>{{end}}
+          </li>
+        {{end}}
+      </ol>
+    {{else}}
+      <p class="empty">{{.T "audit.record.empty"}}</p>
+    {{end}}
+  </details>
+
 </section>
 {{end}}

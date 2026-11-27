@@ -51,6 +51,7 @@ var screens = []string{
 	"/preferences",
 	"/absence", "/absence/1/edit",
 	"/billing", "/billing?customer=1&from=2026-03-01&to=2026-03-31",
+	"/audit", "/audit?actor=1&action=time_entry.create&from=2026-03-01&to=2026-03-31",
 	"/import", "/calendar", "/users",
 	"/entries/1/edit", "/customers/1/edit", "/projects/1/edit", "/assignments/1/edit",
 	"/terms/customer/1", "/terms/project/1",

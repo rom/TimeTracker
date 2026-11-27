@@ -1,0 +1,111 @@
+{{/*
+  The instance's history.
+
+  Every mutation has written a row since the first migration, in the same
+  transaction as the change, and nothing in the application has ever shown one.
+  In server mode an operator could read the mirror in syslog; in local mode
+  nobody could read it at all.
+
+  Newest first, because the question that brings somebody here is almost always
+  about something that just happened. The detail is shown rather than hidden
+  behind a click: it is one short JSON object per row and it is the part that
+  answers "what did they actually change".
+*/}}
+{{define "content"}}
+<section class="audit">
+
+  <header class="screen-header">
+    <div class="screen-title"><h1>{{.T "audit.title"}}</h1></div>
+  </header>
+
+  <p class="field-help">{{.T "audit.help"}}</p>
+
+  {{with .Audit}}
+    {{/* A GET, so a filtered view has a URL that can be sent to somebody. */}}
+    <form class="filter" method="get" action="/audit">
+      <label>
+        {{$.T "audit.who"}}
+        <select name="actor">
+          <option value="">{{$.T "audit.anyone"}}</option>
+          {{$actor := .Query.ActorID}}
+          {{range .Actors}}
+            <option value="{{.ID}}" {{if eq .ID $actor}}selected{{end}}>{{.Name}}</option>
+          {{end}}
+        </select>
+      </label>
+      <label>
+        {{$.T "audit.what"}}
+        <select name="action">
+          <option value="">{{$.T "audit.anything"}}</option>
+          {{$action := .Query.Action}}
+          {{range .Actions}}
+            <option value="{{.}}" {{if eq . $action}}selected{{end}}>{{.}}</option>
+          {{end}}
+        </select>
+      </label>
+      <label>
+        {{$.T "entries.from"}}
+        <input type="date" name="from" value="{{.Query.From}}">
+      </label>
+      <label>
+        {{$.T "billing.to"}}
+        <input type="date" name="to" value="{{.Query.To}}">
+      </label>
+      <button type="submit" class="btn btn-quiet">{{$.T "billing.show"}}</button>
+    </form>
+
+    {{if .Events}}
+      <div class="grid-scroll"><table class="entries">
+        <thead>
+          <tr>
+            <th scope="col">{{$.T "audit.when"}}</th>
+            <th scope="col">{{$.T "audit.who"}}</th>
+            <th scope="col">{{$.T "audit.what"}}</th>
+            <th scope="col">{{$.T "audit.detail"}}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Events}}
+            <tr>
+              <td class="cell-time">
+                {{$.Printer.FormatDate .At}}
+                <span class="entry-path">{{clock .At $.Zone}}</span>
+              </td>
+              <td>
+                {{.ActorName}}
+                {{/* Somebody acting for somebody else is the thing an audit
+                     trail exists to make visible. */}}
+                {{if ne .OnBehalfOf 0}}
+                  <span class="badge">{{$.T "audit.onbehalf"}}</span>
+                {{end}}
+              </td>
+              <td class="cell-what">
+                <span class="entry-assignment">{{.Action}}</span>
+                <span class="entry-path">{{.ResourceType}} {{.ResourceID}}</span>
+              </td>
+              <td class="audit-detail"><code>{{.Detail}}</code></td>
+            </tr>
+          {{end}}
+        </tbody>
+      </table></div>
+
+      {{/* No total: this is the largest table in the schema and nothing
+           prunes it, so a count would cost a full scan to say a number
+           nobody acts on. "There is more" is the part that is actionable. */}}
+      <nav class="pager" aria-label="{{$.T "audit.title"}}">
+        {{if gt .Page 1}}
+          <a class="btn btn-quiet"
+             href="/audit?page={{sub .Page 1}}&actor={{.Query.ActorID}}&action={{.Query.Action}}&from={{.Query.From}}&to={{.Query.To}}">{{$.T "action.previous"}}</a>
+        {{end}}
+        {{if .HasMore}}
+          <a class="btn btn-quiet"
+             href="/audit?page={{add .Page 1}}&actor={{.Query.ActorID}}&action={{.Query.Action}}&from={{.Query.From}}&to={{.Query.To}}">{{$.T "action.next"}}</a>
+        {{end}}
+      </nav>
+    {{else}}
+      <p class="empty">{{$.T "audit.empty"}}</p>
+    {{end}}
+  {{end}}
+
+</section>
+{{end}}

@@ -165,6 +165,12 @@ func (s *Server) routes() {
 	// customer, which the service enforces; the link is offered to everybody
 	// but a client, and somebody who may not bill anything sees an empty list
 	// rather than a refusal.
+	// The instance's own history. Administration: the trail crosses every
+	// project and names people whose work the reader may have no business
+	// seeing, which is the same reasoning that keeps the user list and the
+	// settings out of a manager's reach.
+	mux.HandleFunc("GET /audit", s.handleAudit)
+
 	mux.HandleFunc("GET /billing", s.handleBilling)
 	mux.HandleFunc("POST /billing", s.handleRecordBilling)
 	mux.HandleFunc("POST /billing/{id}/void", s.handleVoidBilling)
