@@ -512,8 +512,12 @@ func TestBothSweepsCoverTheSameSurface(t *testing.T) {
 		"CreateAssignment": true, "UpdateAssignment": true,
 		"SetAssignmentArchived": true, "SetFavourite": true,
 		"UpdateSettings": true, "UpdateTag": true, "DeleteTag": true,
-		"BulkEntries":   true,
-		"ReindexSearch": true, "SaveContractTerms": true,
+		"BulkEntries": true,
+		// Writes nothing but the acting user's own row: a person is always
+		// allowed to decide how their own screen looks, so there is no scope
+		// for a membership sweep to check.
+		"UpdatePresentation": true,
+		"ReindexSearch":      true, "SaveContractTerms": true,
 		"DeleteContractTerms": true, "SaveRoutine": true, "DeleteRoutine": true,
 		"ApplyRoutine": true, "ApplyAllRoutines": true, "CopyDay": true,
 		"CopyWeek": true, "MoveEntries": true, "MoveExpenses": true,
@@ -563,7 +567,11 @@ var strangerReads = map[string]bool{
 	"RecentAssignments": true, "QuickStart": true, "Day": true, "Week": true,
 	"Month": true, "BudgetReportFor": true, "ApprovalReportFor": true,
 	"Summarise": true,
-	"Inbox":     true, "PendingCount": true, "ProposedByMe": true,
+	// Instance presentation with the reader's own overlaid: the same
+	// settings the page shell already reads for every user, carrying nothing
+	// that belongs to a project.
+	"SettingsFor": true,
+	"Inbox":       true, "PendingCount": true, "ProposedByMe": true,
 	"PendingIdle": true, "RunningIdle": true, "RunningTimers": true,
 	"Tags": true, "Routines": true, "ContractTerms": true, "ReviewSubmission": true,
 	"PreviewExport": true, "PreviewBackupFile": true,

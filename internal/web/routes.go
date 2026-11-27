@@ -88,6 +88,10 @@ func (s *Server) routes() {
 
 	// Preferences. The theme is stored per user rather than only in the browser,
 	// so it follows a person between devices in server mode.
+	// The personal half of the settings, which anybody may change for
+	// themselves; /settings is the instance's and is the administrator's.
+	mux.HandleFunc("GET /preferences", s.handlePreferences)
+	mux.HandleFunc("POST /preferences", s.handleUpdatePreferences)
 	mux.HandleFunc("POST /preferences/theme", s.handleSetTheme)
 	mux.HandleFunc("POST /preferences/language", s.handleSetLanguage)
 

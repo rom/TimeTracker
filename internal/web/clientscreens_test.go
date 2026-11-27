@@ -39,6 +39,7 @@ var clientScreens = map[string]string{
 	"GET /export/preview":                   "what their own download will contain",
 	"GET /export/{format}":                  "their own download, narrowed by the projection",
 	"GET /export/{format}/view":             "the same document, shown rather than saved",
+	"GET /preferences":                      "how the application looks to them, which is theirs as the theme and the language already were",
 	"GET /guide":                            "documentation, which is the same for everybody",
 	"GET /guide/{topic}":                    "documentation",
 	"GET /help/{screen}":                    "the help for a screen they are on",

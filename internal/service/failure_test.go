@@ -316,6 +316,12 @@ func TestEveryServiceMethodReportsADeadDatabase(t *testing.T) {
 			_, err := svc.BulkEntries(ctx, []int64{1}, BulkAddTag, "incident")
 			return err
 		},
+		"SettingsFor": func() error { _, err := svc.SettingsFor(ctx); return err },
+		"UpdatePresentation": func() error {
+			return svc.UpdatePresentation(ctx, PresentationInput{
+				ClockFormat: "24h", DayStartHour: -1, DayEndHour: -1,
+			})
+		},
 		"RecentlyDeleted": func() error { _, err := svc.RecentlyDeleted(ctx); return err },
 		"Summarise": func() error {
 			_, err := svc.Summarise(ctx, f.now.AddDate(0, 0, -30), f.now, GroupByCustomer)

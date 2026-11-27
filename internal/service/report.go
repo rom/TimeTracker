@@ -111,10 +111,11 @@ func (s *Service) Day(ctx context.Context, date time.Time) (DayView, error) {
 	view.Totals = s.totals(entries)
 	view.Gaps = findGaps(entries, s.now())
 
-	// The pane's window and its overflow behaviour are instance settings. A
-	// failure to read them is not worth failing the whole day screen over, so
-	// the zero value falls through to the built-in default.
-	settings, _ := s.db.GetSettings(ctx)
+	// The pane's window and its overflow behaviour are the reader's own where
+	// they have chosen, and the instance's otherwise. A failure to read them
+	// is not worth failing the whole day screen over, so the zero value falls
+	// through to the built-in default.
+	settings, _ := s.SettingsFor(ctx)
 	buildTimeline(&view,
 		domain.NormaliseDayWindow(settings.DayStartHour, settings.DayEndHour),
 		domain.DayOverflow(settings.DayOverflow), s.now())

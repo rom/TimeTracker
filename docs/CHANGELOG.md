@@ -186,6 +186,16 @@ the decision.
   grids have honoured it, but it was labelled only "first day of the week" -
   which leaves somebody to work out for themselves that Monday ends the week
   with the weekend and Saturday starts it with one. It now says so.
+* **Presentation follows the person** (`/preferences`). The theme, the zone and
+  the language have always been the account's. The hours the day pane covers,
+  whether a clock reads 24-hour, how a date is written and where the navigation
+  sits were the instance's and settable only by an administrator - so on a
+  server with twenty people, one of them picked everybody's working hours, and
+  somebody who starts at six read their day in a pane drawn for nine. Each is
+  now personal, with "follow the instance" as the default, so nothing changes
+  for anybody until they choose. The week's first day deliberately stays the
+  instance's: it decides which Monday a timesheet period is keyed by
+  ([ADR-0023](adr/0023-week-as-the-unit-of-approval.md)).
 * **An entry says what it is worth, and what rounding did to it.** Every entry
   has carried a frozen billing snapshot since the money work, and none of it
   reached a screen: the most carefully computed number in the application was

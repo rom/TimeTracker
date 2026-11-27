@@ -129,6 +129,7 @@ func TestEveryServiceMethodAsksTheAuthoriser(t *testing.T) {
 		"ParseQuickAdd": "parses text; records nothing",
 
 		"Settings":             "instance-wide display settings, read by the page shell for every user",
+		"SettingsFor":          "the same settings with the reader's own presentation overlaid; it reads the actor to know whose, and decides nothing they could not already see",
 		"IdleThresholdSeconds": "one instance-wide number, read by the page shell",
 		"TermsOn":              "resolves contract terms for a named customer; callers reach it with ids they were already authorised for",
 		"TermsCurrency":        "as TermsOn",

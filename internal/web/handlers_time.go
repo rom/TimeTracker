@@ -57,6 +57,10 @@ type pageData struct {
 	Groupings []service.GroupBy
 	// Bulk is the outcome of a change applied to many entries at once.
 	Bulk service.BulkResult
+	// InstanceDefaults are the instance's settings before this person's own
+	// choices are overlaid, so the preferences screen can say what each
+	// "follow the instance" option actually follows.
+	InstanceDefaults service.Settings
 
 	// Help is the context-sensitive help for the current screen.
 	Help       []helpSection
@@ -284,7 +288,10 @@ func (s *Server) newPageData(r *http.Request, title, active string) (pageData, e
 	// The instance settings drive the chrome - the clock, the date display, the
 	// navigation's position - so every page needs them. It is one indexed read
 	// of a single row.
-	settings, err := s.svc.Settings(r.Context())
+	// The instance's settings with this person's own presentation choices
+	// overlaid. The service resolves it, because the day pane is built there
+	// and the rest of the chrome here, and the two have to agree.
+	settings, err := s.svc.SettingsFor(r.Context())
 	if err != nil {
 		return pageData{}, err
 	}

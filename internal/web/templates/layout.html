@@ -130,6 +130,11 @@
       <a href="/tags"  {{if eq .Active "tags"}}class="active" aria-current="page"{{end}}>{{.T "nav.tags"}}</a>
     {{end}}
     <a href="/reports" {{if eq .Active "reports"}}class="active" aria-current="page"{{end}}>{{.T "nav.reports"}}</a>
+    {{/* The personal half of the settings. Offered to everybody, which is the
+         whole point: /settings is the instance's and is the administrator's,
+         and until this screen existed a member could not choose their own
+         working hours or date format at all. */}}
+    <a href="/preferences" {{if eq .Active "preferences"}}class="active" aria-current="page"{{end}}>{{.T "nav.preferences"}}</a>
     {{/* The recycle bin. Offered to everybody who can delete anything, which is
          everybody but a client: what a person sees there is their own
          deletions, and a record belonging to the instance rather than to a

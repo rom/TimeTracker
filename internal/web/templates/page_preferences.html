@@ -1,0 +1,105 @@
+{{define "content"}}
+{{$me := .User}}
+{{$instance := .InstanceDefaults}}
+<section class="preferences-screen">
+
+  <header class="screen-header">
+    <div class="screen-title">
+      <h1>{{.T "preferences.title"}}</h1>
+    </div>
+  </header>
+
+  <p class="field-help">{{.T "preferences.help"}}</p>
+
+  <form class="settings-form" method="post" action="/preferences">
+    {{template "csrf" .CSRFToken}}
+
+    <fieldset>
+      <legend>{{.T "preferences.reading"}}</legend>
+
+      {{/* Every select carries an empty option first, which is how somebody
+           says "no preference" and gets the instance's choice. It names the
+           value it would follow, because "Default" on its own tells you
+           nothing about what you would get. */}}
+      <label>
+        {{.T "settings.clockformat"}}
+        <select name="clock_format">
+          {{/* The label names the value it would follow: "Follow the instance"
+               alone says nothing about what you would get. The message key
+               for a stored value lives on the list item, so it is looked up
+               by walking the same list the options below come from. */}}
+          <option value="">{{.T "preferences.instance"}}{{range clockFormats}}{{if eq (printf "%s" .) $instance.ClockFormat}} ({{$.T .MessageKey}}){{end}}{{end}}</option>
+          {{range clockFormats}}
+            <option value="{{.}}" {{if eq (printf "%s" .) $me.ClockFormat}}selected{{end}}>{{$.T .MessageKey}}</option>
+          {{end}}
+        </select>
+      </label>
+
+      <label>
+        {{.T "settings.dateformat"}}
+        <select name="date_format">
+          {{/* The label names the value it would follow: "Follow the instance"
+               alone says nothing about what you would get. The message key
+               for a stored value lives on the list item, so it is looked up
+               by walking the same list the options below come from. */}}
+          <option value="">{{.T "preferences.instance"}}{{range dateFormats}}{{if eq (printf "%s" .) $instance.DateFormat}} ({{$.T .MessageKey}}){{end}}{{end}}</option>
+          {{range dateFormats}}
+            <option value="{{.}}" {{if eq (printf "%s" .) $me.DateFormat}}selected{{end}}>{{$.T .MessageKey}}</option>
+          {{end}}
+        </select>
+      </label>
+
+      <label>
+        {{.T "settings.navposition"}}
+        <select name="nav_position">
+          {{/* The label names the value it would follow: "Follow the instance"
+               alone says nothing about what you would get. The message key
+               for a stored value lives on the list item, so it is looked up
+               by walking the same list the options below come from. */}}
+          <option value="">{{.T "preferences.instance"}}{{range navPositions}}{{if eq (printf "%s" .) $instance.NavPosition}} ({{$.T .MessageKey}}){{end}}{{end}}</option>
+          {{range navPositions}}
+            <option value="{{.}}" {{if eq (printf "%s" .) $me.NavPosition}}selected{{end}}>{{$.T .MessageKey}}</option>
+          {{end}}
+        </select>
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>{{.T "preferences.day"}}</legend>
+      <p class="field-help">{{.T "preferences.day.help"}}</p>
+
+      {{/* The hours are a pair: both or neither. Leaving either empty means
+           the instance's window, because half a window is not a window. */}}
+      <label>
+        {{.T "settings.daystart"}}
+        <input type="number" name="day_start_hour" min="0" max="23"
+               placeholder="{{$instance.DayStartHour}}"
+               value="{{if ge $me.DayStartHour 0}}{{$me.DayStartHour}}{{end}}">
+      </label>
+      <label>
+        {{.T "settings.dayend"}}
+        <input type="number" name="day_end_hour" min="0" max="23"
+               placeholder="{{$instance.DayEndHour}}"
+               value="{{if ge $me.DayEndHour 0}}{{$me.DayEndHour}}{{end}}">
+      </label>
+
+      <label>
+        {{.T "settings.dayoverflow"}}
+        <select name="day_overflow">
+          {{/* The label names the value it would follow: "Follow the instance"
+               alone says nothing about what you would get. The message key
+               for a stored value lives on the list item, so it is looked up
+               by walking the same list the options below come from. */}}
+          <option value="">{{.T "preferences.instance"}}{{range dayOverflows}}{{if eq (printf "%s" .) $instance.DayOverflow}} ({{$.T .MessageKey}}){{end}}{{end}}</option>
+          {{range dayOverflows}}
+            <option value="{{.}}" {{if eq (printf "%s" .) $me.DayOverflow}}selected{{end}}>{{$.T .MessageKey}}</option>
+          {{end}}
+        </select>
+      </label>
+    </fieldset>
+
+    <button type="submit" class="btn btn-primary">{{.T "settings.save"}}</button>
+  </form>
+
+</section>
+{{end}}
