@@ -186,6 +186,30 @@ the decision.
   grids have honoured it, but it was labelled only "first day of the week" -
   which leaves somebody to work out for themselves that Monday ends the week
   with the weekend and Saturday starts it with one. It now says so.
+* **Days away can be imported from a calendar** (`/calendar`). Every country
+  that has public holidays publishes them as an `.ics` feed, and the one
+  category of absence that is identical for everybody and already written down
+  was the one an administrator typed in by hand, thirteen times a year. The
+  import now asks what the file is: meetings, as recorded time, or all-day
+  events, as days away. The two readings disagree about every event in a
+  calendar - the time import discards all-day events because they have no
+  length, and an all-day event is exactly what a day off is - so they are two
+  passes over the file rather than one with a column that changes. A calendar
+  states its end date exclusively, so 24 to 26 December is read as two days
+  off, not three. Re-importing next year's feed over this year's names each day
+  already recorded instead of recording it twice, by its dates rather than by
+  the event's identity, since a re-exported feed carries fresh ids for the same
+  Christmas. The public-holiday kind is offered only to somebody who may
+  administer the instance, and the import is refused before it writes anything
+  rather than halfway down the file.
+* **An absence can be corrected** rather than deleted and typed again. A sick
+  day that turned into three was two actions expressing one correction, and the
+  original record was gone - the recycle bin made that recoverable rather than
+  right. The form on the leave screen doubles as the correction form, with the
+  row it is editing marked below it. What a correction may not do is move a
+  record across the line between a person's own leave and the instance's day
+  off: the two answer to different permissions, and a form that could do it
+  quietly would be a way around the one that refuses.
 * **Days away can be recorded** (`/absence`,
   [ADR-0038](adr/0038-absence-is-its-own-record.md)). Holidays, sick days,
   parental leave and public holidays, as their own record rather than as a kind
@@ -313,6 +337,26 @@ the decision.
 
 ### Fixed
 
+* **The form decided whether time was chargeable, and the assignment did not.**
+  An assignment carries a billable default - the internal one somebody books
+  Friday afternoon's admin to is deliberately not billable - and the timer and
+  quick-add have always honoured it. The manual form did not: its checkbox was
+  ticked unconditionally in the markup, so time recorded against a
+  non-billable assignment arrived chargeable and reached the Amount column of
+  a client's export that way. The same hour recorded two ways got two answers.
+  The decision is the service's now, which has the assignment in hand; the
+  form's only job is to say whether anybody expressed an opinion, since an
+  unticked box and a box nobody looked at arrive identically. With JavaScript
+  the box follows the assignment as it is chosen, so the default is visible
+  before the entry is saved rather than a surprise afterwards; without it, the
+  assignment simply answers. A new routine follows its assignment the same way;
+  the correction form still states its own value, because editing an entry is a
+  statement about that entry.
+* **Nothing recorded read as "0s"**, which in a Billable column whose other
+  rows say "52h 30m" looks like a stopwatch somebody left running. Zero is
+  written in the units of its column now. Seconds are still shown for a
+  duration that genuinely is seconds, such as a timer a moment after it was
+  started.
 * **A member was sent the billing snapshot on every entry they read.** The
   rate, the amount, the currency and the rounding rule are frozen onto each
   entry when it is billed ([ADR-0014](adr/0014-exact-money-and-duration.md)),

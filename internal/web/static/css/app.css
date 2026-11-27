@@ -2150,6 +2150,14 @@ kbd {
 
 /* --------------------------------------------------------- responsive ----- */
 
+/* The row that a correction form above the table is editing. Quiet, because it
+   answers a small question: which of twenty rows the five fields at the top of
+   the screen belong to. The URL knows; the screen did not. */
+.is-editing > td,
+.is-editing > th {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
 @media (max-width: 700px) {
   .help-panel { width: 100vw; border-left: none; }
   .topbar { flex-wrap: wrap; gap: var(--gap); }

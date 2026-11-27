@@ -32,7 +32,18 @@
     <p><a class="btn btn-primary" href="/today">{{.T "day.title"}}</a></p>
   {{end}}
 
-  {{if not .CalendarPreview}}
+  {{if .HolidayResult}}
+    <div class="banner" role="status">
+      <p>{{.Printer.N "calendar.absence.imported" .HolidayResult.Imported .HolidayResult.Days}}</p>
+      {{if .HolidayResult.Skipped}}
+        <p>{{.T "calendar.result.skipped"}}</p>
+        <ul>{{range .HolidayResult.Skipped}}<li>{{.}}</li>{{end}}</ul>
+      {{end}}
+    </div>
+    <p><a class="btn btn-primary" href="/absence">{{.T "absence.title"}}</a></p>
+  {{end}}
+
+  {{if not (or .CalendarPreview .HolidayPreview)}}
     <p class="screen-intro">{{.T "calendar.intro"}}</p>
 
     <form class="entry-form" method="post" action="/calendar/preview"
@@ -42,11 +53,41 @@
         {{.T "calendar.file"}}
         <input type="file" name="file" accept=".ics,text/calendar" required>
       </label>
+      {{/* What the file is. The two readings disagree about every event in
+           it: a timesheet wants the meetings and throws away the all-day
+           markers, a leave register wants exactly those markers and nothing
+           else. Asking once, here, is cheaper than a preview that guesses and
+           a person who has to undo it. */}}
+      <fieldset class="field">
+        <legend>{{.T "calendar.target"}}</legend>
+        <label class="inline-check">
+          <input type="radio" name="target" value="entries" checked>
+          {{.T "calendar.target.entries"}}
+        </label>
+        <label class="inline-check">
+          <input type="radio" name="target" value="absence">
+          {{.T "calendar.target.absence"}}
+        </label>
+      </fieldset>
       <label class="field">
         {{.T "calendar.default"}}
         <select name="default_assignment">
           <option value="">{{.T "calendar.default.none"}}</option>
           {{range .Assignments}}<option value="{{.ID}}">{{.Label}}</option>{{end}}
+        </select>
+      </label>
+      <label class="field">
+        {{/* One kind for the whole file: a national holiday calendar is all
+             public holidays, and a mixed file is not a thing anybody has.
+             Public holidays are offered only to somebody who may administer
+             the instance, as they are on the leave screen. */}}
+        {{.T "calendar.absence.kind"}}
+        <select name="absence_kind">
+          {{range .AbsenceKinds}}
+            {{if or (not .Everybodys) $.CanAdminister}}
+              <option value="{{.}}" {{if .Everybodys}}selected{{end}}>{{$.T .MessageKey}}</option>
+            {{end}}
+          {{end}}
         </select>
       </label>
       <button type="submit" class="btn btn-primary">{{.T "import.preview"}}</button>
@@ -127,6 +168,85 @@
                       <option value="{{.ID}}" {{if eq .ID $chosen}}selected{{end}}>{{.Label}}</option>
                     {{end}}
                   </select>
+                </td>
+              </tr>
+            {{end}}
+          </tbody>
+        </table></div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">{{$.T "calendar.import"}}</button>
+          <a class="btn btn-quiet" href="/calendar">{{$.T "action.cancel"}}</a>
+        </div>
+      </form>
+    {{end}}
+  {{end}}
+
+  {{/* The same file read as a leave register. A separate table rather than the
+       one above with different columns: there is no assignment to choose, the
+       unit is days rather than hours, and the events that matter here are
+       precisely the ones the table above refuses. */}}
+  {{with .HolidayPreview}}
+    {{if .Fatal}}
+      <div class="banner banner-error" role="alert">{{.Fatal}}</div>
+      <p><a class="btn btn-quiet" href="/calendar">{{$.T "action.cancel"}}</a></p>
+    {{else}}
+      <dl class="totals">
+        <div class="total">
+          <dt>{{$.T "calendar.importable"}}</dt>
+          <dd class="total-value">{{.Importable}}</dd>
+        </div>
+        <div class="total">
+          <dt>{{$.T "calendar.skipped"}}</dt>
+          <dd class="total-value">{{.Skipped}}</dd>
+        </div>
+        <div class="total">
+          <dt>{{$.T "calendar.duplicates"}}</dt>
+          <dd class="total-value">{{.Duplicates}}</dd>
+        </div>
+        <div class="total">
+          <dt>{{$.T "absence.days"}}</dt>
+          <dd class="total-value">{{.Days}}</dd>
+        </div>
+      </dl>
+
+      <form method="post" action="/calendar">
+        {{template "csrf" $.CSRFToken}}
+        <input type="hidden" name="calendar" value="{{$.CalendarFile}}">
+        {{/* Both travel with the form: the second step reads the file again
+             and must read it the same way the first one did. */}}
+        <input type="hidden" name="target" value="absence">
+        <input type="hidden" name="absence_kind" value="{{$.CalendarKind}}">
+
+        <div class="grid-scroll"><table class="entries">
+          <thead>
+            <tr>
+              <th scope="col"><span class="visually-hidden">{{$.T "calendar.include"}}</span></th>
+              <th scope="col">{{$.T "absence.days"}}</th>
+              <th scope="col">{{$.T "calendar.event"}}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .Rows}}
+              <tr class="entry-row {{if not .Importable}}flagged{{end}}">
+                <td>
+                  <input type="checkbox" name="event" value="{{.UID}}"
+                         {{if .Selected}}checked{{end}}
+                         aria-label="{{$.T "calendar.include"}}">
+                </td>
+                <td class="cell-time">
+                  {{.StartsOn}}{{if ne .EndsOn .StartsOn}} – {{.EndsOn}}{{end}}
+                </td>
+                <td class="cell-what">
+                  <span class="entry-assignment">{{.Summary}}</span>
+                  {{/* Why it will not be imported, in words: a count alone
+                       would leave somebody wondering which holiday is
+                       missing. */}}
+                  {{if .Duplicate}}
+                    <span class="badge badge-flagged">{{$.T "calendar.duplicate"}}</span>
+                  {{else if .Skip}}
+                    <span class="badge badge-flagged">{{.Skip}}</span>
+                  {{end}}
                 </td>
               </tr>
             {{end}}

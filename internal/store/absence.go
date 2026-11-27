@@ -39,6 +39,24 @@ func CreateAbsenceTx(ctx context.Context, db Execer, a domain.Absence) (domain.A
 	return a, nil
 }
 
+// UpdateAbsenceTx rewrites the span, kind and note of one.
+//
+// Who it belongs to and who recorded it are deliberately not in the SET list:
+// an edit corrects what was recorded, not whose record it is. Moving an
+// absence to another person is a deletion and a new record, which is what the
+// bin is for.
+func UpdateAbsenceTx(ctx context.Context, db Execer, a domain.Absence) error {
+	_, err := db.ExecContext(ctx, `
+		UPDATE absences
+		   SET kind = ?, starts_on = ?, ends_on = ?, note = ?
+		 WHERE id = ?`,
+		string(a.Kind), a.StartsOn, a.EndsOn, a.Note, a.ID)
+	if err != nil {
+		return fmt.Errorf("update absence: %w", err)
+	}
+	return nil
+}
+
 // ListAbsences returns everything covering a range for one person, including
 // the public holidays that apply to everybody.
 //

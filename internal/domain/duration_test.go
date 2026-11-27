@@ -113,7 +113,8 @@ func TestFormatDuration(t *testing.T) {
 		in   int64
 		want string
 	}{
-		{0, "0s"},
+		// Nothing recorded, in the units of a column of hours.
+		{0, "0h 00m"},
 		{45, "45s"},
 		{60, "1m"},
 		{3600, "1h 00m"},

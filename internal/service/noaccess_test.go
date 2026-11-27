@@ -521,7 +521,11 @@ func TestBothSweepsCoverTheSameSurface(t *testing.T) {
 		// a person records their own, a manager records one for somebody they may
 		// already proxy for, and a public holiday is the instance's. All three
 		// bounds are asserted directly in absence_test.go.
-		"RecordAbsence": true, "DeleteAbsence": true,
+		"RecordAbsence": true, "DeleteAbsence": true, "UpdateAbsence": true,
+		// Reads and writes absence, which is scoped by whose days they are
+		// rather than by project membership; the write goes through
+		// RecordAbsence, whose bounds are asserted in absence_test.go.
+		"ParseCalendarAsAbsence": true, "ImportCalendarAsAbsence": true,
 		"ReindexSearch": true, "SaveContractTerms": true,
 		"DeleteContractTerms": true, "SaveRoutine": true, "DeleteRoutine": true,
 		"ApplyRoutine": true, "ApplyAllRoutines": true, "CopyDay": true,

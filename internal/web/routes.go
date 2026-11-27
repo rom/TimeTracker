@@ -163,6 +163,8 @@ func (s *Server) routes() {
 	// The days somebody was not working.
 	mux.HandleFunc("GET /absence", s.handleAbsence)
 	mux.HandleFunc("POST /absence", s.handleRecordAbsence)
+	mux.HandleFunc("GET /absence/{id}/edit", s.handleEditAbsence)
+	mux.HandleFunc("POST /absence/{id}", s.handleUpdateAbsence)
 	mux.HandleFunc("POST /absence/{id}/delete", s.handleDeleteAbsence)
 
 	// Where the time went, over a range, grouped. The budget report beside it

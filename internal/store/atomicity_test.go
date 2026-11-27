@@ -176,6 +176,12 @@ func TestEveryTransactionalWriteReportsAFailureRatherThanSwallowingIt(t *testing
 			})
 			return err
 		},
+		"UpdateAbsenceTx": func(tx *sql.Tx) error {
+			return UpdateAbsenceTx(ctx, tx, domain.Absence{
+				ID: 1, Kind: domain.AbsenceHoliday,
+				StartsOn: "2026-03-16", EndsOn: "2026-03-20",
+			})
+		},
 		"CaptureTx": func(tx *sql.Tx) error {
 			_, err := CaptureTx(ctx, tx, DeletedRecord{
 				Kind: "time_entry", RecordID: 1, UserID: user.ID,

@@ -444,7 +444,7 @@ func TestTheseWritesRedrawTheScreenForAScriptedClient(t *testing.T) {
 }
 
 // noTime is what the totals block shows for a day with nothing on it.
-const noTime = "0s"
+const noTime = "0h 00m"
 
 // runningTimers is the set of timer ids the day screen offers a stop button
 // for.

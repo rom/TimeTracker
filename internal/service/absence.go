@@ -109,25 +109,90 @@ func (s *Service) AbsencesForEveryone(ctx context.Context, from, to time.Time) (
 		from.Format("2006-01-02"), to.Format("2006-01-02"))
 }
 
-// DeleteAbsence removes one, recoverably.
-func (s *Service) DeleteAbsence(ctx context.Context, id int64) error {
+// UpdateAbsence corrects one that is already recorded.
+//
+// The case this exists for is the ordinary one: a sick day that turned into
+// three, a holiday moved a week. Until this existed the only way to say so was
+// to delete the record and type it again, which is two actions to express one
+// correction and loses the original - the bin made that recoverable rather
+// than right.
+//
+// Authorised exactly as deleting it is, for the same reason: changing the span
+// of somebody's leave and removing it are the same power over the same record.
+//
+// What an edit may not do is change whose record it is. A personal absence
+// cannot become a public holiday or the reverse: one belongs to a person and
+// the other to the instance, they answer to different permissions, and a form
+// that could quietly move a record between them would be a way around the one
+// that refuses. Saying it plainly is better than a silent coercion.
+func (s *Service) UpdateAbsence(ctx context.Context, id int64, in AbsenceInput) (domain.Absence, error) {
+	existing, err := s.absenceToActOn(ctx, id)
+	if err != nil {
+		return domain.Absence{}, err
+	}
+
+	if in.Kind.Everybodys() != existing.Kind.Everybodys() {
+		return domain.Absence{}, fmt.Errorf("%w: a public holiday and a "+
+			"person's own leave are different records; delete this one and "+
+			"record the other", ErrValidation)
+	}
+
+	updated := existing
+	updated.Kind = in.Kind
+	updated.StartsOn = in.StartsOn
+	updated.EndsOn = in.EndsOn
+	updated.Note = in.Note
+	if err := updated.Validate(); err != nil {
+		return domain.Absence{}, err
+	}
+
+	// Not checked against the week lock, for the reason RecordAbsence gives:
+	// an absence adds no hours to an approved week.
+	err = s.mutate(ctx, "absence.update", "absence", map[string]any{
+		"kind": string(updated.Kind), "from": updated.StartsOn,
+		"to": updated.EndsOn, "user_id": updated.UserID,
+		"was_from": existing.StartsOn, "was_to": existing.EndsOn,
+	}, func(tx *sql.Tx) (int64, error) {
+		return id, store.UpdateAbsenceTx(ctx, tx, updated)
+	})
+	if err != nil {
+		return domain.Absence{}, err
+	}
+	return updated, nil
+}
+
+// absenceToActOn loads an absence and decides whether the acting user may
+// change or remove it. The two acts are the same power, so they ask the same
+// question in one place.
+func (s *Service) absenceToActOn(ctx context.Context, id int64) (domain.Absence, error) {
 	actor, err := auth.MustUser(ctx)
 	if err != nil {
-		return err
+		return domain.Absence{}, err
 	}
 	existing, err := s.db.GetAbsence(ctx, id)
 	if err != nil {
-		return err
+		return domain.Absence{}, err
 	}
 
 	if existing.Kind.Everybodys() {
+		// The instance's record: administration, like the settings it sits
+		// beside.
 		if err := s.authz.Can(ctx, auth.ActionManage, auth.Resource{Type: "settings"}); err != nil {
-			return notFoundFor(err)
+			return domain.Absence{}, notFoundFor(err)
 		}
 	} else if existing.UserID != actor.ID {
 		if err := s.mayActFor(ctx, existing.UserID); err != nil {
-			return err
+			return domain.Absence{}, err
 		}
+	}
+	return existing, nil
+}
+
+// DeleteAbsence removes one, recoverably.
+func (s *Service) DeleteAbsence(ctx context.Context, id int64) error {
+	existing, err := s.absenceToActOn(ctx, id)
+	if err != nil {
+		return err
 	}
 
 	summary := fmt.Sprintf("%s · %s–%s", existing.Kind, existing.StartsOn, existing.EndsOn)

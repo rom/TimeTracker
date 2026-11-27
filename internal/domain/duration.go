@@ -166,9 +166,17 @@ func (r RoundingRule) Apply(seconds int64) int64 {
 // FormatDuration renders seconds as "1h 30m", the form used throughout the UI.
 // Seconds are shown only for durations under a minute, where "0m" would look like
 // nothing was recorded.
+//
+// Nothing recorded is the exception, and reads as "0h 00m": zero belongs in the
+// units of the column it sits in, and "0s" among rows of "52h 30m" reads as a
+// stopwatch rather than as a total. The i18n printer does the same with the
+// translated units, so a screen and an export agree about zero.
 func FormatDuration(seconds int64) string {
 	if seconds < 0 {
 		return "-" + FormatDuration(-seconds)
+	}
+	if seconds == 0 {
+		return "0h 00m"
 	}
 	if seconds < 60 {
 		return fmt.Sprintf("%ds", seconds)

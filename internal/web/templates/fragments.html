@@ -251,7 +251,10 @@
 {{/* -------------------------------------------------- assignment <select> */}}
 {{define "assignment-options"}}
   {{range .}}
-    <option value="{{.ID}}">{{.Label}}</option>
+    {{/* data-billable carries the assignment's own default so a form can show
+         it the moment one is chosen. The server decides regardless; this is
+         what makes the decision visible before the entry is saved. */}}
+    <option value="{{.ID}}" data-billable="{{if .BillableDefault}}1{{else}}0{{end}}">{{.Label}}</option>
   {{end}}
 {{end}}
 

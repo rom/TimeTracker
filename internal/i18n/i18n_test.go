@@ -142,7 +142,8 @@ func TestDurationsReadAsHoursAndMinutes(t *testing.T) {
 		seconds int64
 		en      string
 	}{
-		{0, "0s"},
+		// Zero is written in the units of its column, not as a stopwatch.
+		{0, "0h 00m"},
 		{45, "45s"},
 		{60, "1m"},
 		{90, "1m"},

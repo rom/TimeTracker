@@ -147,8 +147,15 @@
       </select>
     </div>
 
+    {{/* A new routine follows its assignment; an existing one keeps what it
+         was. The marker says which, and the script clears it the moment
+         somebody touches the box - the same arrangement as the add form on
+         Today, for the same reason: an unticked box and a box nobody has
+         looked at arrive at the server identically. */}}
+    {{if not $edit}}<input type="hidden" name="billable_source" value="assignment">{{end}}
     <label class="inline-check">
-      <input type="checkbox" name="billable" {{if $edit}}{{if $edit.Billable}}checked{{end}}{{end}}>
+      <input type="checkbox" name="billable" data-billable-box
+             {{if $edit}}{{if $edit.Billable}}checked{{end}}{{end}}>
       {{.T "entry.billable"}}
     </label>
     <label class="inline-check">
