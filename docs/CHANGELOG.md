@@ -331,6 +331,20 @@ the decision.
   of header to 128px and 1280px from 133px to 94px. A phone also loses the
   clock and the date from the bar, and the mark shares its row with the search
   field.
+* **Fourteen navigation links in one flat list** were back to two rows on a
+  1024px laptop and read as a wall: the day's screens and the instance's
+  settings had the same weight, so neither was findable at a glance. They are
+  two tiers now - the daily screens, then what is set up once or consulted
+  occasionally, drawn quieter and separated by a rule, a vertical one across
+  the top and a horizontal one down the left rail. Grouping is normally paid
+  for in space, and this one is not: two flex containers cannot share a line,
+  which cost a whole row on a phone (231px over four rows), so below 700px the
+  groups are dissolved with `display: contents` and hand their links straight
+  back to the bar - 198px over three rows, against 201px for the flat list it
+  replaced, and two pixels narrower on every desktop width. Every link stays
+  present, focusable and in the same order: a disclosure would have hidden half
+  the navigation from the keyboard on exactly the screens where space is
+  tightest.
 * **The entries table crushed the column carrying the words**, stacking a
   customer and project four lines deep while the duration beside them sat half
   empty. Tighter cells on a narrow screen, and the path clipped to one line

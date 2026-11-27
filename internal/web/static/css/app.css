@@ -470,10 +470,30 @@ a { color: var(--accent); }
   display: flex; flex-wrap: wrap; gap: 4px;
   flex: 1 1 auto; min-width: min(100%, 44rem);
 }
+/* The two tiers. Each is a flex row of its own so the group wraps as a unit
+   rather than interleaving with the other - half the daily links above a
+   stray administrative one would be worse than no grouping at all. */
+.nav-group { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+/* The daily tier takes the room it needs; the quiet one follows and wraps
+   below when there is not enough left for it. */
+.nav-primary { flex: 0 1 auto; }
+.nav-secondary {
+  flex: 1 1 auto;
+  /* A rule rather than a gap, because a gap at the wrap point disappears: when
+     the group drops to its own line the separator has to be something that
+     comes with it. */
+  padding-left: var(--gap-sm);
+  margin-left: var(--gap-sm);
+  border-left: 1px solid var(--border);
+}
 .mainnav a {
   padding: 6px 12px; border-radius: var(--radius);
   color: var(--text-muted); text-decoration: none;
 }
+/* Quieter, not hidden: smaller and lighter, so the eye lands on the daily tier
+   first and everything is still a link anybody can read and reach. */
+.nav-secondary a { padding: 5px 9px; font-size: 0.92em; opacity: 0.85; }
+.nav-secondary a:hover, .nav-secondary a.active { opacity: 1; }
 .mainnav a:hover { background: var(--surface-sunken); color: var(--text); }
 .mainnav a.active { background: var(--accent-soft); color: var(--text); font-weight: 600; }
 
@@ -1882,6 +1902,14 @@ kbd {
 }
 
 [data-nav="left"] .mainnav { flex-direction: column; flex: 0 0 auto; gap: 2px; }
+/* In the rail the groups are stacked columns, so the separator is a rule above
+   the quiet one rather than beside it. */
+[data-nav="left"] .nav-group { flex-direction: column; align-items: stretch; gap: 2px; }
+[data-nav="left"] .nav-secondary {
+  padding-left: 0; margin-left: 0; border-left: none;
+  padding-top: var(--gap-sm); margin-top: var(--gap-sm);
+  border-top: 1px solid var(--border);
+}
 [data-nav="left"] .topbar-right {
   flex-wrap: wrap;
   /* Pushed to the foot of the rail: the pickers and the sign-out button are
@@ -1993,6 +2021,18 @@ kbd {
   .topbar .brand { flex: 0 0 auto; }
   .mainnav { gap: 2px; }
   .mainnav a { padding: 5px 8px; font-size: 0.95em; }
+  .nav-secondary a { padding: 4px 7px; font-size: 0.88em; }
+  /* The groups stop being boxes and their links flow as one run.
+
+     Grouping costs a row on a phone, because two flex containers cannot share
+     a line: the daily tier wrapped to two rows and the quiet one to two more,
+     where fourteen links flowing freely take three. display: contents removes
+     the boxes without removing the grouping - the links keep their order and
+     the quiet ones keep their smaller type, which is what carries the tiering
+     at this width. The rule goes with the boxes; a vertical rule at the start
+     of a wrapped row reads as a stray mark rather than as a divider. */
+  .nav-group { display: contents; }
+  .nav-secondary { padding-left: 0; margin-left: 0; border-left: none; }
   .topbar-right { flex: 1 0 100%; justify-content: flex-start; gap: var(--gap-sm); }
   /* On a phone the field takes the width it needs rather than a fixed 12rem. */
   .topbar-search { flex: 1 1 8rem; }
