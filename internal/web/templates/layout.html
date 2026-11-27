@@ -129,6 +129,7 @@
     {{if .CanAdminister}}
       <a href="/tags"  {{if eq .Active "tags"}}class="active" aria-current="page"{{end}}>{{.T "nav.tags"}}</a>
     {{end}}
+    <a href="/absence" {{if eq .Active "absence"}}class="active" aria-current="page"{{end}}>{{.T "nav.absence"}}</a>
     <a href="/reports" {{if eq .Active "reports"}}class="active" aria-current="page"{{end}}>{{.T "nav.reports"}}</a>
     {{/* The personal half of the settings. Offered to everybody, which is the
          whole point: /settings is the instance's and is the administrator's,

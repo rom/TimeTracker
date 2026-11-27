@@ -372,9 +372,12 @@ func templateFuncs() template.FuncMap {
 			}
 			return domain.FormatDuration(int64(minutes) * 60)
 		},
-		// subtract, for saying how far short a week is without making the
-		// template do arithmetic it cannot express.
-		"subtract": func(a, b int64) int64 { return a - b },
+		// Seconds arithmetic, for saying how far short a week is and how much
+		// of it leave accounts for. Named apart from add and sub above, which
+		// take ints: a duration is an int64 everywhere in this application,
+		// and a template function cannot be generic.
+		"subSeconds": func(a, b int64) int64 { return a - b },
+		"addSeconds": func(a, b int64) int64 { return a + b },
 		"divide": func(value int64, by int64) int64 {
 			if by == 0 {
 				return 0

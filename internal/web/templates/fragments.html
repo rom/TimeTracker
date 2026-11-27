@@ -458,9 +458,17 @@
           {{$page.T "period.total.of"
               ($page.Printer.FormatDuration .TotalSeconds)
               ($page.Printer.FormatDuration .ExpectedSeconds)}}
-          {{if lt .TotalSeconds .ExpectedSeconds}}
+          {{/* Days away count towards the week. A holiday is not a gap in a
+               timesheet, and saying a week off is thirty-eight hours short is
+               the application nagging somebody for being on leave. */}}
+          {{if gt .AbsentSeconds 0}}
+            <span class="period-away">{{$page.T "period.away"
+              ($page.Printer.FormatDuration .AbsentSeconds)}}</span>
+          {{end}}
+          {{$covered := addSeconds .TotalSeconds .AbsentSeconds}}
+          {{if lt $covered .ExpectedSeconds}}
             <span class="period-short">{{$page.T "period.short"
-              ($page.Printer.FormatDuration (subtract .ExpectedSeconds .TotalSeconds))}}</span>
+              ($page.Printer.FormatDuration (subSeconds .ExpectedSeconds $covered))}}</span>
           {{end}}
         {{else}}
           {{$page.T "period.total" ($page.Printer.FormatDuration .TotalSeconds)}}

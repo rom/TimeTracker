@@ -186,6 +186,17 @@ the decision.
   grids have honoured it, but it was labelled only "first day of the week" -
   which leaves somebody to work out for themselves that Monday ends the week
   with the weekend and Saturday starts it with one. It now says so.
+* **Days away can be recorded** (`/absence`,
+  [ADR-0038](adr/0038-absence-is-its-own-record.md)). Holidays, sick days,
+  parental leave and public holidays, as their own record rather than as a kind
+  of time entry - an entry needs an assignment, so recording leave as time
+  would mean a fake customer in every instance and leave appearing in every
+  report grouped by customer, which is exactly the workaround people use today.
+  A day away fills its share of the expected week, so a week off reads as a
+  complete week instead of thirty-eight hours short, and the empty-day reminder
+  and the unaccounted-time banner leave it alone: until now the application
+  told people off for being on holiday. A public holiday is the instance's,
+  recorded once by an administrator and counting for everybody.
 * **A week is measured against a full one.** Nothing knew how much was enough:
   the week view showed a total with nothing to compare it against, and the
   submission screen checked for empty days but not for a short week. A full

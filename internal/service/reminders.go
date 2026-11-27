@@ -191,12 +191,24 @@ func (s *Service) emptyWeekdays(ctx context.Context, actor domain.User, weekStar
 	now := s.now().In(loc)
 	var empty []time.Time
 
+	// Days somebody was away are not gaps in their timesheet. Without this the
+	// application nags people for being on holiday, which is the main reason a
+	// timesheet that cannot record leave is worse than one with no reminders
+	// at all.
+	away, err := s.absentDaysFor(ctx, actor.ID, weekStart, weekStart.AddDate(0, 0, 6))
+	if err != nil {
+		return nil, err
+	}
+
 	for offset := range 7 {
 		day := weekStart.AddDate(0, 0, offset)
 		if day.After(now) {
 			break
 		}
 		if domain.IsWeekend(day) {
+			continue
+		}
+		if _, off := away[day.Format("2006-01-02")]; off {
 			continue
 		}
 		count, err := s.CountEntries(ctx, EntryFilter{

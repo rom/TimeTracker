@@ -39,6 +39,7 @@ var binOrder = map[string][]string{
 	"tag":           {"tags", "entry_tags"},
 	"routine":       {"routines"},
 	"contract_term": {"contract_terms"},
+	"absence":       {"absences"},
 }
 
 // DeletedRecord is a thing in the bin, re-exported for the HTTP layer.

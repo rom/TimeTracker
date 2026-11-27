@@ -57,6 +57,10 @@ type pageData struct {
 	Groupings []service.GroupBy
 	// Bulk is the outcome of a change applied to many entries at once.
 	Bulk service.BulkResult
+	// Absences are the days away shown on the leave screen, and AbsenceKinds
+	// the kinds its form offers.
+	Absences     []domain.Absence
+	AbsenceKinds []domain.AbsenceKind
 	// InstanceDefaults are the instance's settings before this person's own
 	// choices are overlaid, so the preferences screen can say what each
 	// "follow the instance" option actually follows.

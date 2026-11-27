@@ -43,6 +43,11 @@ type PeriodView struct {
 	// compare it against cannot answer the question people open a timesheet to
 	// answer on a Thursday afternoon.
 	ExpectedSeconds int64
+	// AbsentSeconds is the share of the expected week that recorded absence
+	// accounts for, and AbsentDays how many working days produced it. A week
+	// off is a complete week, not a week somebody failed to fill in.
+	AbsentSeconds int64
+	AbsentDays    int
 	// CanSubmit, CanWithdraw, CanApprove and CanReopen say which controls to
 	// offer. The template asks these rather than re-deriving the rules, so the
 	// interface and the enforcement cannot disagree.
@@ -94,6 +99,36 @@ func (s *Service) periodFor(ctx context.Context, actor domain.User, ownerID int6
 	// reader, because a manager looking at somebody's week wants to know
 	// whether THEY are short, not whether the manager would be.
 	view.ExpectedSeconds = int64(expectedMinutesFor(settings, owner)) * 60
+
+	// Days away fill their share of it, so a week's holiday reads as a
+	// complete week rather than as a failure to fill the timesheet in. The
+	// share is the week divided by its working days, which is what makes one
+	// day of leave worth a fifth of a Monday-to-Friday week without anybody
+	// storing a daily figure.
+	if view.ExpectedSeconds > 0 {
+		start, parseErr := domain.ParseWeekStart(weekStart, locationFor(owner))
+		if parseErr == nil {
+			away, awayErr := s.absentDaysFor(ctx, ownerID, start, start.AddDate(0, 0, 6))
+			if awayErr != nil {
+				return PeriodView{}, awayErr
+			}
+			working, absent := 0, 0
+			for offset := range 7 {
+				day := start.AddDate(0, 0, offset)
+				if domain.IsWeekend(day) {
+					continue
+				}
+				working++
+				if _, off := away[day.Format("2006-01-02")]; off {
+					absent++
+				}
+			}
+			if working > 0 && absent > 0 {
+				view.AbsentSeconds = view.ExpectedSeconds * int64(absent) / int64(working)
+				view.AbsentDays = absent
+			}
+		}
+	}
 
 	own := ownerID == actor.ID
 	// An empty week is not worth submitting, and submitting one would put an

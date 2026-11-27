@@ -316,7 +316,23 @@ func TestEveryServiceMethodReportsADeadDatabase(t *testing.T) {
 			_, err := svc.BulkEntries(ctx, []int64{1}, BulkAddTag, "incident")
 			return err
 		},
-		"SettingsFor": func() error { _, err := svc.SettingsFor(ctx); return err },
+		"Absence": func() error { _, err := svc.Absence(ctx, 1); return err },
+		"Absences": func() error {
+			_, err := svc.Absences(ctx, f.now, f.now)
+			return err
+		},
+		"AbsencesForEveryone": func() error {
+			_, err := svc.AbsencesForEveryone(ctx, f.now, f.now)
+			return err
+		},
+		"RecordAbsence": func() error {
+			_, err := svc.RecordAbsence(ctx, AbsenceInput{
+				Kind: domain.AbsenceHoliday, StartsOn: "2026-03-16", EndsOn: "2026-03-16",
+			})
+			return err
+		},
+		"DeleteAbsence": func() error { return svc.DeleteAbsence(ctx, 1) },
+		"SettingsFor":   func() error { _, err := svc.SettingsFor(ctx); return err },
 		"UpdatePresentation": func() error {
 			return svc.UpdatePresentation(ctx, PresentationInput{
 				ClockFormat: "24h", DayStartHour: -1, DayEndHour: -1,
