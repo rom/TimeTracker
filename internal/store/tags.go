@@ -142,6 +142,30 @@ func (db *DB) TagsForEntries(ctx context.Context, entryIDs []int64) (map[int64][
 // exactly right for the SQLite this happens to be linked against today.
 const maxBoundParameters = 500
 
+// AllTagNames returns every tag in the vocabulary, used or not.
+//
+// ListTags beside it is a screen's query: scoped, and joined to usage so the
+// management page can show which tags are actually on something. This answers
+// the different question a restore asks - what does this instance already know
+// about - where an unused tag still counts as known.
+func (db *DB) AllTagNames(ctx context.Context) ([]string, error) {
+	rows, err := db.read.QueryContext(ctx, `SELECT name FROM tags ORDER BY name`)
+	if err != nil {
+		return nil, fmt.Errorf("list tag names: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	return names, rows.Err()
+}
+
 // ListTags returns every tag with how many entries carry it.
 //
 // The count is what makes the management screen useful: a tag on nothing is

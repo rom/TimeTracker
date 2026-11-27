@@ -255,6 +255,7 @@ func TestEveryServiceMethodReportsADeadDatabase(t *testing.T) {
 		},
 		"VoidBillingRun":    func() error { return svc.VoidBillingRun(ctx, 1) },
 		"BillingRuns":       func() error { _, err := svc.BillingRuns(ctx, 0, 20); return err },
+		"AuditLog":          func() error { _, err := svc.AuditLog(ctx, AuditQuery{}); return err },
 		"BillingRun":        func() error { _, _, err := svc.BillingRun(ctx, 1); return err },
 		"BillingRunSummary": func() error { _, err := svc.BillingRunSummary(ctx, 1); return err },
 		"ParseQuickAdd":     func() error { _, err := svc.ParseQuickAdd(ctx, "2h Development"); return err },

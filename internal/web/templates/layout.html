@@ -168,6 +168,12 @@
            deletions, and a record belonging to the instance rather than to a
            person is shown only to whoever may administer it. */}}
       <a href="/deleted" {{if eq .Active "deleted"}}class="active" aria-current="page"{{end}}>{{.T "nav.deleted"}}</a>
+      {{/* The instance's history. Offered to whoever administers the instance,
+           which is who the screen itself admits: it crosses every project and
+           names people whose work a manager has no business reading. */}}
+      {{if .CanAdminister}}
+        <a href="/audit" {{if eq .Active "audit"}}class="active" aria-current="page"{{end}}>{{.T "nav.audit"}}</a>
+      {{end}}
       {{/* The personal half of the settings. Offered to everybody, which is
            the whole point: /settings is the instance's and is the
            administrator's, and until this screen existed a member could not

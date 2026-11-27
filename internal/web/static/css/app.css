@@ -2158,6 +2158,47 @@ kbd {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
+/* The audit trail. The detail column is JSON written for a machine and read by
+   a person: monospaced so the keys line up down the column, and clipped so one
+   long object cannot set the width of every row. */
+.audit-detail code,
+.trail-detail {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--muted);
+  display: inline-block;
+  max-width: 34rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+/* One record's history, under the correction form. A list rather than a table:
+   it is a handful of lines about one thing, and a table would be chrome around
+   three words. */
+.trail {
+  list-style: none;
+  margin: var(--gap-sm) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.trail li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-sm);
+  align-items: baseline;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.trail-when { color: var(--muted); font-variant-numeric: tabular-nums; }
+.trail-what { font-weight: 600; }
+.trail-who  { color: var(--muted); }
+
 @media (max-width: 700px) {
   .help-panel { width: 100vw; border-left: none; }
   .topbar { flex-wrap: wrap; gap: var(--gap); }

@@ -181,6 +181,11 @@ type pageData struct {
 	ImportPreview       *service.ImportPreview
 	ImportCreateMissing bool
 
+	// The audit trail. Trail is one record's history, shown beside it; Audit
+	// is the instance's, which is a screen of its own and administration.
+	Trail []service.AuditEvent
+	Audit *service.AuditPage
+
 	// Billing. BillingCandidates is what a run would cover if it were made
 	// now, and is nil until a customer has been chosen; BillingRuns is what
 	// has been billed already, which is the half of the screen worth opening
@@ -914,6 +919,15 @@ func (s *Server) handleEditEntryForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data.AttachmentText = s.svc.TextPreviews(r.Context(), data.Attachments)
+	// What has happened to this entry. The trail has recorded every change
+	// since the first migration and nothing has ever shown one: "who shortened
+	// this by an hour, and when" is the question a corrected timesheet raises,
+	// and it was answerable only by reading syslog - or, in local mode, not at
+	// all. Best-effort, because a history that cannot be read is a reason to
+	// show the form without it rather than to refuse the correction.
+	if trail, trailErr := s.svc.AuditTrail(r.Context(), "time_entry", entry.ID); trailErr == nil {
+		data.Trail = trail
+	}
 	s.render(w, r, "page_entry_edit.html", data)
 }
 

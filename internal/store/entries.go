@@ -79,16 +79,23 @@ func CreateEntryTx(ctx context.Context, db Execer, e domain.TimeEntry) (domain.T
 		endedAt = formatTime(*e.EndedAt)
 	}
 
+	// billing_run_id is in the list because the struct has it, not because
+	// recording time ever sets it: ordinary entries are stamped later, by a
+	// billing run. A restore is the one caller that creates an entry already
+	// billed, and leaving the column out here meant the field was silently
+	// dropped - restored invoiced time came back billable, which is the exact
+	// failure the runs exist to prevent.
 	res, err := db.ExecContext(ctx, `
 		INSERT INTO time_entries (user_id, entered_by, assignment_id, started_at, ended_at,
 		    duration_seconds, note, billable, kind, status, time_zone, rounding_rule_applied,
-		    billable_seconds, rate_minor, amount_minor, currency, flagged, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		    billable_seconds, rate_minor, amount_minor, currency, flagged, billing_run_id,
+		    created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.UserID, e.EnteredBy, e.AssignmentID, formatTime(e.StartedAt), endedAt,
 		e.DurationSeconds, e.Note, boolToInt(e.Billable),
 		string(e.KindOrDefault()), string(e.Status), e.TimeZone,
 		e.RoundingRuleApplied, e.BillableSeconds, e.RateMinor, e.AmountMinor, e.Currency,
-		boolToInt(e.Flagged), formatTime(now), formatTime(now))
+		boolToInt(e.Flagged), e.BillingRunID, formatTime(now), formatTime(now))
 	if err != nil {
 		return domain.TimeEntry{}, fmt.Errorf("create time entry: %w", err)
 	}
@@ -777,6 +784,99 @@ func InsertAuditTx(ctx context.Context, tx *sql.Tx, e AuditEvent) error {
 	return nil
 }
 
+// AuditFilter narrows the instance-wide trail.
+//
+// Each field is a question somebody actually asks of an audit log: who did
+// this, what kind of thing happened, to what sort of record, and when. Empty
+// fields are not conditions, so the zero filter is "everything, newest first".
+type AuditFilter struct {
+	ActorID int64
+	// Action matches exactly ("time_entry.delete") because the vocabulary is
+	// closed and a prefix match would quietly include actions nobody chose.
+	Action       string
+	ResourceType string
+	// From and To bound the instant, To exclusive, as every range here is.
+	From time.Time
+	To   time.Time
+	// Limit caps the rows; 0 means a page's worth rather than everything,
+	// because this table is the largest in the schema and nothing prunes it.
+	Limit  int
+	Offset int
+}
+
+// ListAuditTrail returns the instance's history, newest first.
+//
+// Unlike ListAuditEvents beside it, this is not about one record. It answers
+// "what happened here", which until it existed could only be answered by
+// reading the operational log - and in local mode, where nothing forwards to
+// syslog, could not be answered at all.
+func (db *DB) ListAuditTrail(ctx context.Context, f AuditFilter) ([]AuditEvent, error) {
+	var conditions []string
+	var args []any
+
+	if f.ActorID != 0 {
+		conditions = append(conditions, "actor_id = ?")
+		args = append(args, f.ActorID)
+	}
+	if f.Action != "" {
+		conditions = append(conditions, "action = ?")
+		args = append(args, f.Action)
+	}
+	if f.ResourceType != "" {
+		conditions = append(conditions, "resource_type = ?")
+		args = append(args, f.ResourceType)
+	}
+	// Compared as the strings they are stored as, which is what lets the
+	// index answer it: RFC 3339 in UTC sorts lexicographically as it sorts
+	// chronologically, the property ADR-0015 chose the format for.
+	if !f.From.IsZero() {
+		conditions = append(conditions, "at >= ?")
+		args = append(args, formatTime(f.From))
+	}
+	if !f.To.IsZero() {
+		conditions = append(conditions, "at < ?")
+		args = append(args, formatTime(f.To))
+	}
+
+	limit := f.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+	query := `
+		SELECT id, at, actor_id, actor_name, on_behalf_of, action, resource_type,
+		       resource_id, detail, ip, request_id
+		FROM audit_events` + whereClause(conditions) + `
+		ORDER BY at DESC, id DESC LIMIT ? OFFSET ?`
+	args = append(args, limit, f.Offset)
+
+	rows, err := db.read.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list audit trail: %w", err)
+	}
+	return collectAuditEvents(rows)
+}
+
+// AuditActions returns the distinct actions the trail holds, for a filter that
+// offers what is actually there rather than every action the code can write.
+func (db *DB) AuditActions(ctx context.Context) ([]string, error) {
+	rows, err := db.read.QueryContext(ctx,
+		`SELECT DISTINCT action FROM audit_events ORDER BY action`)
+	if err != nil {
+		return nil, fmt.Errorf("list audit actions: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var actions []string
+	for rows.Next() {
+		var action string
+		if err := rows.Scan(&action); err != nil {
+			return nil, err
+		}
+		actions = append(actions, action)
+	}
+	return actions, rows.Err()
+}
+
 // ListAuditEvents returns the trail for one resource, newest first. There is
 // deliberately no update or delete counterpart anywhere in this package.
 func (db *DB) ListAuditEvents(ctx context.Context, resourceType string, resourceID int64, limit int) ([]AuditEvent, error) {
@@ -792,6 +892,14 @@ func (db *DB) ListAuditEvents(ctx context.Context, resourceType string, resource
 	if err != nil {
 		return nil, fmt.Errorf("list audit events: %w", err)
 	}
+	return collectAuditEvents(rows)
+}
+
+// collectAuditEvents reads audit rows, for the two queries that select the
+// same columns in the same order. One scan rather than two, so a column added
+// to the table cannot be read by one path and missed by the other - which is
+// the drift the Execer comment above describes, in its reading form.
+func collectAuditEvents(rows *sql.Rows) ([]AuditEvent, error) {
 	defer func() { _ = rows.Close() }()
 
 	var events []AuditEvent
@@ -828,8 +936,14 @@ func (db *DB) ListEntriesEnteredBy(ctx context.Context, enteredBy int64, scope S
 		args = append(args, scopeArgs...)
 	}
 
+	// INDEXED BY for the reason the running-timer query gives: the index is a
+	// partial one matching this query's predicate exactly, and saying so turns
+	// a dropped index into a broken query rather than a silent scan. Without
+	// it this walked the table - fifteen times the work for two hundred times
+	// the data, which the performance probe in this package now refuses.
 	rows, err := db.read.QueryContext(ctx,
-		entrySelect+whereClause(conditions)+` ORDER BY e.started_at DESC LIMIT 200`, args...)
+		entrySelectFrom("INDEXED BY idx_entries_proxy")+whereClause(conditions)+
+			` ORDER BY e.started_at DESC LIMIT 200`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list proposals: %w", err)
 	}

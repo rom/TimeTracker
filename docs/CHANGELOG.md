@@ -186,6 +186,64 @@ the decision.
   grids have honoured it, but it was labelled only "first day of the week" -
   which leaves somebody to work out for themselves that Monday ends the week
   with the weekend and Saturday starts it with one. It now says so.
+* **The audit trail can be read** (`/audit`, and a history panel on an entry).
+  Every mutation has written a row since the first migration, in the same
+  transaction as the change, and nothing in the application ever showed one:
+  the only query was for a single record's history, the only service method
+  that called it had no caller outside the tests, and no screen, export or
+  backup touched it. In server mode an operator could read the mirror in
+  syslog; the person looking at a corrected entry and wondering who corrected
+  it could not, and in local mode - where nothing is forwarded anywhere -
+  neither could anybody. ASR-006 promises attribution, and an attribution
+  nobody can look at is a promise kept in private.
+
+  Two readers, because there are two questions. "Who changed this" is asked of
+  a record and is answered beside it, bounded by whoever may read that record.
+  "What happened here" is the instance's history, filterable by person, action
+  and date, and is administration: the listing crosses every project and names
+  people whose work a manager has no business reading, which is the same
+  reasoning that keeps the user list out of their reach. No total is shown -
+  this is the largest table in the schema and nothing prunes it, so a count
+  would cost a full scan to say a number nobody acts on.
+* **The inbox query walked the whole table.** Found by a new scan detector in
+  the ordinary test suite, which times the page shell's queries against a
+  hundred entries and against twenty thousand and refuses a ratio: 124
+  microseconds against 1.9 milliseconds, fifteen times the work for two hundred
+  times the data. A partial index on the predicate the query actually writes
+  (`0021_proxy_index.sql`) makes it flat. The budgets themselves were already
+  proved by the tagged suite `make test-perf` runs; what was missing was
+  anything that notices a regression without somebody first saying a screen
+  feels slow.
+* **A backup said "everything" and meant five sixths of it.** It carried the
+  catalogue, the entries, the expenses and the attachments; the schema has
+  twenty-one tables. Missing were the tag vocabulary and every tag on every
+  entry, the dated contract terms that decide what work was worth
+  ([ASR-021](ASR.md)), the billing history, the leave register, the weekday
+  routines, and which weeks had been submitted and approved.
+
+  The worst of those was not losing data. **Restored time that had been
+  invoiced came back unbilled** - offered for billing again, and editable under
+  a customer's invoice - so the feature that exists to stop the same fortnight
+  going out twice was undone by the recovery path. Second worst: a restored
+  week that had been approved came back open, so the week lock was undone the
+  same way.
+
+  All six travel now. An entry carries its tags and the key of the run it went
+  out on; the runs are restored before the entries so the link can be made, and
+  a voided run comes back voided rather than quietly releasing its time again.
+  Everything merges on the same "skip what is already there" rule the catalogue
+  follows, so restoring twice still changes nothing. The archive's own README
+  lists all of it, and says plainly what is *not* carried - accounts and their
+  passwords, sessions, the audit trail - and that a restore attributes what it
+  writes to whoever runs it, which makes a backup a single-person document in a
+  multi-person instance. That was true before and is now at least true of the
+  same set of records throughout.
+
+  One cause worth recording: `CreateEntryTx` listed its columns explicitly and
+  had never been given `billing_run_id`, so the field was silently dropped on
+  every insert that set it. The store's own comment warns about exactly this -
+  "a column added to one was silently absent from the other" - about a drift
+  that had been fixed once already.
 * **What has been billed is recorded** (`/billing`,
   [ADR-0039](adr/0039-billing-is-a-run.md), migration `0020_billing_runs.sql`).
   The money layer computed an exact figure for every entry and froze it, reports

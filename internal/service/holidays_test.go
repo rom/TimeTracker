@@ -186,3 +186,20 @@ func TestATickedDuplicateIsStillRefused(t *testing.T) {
 		t.Errorf("skipped %v, want Christmas named as already recorded", again.Skipped)
 	}
 }
+
+// Importable is the preview's own judgement, and the import asks it again.
+func TestAHolidayRowSaysWhetherItCanBeImported(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		row  HolidayRow
+		want bool
+	}{
+		{"an ordinary all-day event", HolidayRow{Days: 1}, true},
+		{"one the parser refused", HolidayRow{Days: 1, Skip: "cancelled"}, false},
+		{"one already in the register", HolidayRow{Days: 1, Duplicate: true}, false},
+	} {
+		if got := c.row.Importable(); got != c.want {
+			t.Errorf("%s: Importable() = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
