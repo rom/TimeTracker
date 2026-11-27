@@ -44,7 +44,7 @@ func (db *DB) GetUser(ctx context.Context, id int64) (domain.User, error) {
 		SELECT id, display_name, email, role, time_zone, theme, language, active, created_at,
 		       client_customer_id,
 		       clock_format, date_format, nav_position, day_overflow,
-		       day_start_hour, day_end_hour
+		       day_start_hour, day_end_hour, expected_weekly_minutes
 		FROM users WHERE id = ?`, id)
 	return scanUser(row)
 }
@@ -56,7 +56,7 @@ func (db *DB) FirstUser(ctx context.Context) (domain.User, error) {
 		SELECT id, display_name, email, role, time_zone, theme, language, active, created_at,
 		       client_customer_id,
 		       clock_format, date_format, nav_position, day_overflow,
-		       day_start_hour, day_end_hour
+		       day_start_hour, day_end_hour, expected_weekly_minutes
 		FROM users ORDER BY id LIMIT 1`)
 	return scanUser(row)
 }
@@ -92,7 +92,7 @@ func scanUser(row rowScanner) (domain.User, error) {
 	err := row.Scan(&u.ID, &u.DisplayName, &u.Email, &role, &u.TimeZone, &u.Theme,
 		&u.Language, &active, &createdAt, &u.ClientCustomerID,
 		&u.ClockFormat, &u.DateFormat, &u.NavPosition, &u.DayOverflow,
-		&u.DayStartHour, &u.DayEndHour)
+		&u.DayStartHour, &u.DayEndHour, &u.ExpectedWeeklyMinutes)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.User{}, ErrNotFound
 	}
@@ -615,6 +615,9 @@ type Settings struct {
 	// Sunday at all. False refuses new and moved time there; it never touches
 	// time already recorded on one, which stays editable and deletable.
 	WeekendRecording bool
+	// ExpectedWeeklyMinutes is a full working week, for saying whether one is
+	// on track. Zero turns the comparison off entirely.
+	ExpectedWeeklyMinutes int
 	// WeekendColour is the entity palette key the day numbers of a weekend are
 	// drawn in: "red", "blue", "slate" and so on. A key rather than a colour,
 	// so each theme maps it to a value that works on its own background.
@@ -635,14 +638,16 @@ func (db *DB) GetSettings(ctx context.Context) (Settings, error) {
 		       show_clock, show_time_and_date,
 		       nav_position, clock_format, date_format,
 		       day_start_hour, day_end_hour, day_overflow,
-		       weekend_recording, weekend_colour, backup_password
+		       weekend_recording, weekend_colour, expected_weekly_minutes,
+		       backup_password
 		FROM settings WHERE id = 1`).
 		Scan(&s.DefaultCurrency, &s.DefaultRounding, &s.DefaultRateMinor, &s.WeekStart,
 			&s.MaxTimerSeconds, &s.IdleSeconds, &remindersEnabled, &s.ReminderHour,
 			&showClock, &showTimeAndDate,
 			&s.NavPosition, &s.ClockFormat, &s.DateFormat,
 			&s.DayStartHour, &s.DayEndHour, &s.DayOverflow,
-			&weekendRecording, &s.WeekendColour, &s.BackupPassword)
+			&weekendRecording, &s.WeekendColour, &s.ExpectedWeeklyMinutes,
+			&s.BackupPassword)
 	if err != nil {
 		return Settings{}, fmt.Errorf("read settings: %w", err)
 	}
@@ -667,7 +672,8 @@ func UpdateSettingsTx(ctx context.Context, db Execer, s Settings) error {
 		       show_clock = ?, show_time_and_date = ?,
 		       nav_position = ?, clock_format = ?, date_format = ?,
 		       day_start_hour = ?, day_end_hour = ?, day_overflow = ?,
-		       weekend_recording = ?, weekend_colour = ?, backup_password = ?
+		       weekend_recording = ?, weekend_colour = ?,
+		       expected_weekly_minutes = ?, backup_password = ?
 		WHERE id = 1`,
 		s.DefaultCurrency, s.DefaultRounding, s.DefaultRateMinor, s.WeekStart,
 		s.MaxTimerSeconds, s.IdleSeconds,
@@ -675,7 +681,8 @@ func UpdateSettingsTx(ctx context.Context, db Execer, s Settings) error {
 		boolToInt(s.ShowClock), boolToInt(s.ShowTimeAndDate),
 		s.NavPosition, s.ClockFormat, s.DateFormat,
 		s.DayStartHour, s.DayEndHour, s.DayOverflow,
-		boolToInt(s.WeekendRecording), s.WeekendColour, s.BackupPassword)
+		boolToInt(s.WeekendRecording), s.WeekendColour,
+		s.ExpectedWeeklyMinutes, s.BackupPassword)
 	return err
 }
 
@@ -727,9 +734,10 @@ func requireOneRow(res sql.Result) error {
 func (db *DB) UpdateUserPresentation(ctx context.Context, id int64, p domain.User) error {
 	_, err := db.write.ExecContext(ctx, `
 		UPDATE users SET clock_format = ?, date_format = ?, nav_position = ?,
-		                 day_overflow = ?, day_start_hour = ?, day_end_hour = ?
+		                 day_overflow = ?, day_start_hour = ?, day_end_hour = ?,
+		                 expected_weekly_minutes = ?
 		WHERE id = ?`,
 		p.ClockFormat, p.DateFormat, p.NavPosition, p.DayOverflow,
-		p.DayStartHour, p.DayEndHour, id)
+		p.DayStartHour, p.DayEndHour, p.ExpectedWeeklyMinutes, id)
 	return err
 }

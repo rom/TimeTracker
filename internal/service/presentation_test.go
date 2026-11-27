@@ -200,3 +200,91 @@ func TestTheWeeksFirstDayStaysTheInstances(t *testing.T) {
 			resolved.WeekStart)
 	}
 }
+
+// TestAWeekIsMeasuredAgainstAFullOne.
+//
+// A total with nothing to compare it against cannot answer the question a
+// timesheet is opened to answer on a Thursday afternoon: am I on track. The
+// week view had a total, the submission screen checked for empty days, and
+// nothing knew what a full week was.
+func TestAWeekIsMeasuredAgainstAFullOne(t *testing.T) {
+	f := newFixture(t)
+
+	if _, err := f.svc.CreateEntry(f.ctx, EntryInput{
+		AssignmentID: f.assignment.ID, StartedAt: f.now,
+		DurationSeconds: 3600, Billable: true,
+	}); err != nil {
+		t.Fatalf("record an hour: %v", err)
+	}
+
+	view, err := f.svc.Period(f.ctx, f.now)
+	if err != nil {
+		t.Fatalf("period: %v", err)
+	}
+	// The default is forty hours, which is a default rather than a claim.
+	if view.ExpectedSeconds != 40*3600 {
+		t.Errorf("a full week is %ds, want 40 hours", view.ExpectedSeconds)
+	}
+	if view.TotalSeconds != 3600 {
+		t.Errorf("the week totals %ds, want one hour", view.TotalSeconds)
+	}
+}
+
+// TestPartTimeIsAPropertyOfThePerson.
+func TestPartTimeIsAPropertyOfThePerson(t *testing.T) {
+	f := newFixture(t)
+
+	if err := f.svc.UpdatePresentation(f.ctx, PresentationInput{
+		DayStartHour: -1, DayEndHour: -1, ExpectedWeeklyMinutes: 1800, // 30h
+	}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	reloaded, err := f.db.GetUser(f.ctx, f.user.ID)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+
+	view, err := f.svc.Period(auth.WithUser(f.ctx, reloaded), f.now)
+	if err != nil {
+		t.Fatalf("period: %v", err)
+	}
+	if view.ExpectedSeconds != 30*3600 {
+		t.Errorf("a full week is %ds for somebody who works thirty hours, "+
+			"want 30 hours", view.ExpectedSeconds)
+	}
+
+	// And the instance is unchanged for everybody else.
+	instance, err := f.svc.Settings(f.ctx)
+	if err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+	if instance.ExpectedWeeklyMinutes != 2400 {
+		t.Errorf("one person's part-time week changed the instance's to %d",
+			instance.ExpectedWeeklyMinutes)
+	}
+}
+
+// TestAnInstanceCanDeclineToSetATarget.
+//
+// Zero is a deliberate choice, not an absent one: an instance that would
+// rather not put a figure on somebody's week sets it once and the comparison
+// disappears, leaving the bare total that was there before.
+func TestAnInstanceCanDeclineToSetATarget(t *testing.T) {
+	f := newFixture(t)
+
+	if err := f.svc.UpdateSettings(f.ctx, SettingsInput{
+		DefaultCurrency: "SEK", DefaultRounding: "none", WeekStart: 1,
+		ExpectedWeeklyMinutes: 0,
+	}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	view, err := f.svc.Period(f.ctx, f.now)
+	if err != nil {
+		t.Fatalf("period: %v", err)
+	}
+	if view.ExpectedSeconds != 0 {
+		t.Errorf("a full week is %ds after the instance turned the comparison "+
+			"off", view.ExpectedSeconds)
+	}
+}

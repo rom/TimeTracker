@@ -98,6 +98,17 @@
       </label>
     </fieldset>
 
+    <fieldset>
+      <legend>{{.T "preferences.expectedweek"}}</legend>
+      <p class="field-help">{{.T "preferences.expectedweek.help"}}</p>
+      <label>
+        {{.T "preferences.expectedweek"}}
+        <input type="text" name="expected_week" inputmode="text"
+               placeholder="{{asDuration $instance.ExpectedWeeklyMinutes}}"
+               value="{{if ge $me.ExpectedWeeklyMinutes 0}}{{asDuration $me.ExpectedWeeklyMinutes}}{{end}}">
+      </label>
+    </fieldset>
+
     <button type="submit" class="btn btn-primary">{{.T "settings.save"}}</button>
   </form>
 

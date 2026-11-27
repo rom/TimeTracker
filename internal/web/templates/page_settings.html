@@ -199,6 +199,17 @@
       </label>
       <p class="field-help">{{.T "settings.weekendcolour.hint"}}</p>
 
+      {{/* Hours on the form, minutes in the database: a working week is not
+           always a whole number of hours - 37.5 is the common one in several
+           countries - and storing hours would mean a float or a lie. */}}
+      <label>
+        {{.T "settings.expectedweek"}}
+        <input type="text" name="expected_week" inputmode="text"
+               placeholder="40h"
+               value="{{asDuration .Settings.ExpectedWeeklyMinutes}}">
+      </label>
+      <p class="field-help">{{.T "settings.expectedweek.help"}}</p>
+
       <label>
         {{.T "settings.maxtimer"}}
         <input type="number" name="max_timer_hours" min="1" max="168"

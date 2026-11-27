@@ -38,6 +38,11 @@ type PeriodView struct {
 	Period domain.TimesheetPeriod
 	// TotalSeconds is the week as it stands now.
 	TotalSeconds int64
+	// ExpectedSeconds is a full week for whoever's week this is, or zero where
+	// the instance has turned the comparison off. A total with nothing to
+	// compare it against cannot answer the question people open a timesheet to
+	// answer on a Thursday afternoon.
+	ExpectedSeconds int64
 	// CanSubmit, CanWithdraw, CanApprove and CanReopen say which controls to
 	// offer. The template asks these rather than re-deriving the rules, so the
 	// interface and the enforcement cannot disagree.
@@ -82,6 +87,13 @@ func (s *Service) periodFor(ctx context.Context, actor domain.User, ownerID int6
 	period.CurrentSeconds = total
 
 	view := PeriodView{Period: period, TotalSeconds: total}
+
+	// How much a full week is for this person, so the total has something to
+	// be measured against. The owner's own figure where they have one, since
+	// part time is a property of the person - and the owner rather than the
+	// reader, because a manager looking at somebody's week wants to know
+	// whether THEY are short, not whether the manager would be.
+	view.ExpectedSeconds = int64(expectedMinutesFor(settings, owner)) * 60
 
 	own := ownerID == actor.ID
 	// An empty week is not worth submitting, and submitting one would put an
@@ -460,4 +472,30 @@ func (s *Service) checkPeriodOpen(ctx context.Context, userID int64, when time.T
 	}
 	return fmt.Errorf("%w: the week of %s has been approved; ask a manager to reopen it",
 		domain.ErrPeriodLocked, weekStart)
+}
+
+// expectedMinutesFor resolves one person's full week.
+//
+// The owner's own figure where they have set one, the instance's otherwise.
+// Negative means "no preference"; zero is a deliberate choice meaning "do not
+// compare", which an instance that would rather not put a target on a
+// timesheet can set once.
+func expectedMinutesFor(settings store.Settings, owner domain.User) int {
+	// Strictly positive, not merely non-negative. The column stores -1 for
+	// "no preference", but a domain.User is also built in Go in a dozen
+	// places - CreateUser's return value, a fixture, a restored backup - and
+	// there the field is the Go zero value. Treating zero as a deliberate
+	// "do not compare" made every one of those silently turn the comparison
+	// off: the first test written against this reported a full week of zero
+	// seconds on a fresh instance whose setting plainly said forty hours.
+	//
+	// So zero from a person means "I have not said", and turning the
+	// comparison off is the instance's decision, made once, for everybody.
+	if owner.ExpectedWeeklyMinutes > 0 {
+		return owner.ExpectedWeeklyMinutes
+	}
+	if settings.ExpectedWeeklyMinutes < 0 {
+		return 0
+	}
+	return settings.ExpectedWeeklyMinutes
 }

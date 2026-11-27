@@ -364,6 +364,17 @@ func templateFuncs() template.FuncMap {
 		"sub": func(a, b int) int { return a - b },
 		// divide is integer division, for showing a stored seconds value as
 		// hours in a form field.
+		// asDuration renders stored minutes the way the form accepts them
+		// back, so the field round-trips without anybody dividing anything.
+		"asDuration": func(minutes int) string {
+			if minutes <= 0 {
+				return ""
+			}
+			return domain.FormatDuration(int64(minutes) * 60)
+		},
+		// subtract, for saying how far short a week is without making the
+		// template do arithmetic it cannot express.
+		"subtract": func(a, b int64) int64 { return a - b },
 		"divide": func(value int64, by int64) int64 {
 			if by == 0 {
 				return 0

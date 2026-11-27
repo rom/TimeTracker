@@ -38,7 +38,7 @@ const userSelect = `
 	       password_hash, oidc_subject, oidc_issuer, totp_secret, client_customer_id,
 	       password_set_at,
 	       clock_format, date_format, nav_position, day_overflow,
-	       day_start_hour, day_end_hour
+	       day_start_hour, day_end_hour, expected_weekly_minutes
 	FROM users`
 
 // AccountByEmail loads an account for a password login.
@@ -83,7 +83,8 @@ func scanAccount(row rowScanner) (Account, error) {
 		// however they had set their own: the account path and the identity
 		// path have to agree about who the person is.
 		&a.User.ClockFormat, &a.User.DateFormat, &a.User.NavPosition,
-		&a.User.DayOverflow, &a.User.DayStartHour, &a.User.DayEndHour)
+		&a.User.DayOverflow, &a.User.DayStartHour, &a.User.DayEndHour,
+		&a.User.ExpectedWeeklyMinutes)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Account{}, ErrNotFound
 	}

@@ -449,7 +449,23 @@
         <span class="period-detail period-reason">{{$page.T "period.rejected.detail" .Period.Note}}</span>
       {{end}}
 
-      <span class="period-total">{{$page.T "period.total" ($page.Printer.FormatDuration .TotalSeconds)}}</span>
+      {{/* The week, and what a full one is. A total on its own cannot answer
+           "am I on track", which is the question a timesheet is opened to
+           answer on a Thursday; an instance that would rather not put a target
+           on one sets the expected week to zero and gets the bare total back. */}}
+      <span class="period-total">
+        {{if gt .ExpectedSeconds 0}}
+          {{$page.T "period.total.of"
+              ($page.Printer.FormatDuration .TotalSeconds)
+              ($page.Printer.FormatDuration .ExpectedSeconds)}}
+          {{if lt .TotalSeconds .ExpectedSeconds}}
+            <span class="period-short">{{$page.T "period.short"
+              ($page.Printer.FormatDuration (subtract .ExpectedSeconds .TotalSeconds))}}</span>
+          {{end}}
+        {{else}}
+          {{$page.T "period.total" ($page.Printer.FormatDuration .TotalSeconds)}}
+        {{end}}
+      </span>
 
       {{if .CanSubmit}}
         {{/* A link to the review rather than a submit button. Submitting closes

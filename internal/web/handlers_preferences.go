@@ -3,6 +3,9 @@ package web
 import (
 	"net/http"
 	"strconv"
+	"strings"
+
+	"github.com/rom/timetracker/internal/domain"
 
 	"github.com/rom/timetracker/internal/service"
 )
@@ -60,10 +63,38 @@ func (s *Server) handleUpdatePreferences(w http.ResponseWriter, r *http.Request)
 		DayOverflow:  r.FormValue("day_overflow"),
 		DayStartHour: hour("day_start_hour"),
 		DayEndHour:   hour("day_end_hour"),
+		// Blank means "follow the instance", which is -1 rather than 0: zero
+		// is a legitimate choice meaning "do not compare my week to anything".
+		ExpectedWeeklyMinutes: minutesFromDuration(r.FormValue("expected_week"), -1),
 	})
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	http.Redirect(w, r, "/preferences", http.StatusSeeOther)
+}
+
+// minutesFromDuration reads a full working week as whole minutes.
+//
+// Through the application's own duration parser rather than as a number of
+// hours, which is what the first version did - and which tripped the rule that
+// money and durations are integers throughout (ADR-0014). A working week is
+// not always a whole number of hours; 37.5 is the common one in several
+// countries, and "37.5" through a float is exactly the arithmetic that rule
+// exists to keep out of a timesheet.
+//
+// The parser already understands "37h30m", "37.5h" and "37:30" and answers in
+// whole seconds, so the form can accept all three and nothing has to divide
+// anything. An unreadable or absent value gives the caller's "unset" figure
+// rather than zero, because zero means something specific here: do not compare
+// this week to anything.
+func minutesFromDuration(value string, unset int) int {
+	if strings.TrimSpace(value) == "" {
+		return unset
+	}
+	seconds, err := domain.ParseDuration(value)
+	if err != nil || seconds < 0 || seconds > 7*24*3600 {
+		return unset
+	}
+	return int(seconds / 60)
 }

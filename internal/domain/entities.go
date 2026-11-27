@@ -82,7 +82,10 @@ type User struct {
 	DayOverflow  string
 	DayStartHour int
 	DayEndHour   int
-	Active       bool
+	// ExpectedWeeklyMinutes is this person's full week; -1 follows the
+	// instance. Part time is a property of the person, not the organisation.
+	ExpectedWeeklyMinutes int
+	Active                bool
 	// ClientCustomerID scopes a user with the client role to one customer. It is
 	// zero for every other role.
 	ClientCustomerID int64

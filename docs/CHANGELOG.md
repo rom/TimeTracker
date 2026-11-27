@@ -186,6 +186,15 @@ the decision.
   grids have honoured it, but it was labelled only "first day of the week" -
   which leaves somebody to work out for themselves that Monday ends the week
   with the weekend and Saturday starts it with one. It now says so.
+* **A week is measured against a full one.** Nothing knew how much was enough:
+  the week view showed a total with nothing to compare it against, and the
+  submission screen checked for empty days but not for a short week. A full
+  working week is now an instance setting with a personal override - part time
+  is a property of the person, not the organisation - and the week banner reads
+  "This week: 22h 30m of 40h 00m (17h 30m short)". An instance that would
+  rather not put a figure on somebody's week sets it to zero and gets the bare
+  total back. Stored in minutes, because 37.5 hours is the common week in
+  several countries and hours would mean a float or a lie.
 * **Presentation follows the person** (`/preferences`). The theme, the zone and
   the language have always been the account's. The hours the day pane covers,
   whether a clock reads 24-hour, how a date is written and where the navigation

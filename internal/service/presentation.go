@@ -33,6 +33,9 @@ type PresentationInput struct {
 	// no preference.
 	DayStartHour int
 	DayEndHour   int
+	// ExpectedWeeklyMinutes is this person's full week, or negative to follow
+	// the instance.
+	ExpectedWeeklyMinutes int
 }
 
 // UpdatePresentation saves the acting user's own presentation choices.
@@ -55,6 +58,13 @@ func (s *Service) UpdatePresentation(ctx context.Context, in PresentationInput) 
 		DayOverflow:  keepKnown(in.DayOverflow, knownDayOverflows()),
 		DayStartHour: -1,
 		DayEndHour:   -1,
+		// A week longer than seven days of hours is a typo, and a negative one
+		// is "no preference". Clamped rather than refused, like every other
+		// presentation value on this form.
+		ExpectedWeeklyMinutes: -1,
+	}
+	if in.ExpectedWeeklyMinutes >= 0 && in.ExpectedWeeklyMinutes <= 7*24*60 {
+		chosen.ExpectedWeeklyMinutes = in.ExpectedWeeklyMinutes
 	}
 	// Both or neither. Taking one of somebody's hours and one of the
 	// instance's could produce an end before a start, which the normaliser
@@ -157,6 +167,18 @@ func personalise(settings Settings, user domain.User) Settings {
 	// instance's could produce an end before a start, which the normaliser
 	// would then silently swap: a sensible thing to do with a typo and a
 	// confusing thing to do with a preference.
+	// Part time is a property of the person, not the organisation, so this one
+	// is here with the presentation rather than on the settings screen - but
+	// it is not presentation: it changes what the week view says about whether
+	// somebody is short, which is why zero means "do not compare at all"
+	// rather than "a week of no hours".
+	// Strictly positive, for the reason expectedMinutesFor explains: a
+	// domain.User built in Go carries zero, and treating that as a deliberate
+	// "no target" turns the comparison off for everybody who was never read
+	// out of the database.
+	if user.ExpectedWeeklyMinutes > 0 {
+		settings.ExpectedWeeklyMinutes = user.ExpectedWeeklyMinutes
+	}
 	if user.DayStartHour >= 0 && user.DayEndHour >= 0 {
 		window := domain.NormaliseDayWindow(user.DayStartHour, user.DayEndHour)
 		settings.DayStartHour, settings.DayEndHour = window.StartHour, window.EndHour
