@@ -186,6 +186,14 @@ the decision.
   grids have honoured it, but it was labelled only "first day of the week" -
   which leaves somebody to work out for themselves that Monday ends the week
   with the weekend and Saturday starts it with one. It now says so.
+* **Search is in the top bar**, on every screen. Trigram search with a scan
+  fallback and optional regular expressions has existed since
+  [ADR-0029](adr/0029-searching-with-trigram-and-regexp.md), reachable from one
+  filter box on one screen: the strongest way to find something in a long
+  history was the hardest thing in the interface to find. A search from the bar
+  covers every date rather than the entries screen's default last thirty days,
+  because that default is invisible from the header and an empty result would
+  look like an answer.
 * **The month's week totals open their week too.** The week number at one end of
   the row was already a link; the total at the other end is the end people
   actually read, because the eye goes to the figure. Both ends of the row now

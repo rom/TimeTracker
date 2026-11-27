@@ -462,6 +462,16 @@ a { color: var(--accent); }
 .mainnav a.active { background: var(--accent-soft); color: var(--text); font-weight: 600; }
 
 .topbar-right { display: flex; align-items: center; flex-wrap: wrap; gap: var(--gap); }
+
+/* Search in the bar. Narrow enough not to compete with the navigation, and it
+   shrinks rather than pushing anything off the row - the bar wraps, but a
+   search box that forced a wrap on a laptop would be a poor trade for a field
+   most people use occasionally. */
+.topbar-search { display: flex; margin: 0; }
+.topbar-search input[type="search"] {
+  width: 12rem; min-width: 6rem; max-width: 100%;
+  padding: 5px 8px; font-size: 0.95em;
+}
 .whoami { color: var(--text-muted); font-size: 0.9em; }
 
 /* ------------------------------------------------- running timer bar ------ */
@@ -1946,6 +1956,9 @@ kbd {
   .mainnav { gap: 2px; }
   .mainnav a { padding: 5px 8px; font-size: 0.95em; }
   .topbar-right { flex: 1 0 100%; justify-content: flex-start; gap: var(--gap-sm); }
+  /* On a phone the field takes the width it needs rather than a fixed 12rem. */
+  .topbar-search { flex: 1 0 100%; }
+  .topbar-search input[type="search"] { width: 100%; }
 }
 
 /* -------------------------------------------------- attachment previews --- */

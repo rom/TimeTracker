@@ -663,9 +663,29 @@ func (s *Server) entryFilter(r *http.Request) (service.EntryFilter, entryFilterF
 		To:   r.URL.Query().Get("to"),
 	}
 
+	// "all=1" is what the search box in the top bar sends: search everything,
+	// rather than the last thirty days this screen otherwise defaults to.
+	//
+	// It matters because the default is invisible. A search from the header for
+	// something recorded in March would come back empty in May, with nothing on
+	// the screen to say that a date range had quietly excluded it - which is
+	// precisely the failure ADR-0029 exists to prevent at the other end, where
+	// a query too short for the index says so rather than returning nothing.
+	//
+	// The resolved dates are written back into the form, so the range boxes on
+	// the screen show the search that actually ran and can be narrowed from
+	// there.
+	searchEverything := r.URL.Query().Get("all") == "1"
+
 	from, err := time.Parse("2006-01-02", form.From)
 	if err != nil {
-		from = now.AddDate(0, 0, -30)
+		if searchEverything {
+			// Before any plausible timesheet, and a date SQLite compares as a
+			// string exactly like any other.
+			from = time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC)
+		} else {
+			from = now.AddDate(0, 0, -30)
+		}
 		form.From = from.Format("2006-01-02")
 	}
 	to, err := time.Parse("2006-01-02", form.To)

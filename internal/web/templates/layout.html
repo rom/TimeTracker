@@ -136,6 +136,26 @@
     {{end}}
   </nav>
 
+  {{/* Search, on every screen.
+
+       The application has had trigram search with a scan fallback and optional
+       regexp since ADR-0029, and it was reachable from one filter box on one
+       screen. The strongest way to find a thing in a long history was the
+       hardest thing in the interface to find.
+
+       all=1 searches every date rather than the entries screen's default last
+       thirty days. A header search that quietly excluded March would be worse
+       than no header search: the range is invisible from here, and the empty
+       result would look like an answer. */}}
+  <form class="topbar-search" method="get" action="/entries" role="search">
+    <input type="hidden" name="all" value="1">
+    <label>
+      <span class="visually-hidden">{{.T "nav.search"}}</span>
+      <input type="search" name="q" placeholder="{{.T "nav.search"}}"
+             aria-label="{{.T "nav.search"}}">
+    </label>
+  </form>
+
   <div class="topbar-right">
     {{if .HasHelp}}
       {{/* A real link, so it works with JavaScript disabled: the browser simply

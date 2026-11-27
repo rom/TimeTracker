@@ -106,3 +106,76 @@ func TestANewInstanceIsNotMonochrome(t *testing.T) {
 			"still monochrome", len(seen))
 	}
 }
+
+// TestSearchIsReachableFromEveryScreen.
+//
+// Trigram search with a scan fallback and optional regexp has existed since
+// ADR-0029, reachable from one filter box on one screen. The strongest way to
+// find something in a long history was the hardest thing in the interface to
+// find.
+func TestSearchIsReachableFromEveryScreen(t *testing.T) {
+	srv, _ := newTestServer(t)
+	seedCatalogue(t, srv)
+
+	for _, screen := range []string{"/today", "/week", "/month", "/entries", "/admin", "/settings"} {
+		body := get(t, srv, screen).Body.String()
+		if !strings.Contains(body, `class="topbar-search"`) {
+			t.Errorf("%s offers no way to search", screen)
+		}
+	}
+}
+
+// TestAHeaderSearchLooksPastTheLastThirtyDays.
+//
+// The entries screen defaults to the last thirty days, and that default is
+// invisible from the top bar. A header search for something recorded in March
+// coming back empty in May - with nothing on the screen to say a date range had
+// excluded it - would be the same failure ADR-0029 refuses at the other end,
+// where a query too short for the index says so rather than returning nothing.
+func TestAHeaderSearchLooksPastTheLastThirtyDays(t *testing.T) {
+	srv, _ := newTestServer(t)
+	seedCatalogue(t, srv)
+
+	// Well outside the default window, which is thirty days back from the
+	// fixture's clock.
+	post(t, srv, "/entries", url.Values{
+		"assignment_id": {"1"}, "date": {"2025-06-11"}, "start": {"09:00"},
+		"duration": {"2h"}, "note": {"archaeology"}, "billable": {"on"},
+	})
+
+	// Looked for in the results, not on the page: the query is echoed back into
+	// the search box, so the word is present either way and a naive substring
+	// check passes whatever happened.
+	if !strings.Contains(resultsTable(t, srv, "/entries?all=1&q=archaeology"), "archaeology") {
+		t.Error("a search from the header missed an entry outside the last " +
+			"thirty days, which is the whole reason it sends all=1")
+	}
+
+	// And the screen's own default is still the last thirty days, so this did
+	// not quietly widen every listing.
+	if strings.Contains(resultsTable(t, srv, "/entries?q=archaeology"), "archaeology") {
+		t.Error("the entries screen now searches all time by default; the wide " +
+			"range is meant to be what the header asks for, not the default")
+	}
+}
+
+// resultsTable returns just the listing from the entries screen.
+//
+// Everything else on that page - the filter boxes, the search field, the export
+// links - carries the query string back to the user, so asserting against the
+// whole body says only that the request was made.
+func resultsTable(t *testing.T, srv *Server, path string) string {
+	t.Helper()
+
+	body := get(t, srv, path).Body.String()
+	at := strings.Index(body, `<table class="entries"`)
+	if at < 0 {
+		// No table at all is a legitimate answer: nothing matched.
+		return ""
+	}
+	end := strings.Index(body[at:], "</table>")
+	if end < 0 {
+		t.Fatalf("the entries table is never closed on %s", path)
+	}
+	return body[at : at+end]
+}
