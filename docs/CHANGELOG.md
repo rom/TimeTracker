@@ -186,6 +186,36 @@ the decision.
   grids have honoured it, but it was labelled only "first day of the week" -
   which leaves somebody to work out for themselves that Monday ends the week
   with the weekend and Saturday starts it with one. It now says so.
+* **A backup said "everything" and meant five sixths of it.** It carried the
+  catalogue, the entries, the expenses and the attachments; the schema has
+  twenty-one tables. Missing were the tag vocabulary and every tag on every
+  entry, the dated contract terms that decide what work was worth
+  ([ASR-021](ASR.md)), the billing history, the leave register, the weekday
+  routines, and which weeks had been submitted and approved.
+
+  The worst of those was not losing data. **Restored time that had been
+  invoiced came back unbilled** - offered for billing again, and editable under
+  a customer's invoice - so the feature that exists to stop the same fortnight
+  going out twice was undone by the recovery path. Second worst: a restored
+  week that had been approved came back open, so the week lock was undone the
+  same way.
+
+  All six travel now. An entry carries its tags and the key of the run it went
+  out on; the runs are restored before the entries so the link can be made, and
+  a voided run comes back voided rather than quietly releasing its time again.
+  Everything merges on the same "skip what is already there" rule the catalogue
+  follows, so restoring twice still changes nothing. The archive's own README
+  lists all of it, and says plainly what is *not* carried - accounts and their
+  passwords, sessions, the audit trail - and that a restore attributes what it
+  writes to whoever runs it, which makes a backup a single-person document in a
+  multi-person instance. That was true before and is now at least true of the
+  same set of records throughout.
+
+  One cause worth recording: `CreateEntryTx` listed its columns explicitly and
+  had never been given `billing_run_id`, so the field was silently dropped on
+  every insert that set it. The store's own comment warns about exactly this -
+  "a column added to one was silently absent from the other" - about a drift
+  that had been fixed once already.
 * **What has been billed is recorded** (`/billing`,
   [ADR-0039](adr/0039-billing-is-a-run.md), migration `0020_billing_runs.sql`).
   The money layer computed an exact figure for every entry and froze it, reports

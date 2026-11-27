@@ -234,3 +234,49 @@ func TestAMemberCannotBillAnybody(t *testing.T) {
 		t.Error("a member billed a customer")
 	}
 }
+
+// Looking at an invoice after the fact: the run and the hours it covered.
+//
+// The screen's "what did we bill them for in March" - and the read a correction
+// starts from, since the entries on a run are the ones frozen under it.
+func TestARunCanBeOpenedWithTheHoursItCovered(t *testing.T) {
+	f := newFixture(t)
+	run := f.billed(t, "INV-2026-021")
+
+	// The summary alone, which is what the confirmation before voiding reads.
+	summary, err := f.svc.BillingRunSummary(f.ctx, run.ID)
+	if err != nil {
+		t.Fatalf("summary: %v", err)
+	}
+	if summary.Reference != "INV-2026-021" || summary.CustomerName == "" {
+		t.Errorf("the summary does not name the invoice or its customer: %+v", summary)
+	}
+
+	// And the run with its entries.
+	opened, entries, err := f.svc.BillingRun(f.ctx, run.ID)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if opened.ID != run.ID {
+		t.Errorf("opened run %d, want %d", opened.ID, run.ID)
+	}
+	if len(entries) != run.EntryCount {
+		t.Errorf("the run says %d entries and produced %d; an invoice whose "+
+			"detail does not match its own total is unanswerable",
+			run.EntryCount, len(entries))
+	}
+	for _, entry := range entries {
+		if entry.BillingRunID != run.ID {
+			t.Errorf("entry %d belongs to run %d, not this one",
+				entry.ID, entry.BillingRunID)
+		}
+	}
+
+	// A run that is not there is not found, rather than an empty invoice.
+	if _, _, err := f.svc.BillingRun(f.ctx, 404); err == nil {
+		t.Error("a run that does not exist opened without error")
+	}
+	if _, err := f.svc.BillingRunSummary(f.ctx, 404); err == nil {
+		t.Error("a summary of a run that does not exist was produced")
+	}
+}

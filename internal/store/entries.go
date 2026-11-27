@@ -79,16 +79,23 @@ func CreateEntryTx(ctx context.Context, db Execer, e domain.TimeEntry) (domain.T
 		endedAt = formatTime(*e.EndedAt)
 	}
 
+	// billing_run_id is in the list because the struct has it, not because
+	// recording time ever sets it: ordinary entries are stamped later, by a
+	// billing run. A restore is the one caller that creates an entry already
+	// billed, and leaving the column out here meant the field was silently
+	// dropped - restored invoiced time came back billable, which is the exact
+	// failure the runs exist to prevent.
 	res, err := db.ExecContext(ctx, `
 		INSERT INTO time_entries (user_id, entered_by, assignment_id, started_at, ended_at,
 		    duration_seconds, note, billable, kind, status, time_zone, rounding_rule_applied,
-		    billable_seconds, rate_minor, amount_minor, currency, flagged, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		    billable_seconds, rate_minor, amount_minor, currency, flagged, billing_run_id,
+		    created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.UserID, e.EnteredBy, e.AssignmentID, formatTime(e.StartedAt), endedAt,
 		e.DurationSeconds, e.Note, boolToInt(e.Billable),
 		string(e.KindOrDefault()), string(e.Status), e.TimeZone,
 		e.RoundingRuleApplied, e.BillableSeconds, e.RateMinor, e.AmountMinor, e.Currency,
-		boolToInt(e.Flagged), formatTime(now), formatTime(now))
+		boolToInt(e.Flagged), e.BillingRunID, formatTime(now), formatTime(now))
 	if err != nil {
 		return domain.TimeEntry{}, fmt.Errorf("create time entry: %w", err)
 	}

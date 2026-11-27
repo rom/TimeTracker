@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"github.com/rom/timetracker/internal/archive"
 	"github.com/rom/timetracker/internal/auth"
 	"github.com/rom/timetracker/internal/domain"
+	"github.com/rom/timetracker/internal/store"
 )
 
 // Backup and restore.
@@ -72,6 +74,26 @@ type Backup struct {
 	Assignments []domain.Assignment `json:"assignments"`
 	TimeEntries []BackupEntry       `json:"time_entries"`
 	Expenses    []BackupExpense     `json:"expenses"`
+
+	// The rest of what an instance is. Each of these was missing while the
+	// file declared itself complete, and each loses something different when
+	// it is: the dated terms decide what work was worth (ASR-021), the billing
+	// runs decide what has already been invoiced, the periods decide which
+	// weeks are locked, and the leave register decides whose week was a week
+	// off rather than a week nobody filled in.
+	//
+	// Omitted deliberately, and listed here so the omission is a decision
+	// rather than an oversight: accounts and their password hashes, sessions,
+	// the audit trail, idle observations and dismissed reminders. The first
+	// two are credentials, which a backup file should not multiply; the third
+	// is append-only and belongs with the operational log; the last two are
+	// about one person's browser on one afternoon.
+	Tags          []BackupTag        `json:"tags,omitempty"`
+	ContractTerms []BackupTerms      `json:"contract_terms,omitempty"`
+	BillingRuns   []BackupBillingRun `json:"billing_runs,omitempty"`
+	Absences      []BackupAbsence    `json:"absences,omitempty"`
+	Routines      []BackupRoutine    `json:"routines,omitempty"`
+	Periods       []BackupPeriod     `json:"timesheet_periods,omitempty"`
 	// Attachments describes the files carried alongside in the archive. The
 	// bytes are not in this document - base64 inside JSON would triple the size
 	// of a backup whose bulk is photographs - so a bare .json file lists them
@@ -158,6 +180,106 @@ type BackupEntry struct {
 	RateMinor       int64  `json:"rate_minor,omitempty"`
 	AmountMinor     int64  `json:"amount_minor,omitempty"`
 	Currency        string `json:"currency,omitempty"`
+	// Tags are part of the entry. The recycle bin already says so - an entry
+	// without its tags is not the entry that was deleted - and a backup is the
+	// same claim over a longer interval.
+	Tags []string `json:"tags,omitempty"`
+	// BillingRun names the run this entry went out on, by the key in this
+	// file's billing_runs. Empty means it has not been billed.
+	BillingRun string `json:"billing_run,omitempty"`
+}
+
+// BackupTag is one tag in the vocabulary.
+type BackupTag struct {
+	Name      string `json:"name"`
+	ColourKey string `json:"colour_key,omitempty"`
+}
+
+// BackupTerms is one set of dated contract terms.
+//
+// The scope is named rather than numbered, like everything else here: an id
+// from another instance points at somebody else's customer.
+type BackupTerms struct {
+	Scope     string `json:"scope"`
+	ScopeName string `json:"scope_name"`
+	// CustomerName is set for terms on a project, because two customers may
+	// each have a project of the same name and the pair is what identifies it.
+	CustomerName  string `json:"customer_name,omitempty"`
+	EffectiveFrom string `json:"effective_from,omitempty"`
+	Note          string `json:"note,omitempty"`
+	// Rules is the rate card itself, carried as the domain value so a field
+	// added to it travels without this file being edited.
+	Rules domain.RateRules `json:"rules"`
+}
+
+// BackupBillingRun is one invoice's worth of time, as recorded here.
+//
+// Carried for the reason the whole feature exists: without it a restored
+// instance believes nothing has been invoiced, offers last quarter for billing
+// again, and lets time that is on a customer's invoice be edited.
+type BackupBillingRun struct {
+	// Key identifies this run within the file, so an entry can point at it.
+	// Composed by billingRunKey from the customer and the period, because an
+	// id from another instance means nothing here.
+	Key             string    `json:"key"`
+	Customer        string    `json:"customer"`
+	StartsOn        string    `json:"starts_on"`
+	EndsOn          string    `json:"ends_on"`
+	Reference       string    `json:"reference,omitempty"`
+	Note            string    `json:"note,omitempty"`
+	Currency        string    `json:"currency,omitempty"`
+	EntryCount      int       `json:"entry_count"`
+	BillableSeconds int64     `json:"billable_seconds"`
+	AmountMinor     int64     `json:"amount_minor"`
+	CreatedAt       time.Time `json:"created_at"`
+	// Voided is carried rather than dropped: a credited invoice is part of the
+	// account's history, and a restore that quietly un-voided one would make
+	// its time unbillable again.
+	VoidedAt *time.Time `json:"voided_at,omitempty"`
+}
+
+// BackupAbsence is one span of days away.
+//
+// Whose it is travels as a flag rather than as a name: a personal absence is
+// restored as the restoring user's, the same convention entries follow, and a
+// public holiday is the instance's and belongs to nobody.
+type BackupAbsence struct {
+	Kind       string `json:"kind"`
+	StartsOn   string `json:"starts_on"`
+	EndsOn     string `json:"ends_on"`
+	Note       string `json:"note,omitempty"`
+	Everybodys bool   `json:"everybodys,omitempty"`
+}
+
+// BackupRoutine is one weekday template.
+type BackupRoutine struct {
+	Customer        string   `json:"customer"`
+	Project         string   `json:"project"`
+	Assignment      string   `json:"assignment"`
+	Name            string   `json:"name"`
+	Note            string   `json:"note,omitempty"`
+	Weekdays        []int    `json:"weekdays"`
+	StartTime       string   `json:"start_time,omitempty"`
+	DurationSeconds int64    `json:"duration_seconds"`
+	Billable        bool     `json:"billable"`
+	Kind            string   `json:"kind,omitempty"`
+	Tags            []string `json:"tags,omitempty"`
+	Active          bool     `json:"active"`
+	SortOrder       int      `json:"sort_order,omitempty"`
+}
+
+// BackupPeriod is one week's submission state.
+//
+// Without it a restored instance believes no week was ever submitted, so every
+// approved week unlocks and becomes editable again - which is the week lock
+// undone by the recovery path rather than by anybody deciding.
+type BackupPeriod struct {
+	WeekStart        string     `json:"week_start"`
+	Status           string     `json:"status"`
+	SubmittedAt      *time.Time `json:"submitted_at,omitempty"`
+	DecidedAt        *time.Time `json:"decided_at,omitempty"`
+	Note             string     `json:"note,omitempty"`
+	SubmittedSeconds int64      `json:"submitted_seconds,omitempty"`
 }
 
 // BackupOptions narrows what a backup covers.
@@ -281,6 +403,7 @@ func (s *Service) CreateBackup(ctx context.Context, opts BackupOptions) (Backup,
 			RateMinor:       entry.RateMinor,
 			AmountMinor:     entry.AmountMinor,
 			Currency:        entry.Currency,
+			Tags:            entry.Tags,
 		})
 	}
 
@@ -310,9 +433,182 @@ func (s *Service) CreateBackup(ctx context.Context, opts BackupOptions) (Backup,
 		return Backup{}, err
 	}
 
+	// Everything else an instance is. Collected after the entries because the
+	// billing runs have to be keyed before the entries can point at them.
+	if err := s.collectTheRest(ctx, &backup, opts, entries); err != nil {
+		return Backup{}, err
+	}
+
 	s.auditLog(ctx, "backup.create", "backup", 0)
 	_ = actor
 	return backup, nil
+}
+
+// collectTheRest gathers the parts of an instance that are not entries.
+//
+// Each of these was missing while the file called itself complete. They are
+// gathered together rather than inline above because they share one property
+// worth stating once: some belong to the instance and some to a person.
+//
+// The instance's - tags, contract terms, billing runs, public holidays - travel
+// whole. A person's - their routines, their weeks' submission state, their own
+// leave - travel as the backing-up person's and come back as the restoring
+// person's, which is the convention the entries already set: a restore
+// attributes what it writes to whoever runs it. That makes a backup a
+// single-person document in a multi-person instance, which was true before
+// this and is now at least true of the same set of records throughout.
+func (s *Service) collectTheRest(ctx context.Context, backup *Backup, opts BackupOptions, entries []domain.TimeEntry) error {
+	actor, err := auth.MustUser(ctx)
+	if err != nil {
+		return err
+	}
+
+	tags, err := s.TagsForAdmin(ctx)
+	if err != nil {
+		return err
+	}
+	for _, tag := range tags {
+		backup.Tags = append(backup.Tags, BackupTag{Name: tag.Name, ColourKey: tag.ColourKey})
+	}
+
+	// The dated terms, per customer and per project in scope. One query each
+	// rather than one query: there are dozens of these, not thousands, and the
+	// store's reader is written per scope because that is how they are read.
+	for _, customer := range backup.Customers {
+		terms, termsErr := s.db.ListContractTerms(ctx, domain.TermsForCustomer, customer.ID)
+		if termsErr != nil {
+			return termsErr
+		}
+		backup.ContractTerms = append(backup.ContractTerms,
+			backupTermsFor(string(domain.TermsForCustomer), customer.Name, "", terms)...)
+	}
+	for _, project := range backup.Projects {
+		terms, termsErr := s.db.ListContractTerms(ctx, domain.TermsForProject, project.ID)
+		if termsErr != nil {
+			return termsErr
+		}
+		backup.ContractTerms = append(backup.ContractTerms,
+			backupTermsFor(string(domain.TermsForProject), project.Name,
+				project.CustomerName, terms)...)
+	}
+
+	// The billing history, and the link from each entry to the run it went out
+	// on. Without the link a restored instance offers invoiced time for
+	// billing again, which is the failure the runs exist to prevent.
+	runs, err := s.db.ListBillingRuns(ctx, opts.CustomerID, 0)
+	if err != nil {
+		return err
+	}
+	runKeys := make(map[int64]string, len(runs))
+	for _, run := range runs {
+		key := billingRunKey(run)
+		runKeys[run.ID] = key
+		carried := BackupBillingRun{
+			Key: key, Customer: run.CustomerName,
+			StartsOn: run.StartsOn, EndsOn: run.EndsOn,
+			Reference: run.Reference, Note: run.Note, Currency: run.Currency,
+			EntryCount: run.EntryCount, BillableSeconds: run.BillableSeconds,
+			AmountMinor: run.AmountMinor, CreatedAt: run.CreatedAt,
+		}
+		if run.Voided() {
+			voided := run.VoidedAt
+			carried.VoidedAt = &voided
+		}
+		backup.BillingRuns = append(backup.BillingRuns, carried)
+	}
+	// The carried entries were appended from this same slice, in order, so the
+	// indexes line up. Guarded anyway: a future reordering above would
+	// otherwise put one customer's invoice number on another's hour.
+	for i := range backup.TimeEntries {
+		if i >= len(entries) {
+			break
+		}
+		backup.TimeEntries[i].BillingRun = runKeys[entries[i].BillingRunID]
+	}
+
+	// A person's own leave, and the instance's public holidays. The range is
+	// the backup's where it has one, and everything otherwise.
+	from, to := opts.From, opts.To
+	if from.IsZero() {
+		from = time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC)
+	}
+	if to.IsZero() {
+		to = s.now().AddDate(5, 0, 0)
+	}
+	absences, err := s.db.ListAbsences(ctx, actor.ID,
+		from.Format("2006-01-02"), to.Format("2006-01-02"))
+	if err != nil {
+		return err
+	}
+	for _, absence := range absences {
+		backup.Absences = append(backup.Absences, BackupAbsence{
+			Kind: string(absence.Kind), StartsOn: absence.StartsOn,
+			EndsOn: absence.EndsOn, Note: absence.Note,
+			Everybodys: absence.Kind.Everybodys(),
+		})
+	}
+
+	routines, err := s.Routines(ctx, false)
+	if err != nil {
+		return err
+	}
+	for _, routine := range routines {
+		backup.Routines = append(backup.Routines, BackupRoutine{
+			Customer: routine.CustomerName, Project: routine.ProjectName,
+			Assignment: routine.AssignmentName,
+			Name:       routine.Name, Note: routine.Note,
+			Weekdays: routine.Weekdays, StartTime: routine.StartTime,
+			DurationSeconds: routine.DurationSeconds, Billable: routine.Billable,
+			Kind: string(routine.Kind), Tags: routine.Tags,
+			Active: routine.Active, SortOrder: routine.SortOrder,
+		})
+	}
+
+	periods, err := s.db.ListPeriodsForUser(ctx, actor.ID, 0)
+	if err != nil {
+		return err
+	}
+	for _, period := range periods {
+		carried := BackupPeriod{
+			WeekStart: period.WeekStart, Status: string(period.Status),
+			Note: period.Note, SubmittedSeconds: period.SubmittedSeconds,
+		}
+		if !period.SubmittedAt.IsZero() {
+			at := period.SubmittedAt
+			carried.SubmittedAt = &at
+		}
+		if !period.DecidedAt.IsZero() {
+			at := period.DecidedAt
+			carried.DecidedAt = &at
+		}
+		backup.Periods = append(backup.Periods, carried)
+	}
+
+	return nil
+}
+
+// backupTermsFor turns stored terms into the carried shape.
+func backupTermsFor(scope, scopeName, customerName string, terms []domain.ContractTerms) []BackupTerms {
+	out := make([]BackupTerms, 0, len(terms))
+	for _, t := range terms {
+		out = append(out, BackupTerms{
+			Scope: scope, ScopeName: scopeName, CustomerName: customerName,
+			EffectiveFrom: t.EffectiveFrom, Note: t.Note, Rules: t.Rules,
+		})
+	}
+	return out
+}
+
+// billingRunKey identifies a run within a backup file.
+//
+// The customer and the period rather than the id, for the reason every other
+// reference here is named: an id from another instance points at somebody
+// else's invoice. The reference is included because a customer can be invoiced
+// twice for one month - a credit and a re-issue - and those are two runs.
+func billingRunKey(run domain.BillingRun) string {
+	return strings.Join([]string{
+		run.CustomerName, run.StartsOn, run.EndsOn, run.Reference,
+	}, "\x1f")
 }
 
 // collectAttachments lists what is attached to the records in a backup.
@@ -535,8 +831,19 @@ func archiveReadme(backup Backup, encrypted bool) string {
 
 	fmt.Fprintf(&out, "Contents: %d customers, %d projects, %d assignments,\n",
 		len(backup.Customers), len(backup.Projects), len(backup.Assignments))
-	fmt.Fprintf(&out, "          %d time entries, %d expenses, %d attachments\n\n",
+	fmt.Fprintf(&out, "          %d time entries, %d expenses, %d attachments,\n",
 		len(backup.TimeEntries), len(backup.Expenses), len(backup.Attachments))
+	// The rest, listed rather than implied. Somebody reading this file months
+	// later is deciding whether it is enough to restore from, and a contents
+	// line that stops at the entries invites the answer the omission used to
+	// make true.
+	fmt.Fprintf(&out, "          %d tags, %d sets of contract terms, %d billing runs,\n",
+		len(backup.Tags), len(backup.ContractTerms), len(backup.BillingRuns))
+	fmt.Fprintf(&out, "          %d absences, %d routines, %d submitted weeks\n\n",
+		len(backup.Absences), len(backup.Routines), len(backup.Periods))
+	out.WriteString(
+		"Not carried: accounts and their passwords, sessions, the audit trail.\n" +
+			"A restore attributes what it writes to whoever runs it.\n\n")
 
 	if encrypted {
 		out.WriteString(
@@ -561,6 +868,14 @@ type RestoreResult struct {
 	Expenses    int
 	// Attachments counts files put back into the blob store and re-linked.
 	Attachments int
+	// What the rest of an instance is made of, each counted so a restore
+	// reports what it actually put back rather than only its entries.
+	Tags          int
+	ContractTerms int
+	BillingRuns   int
+	Absences      int
+	Routines      int
+	Periods       int
 	// Skipped counts records that were already present. A high number here is
 	// normal and expected when restoring a file that overlaps existing data.
 	Skipped int
@@ -751,10 +1066,23 @@ func (s *Service) restoreDocument(ctx context.Context, document []byte) (Restore
 	if err != nil {
 		return result, err
 	}
-	if err := s.restoreEntries(ctx, backup, assignmentIDs, &result); err != nil {
+	// The instance's own records, before the entries, because an entry is
+	// attached to the billing run it went out on and the run has to exist
+	// first. Getting this order wrong would restore invoiced time as unbilled,
+	// which is the failure this whole set of fields exists to prevent.
+	runIDs, err := s.restoreInstanceRecords(ctx, backup, customerIDs, projectIDs, &result)
+	if err != nil {
+		return result, err
+	}
+	if err := s.restoreEntries(ctx, backup, assignmentIDs, runIDs, &result); err != nil {
 		return result, err
 	}
 	if err := s.restoreExpenses(ctx, backup, projectIDs, &result); err != nil {
+		return result, err
+	}
+	// A person's own records last: they refer to the assignments above and to
+	// nothing that refers back to them.
+	if err := s.restorePersonalRecords(ctx, backup, assignmentIDs, &result); err != nil {
 		return result, err
 	}
 
@@ -900,7 +1228,7 @@ func (s *Service) restoreAssignments(ctx context.Context, backup Backup, project
 // instant: two entries at the same second on the same assignment for the same
 // person are the same entry, and restoring a file twice must not double
 // somebody's week.
-func (s *Service) restoreEntries(ctx context.Context, backup Backup, assignmentIDs map[string]int64, result *RestoreResult) error {
+func (s *Service) restoreEntries(ctx context.Context, backup Backup, assignmentIDs, runIDs map[string]int64, result *RestoreResult) error {
 	actor, err := auth.MustUser(ctx)
 	if err != nil {
 		return err
@@ -947,9 +1275,24 @@ func (s *Service) restoreEntries(ctx context.Context, backup Backup, assignmentI
 			continue
 		}
 
+		// The invoice it went out on, where the file names one. An entry
+		// restored without it reads as unbilled, is offered for billing again
+		// and is editable under a customer's invoice.
+		entry.BillingRunID = runIDs[e.BillingRun]
+
 		created, err := s.db.CreateEntry(ctx, entry)
 		if err != nil {
 			return err
+		}
+		// Its tags, which are part of the entry rather than decoration: the
+		// recycle bin already carries them for the same reason.
+		if len(e.Tags) > 0 {
+			if tagErr := s.db.InTx(ctx, func(tx *sql.Tx) error {
+				return store.SetEntryTagsTx(ctx, tx, created.ID, e.Tags)
+			}); tagErr != nil {
+				result.Problems = append(result.Problems, fmt.Sprintf(
+					"an entry came back without its tags: %s", tagErr))
+			}
 		}
 		result.noteOwner(domain.AttachmentOwnerTimeEntry,
 			entryOwnerKey(e.Customer, e.Project, e.Assignment, e.StartedAt), created.ID)
@@ -957,6 +1300,308 @@ func (s *Service) restoreEntries(ctx context.Context, backup Backup, assignmentI
 		result.Entries++
 	}
 	return nil
+}
+
+// restoreInstanceRecords puts back what belongs to the instance rather than to
+// a person: the tag vocabulary, the dated terms and the billing history.
+//
+// Returns the new id of each billing run, keyed as the file keys them, so the
+// entries restored next can be re-attached to the invoices they went out on.
+func (s *Service) restoreInstanceRecords(ctx context.Context, backup Backup, customerIDs, projectIDs map[string]int64, result *RestoreResult) (map[string]int64, error) {
+	actor, err := auth.MustUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Tags, by name. The vocabulary is shared by every project, so a tag that
+	// is already here is the same tag.
+	if len(backup.Tags) > 0 {
+		names := make([]string, 0, len(backup.Tags))
+		for _, tag := range backup.Tags {
+			names = append(names, tag.Name)
+		}
+		// Counted by name rather than by how long the list got: the listing
+		// is scoped and joined to usage, so its length answers a different
+		// question from "how many of these did this file bring".
+		before, listErr := s.db.AllTagNames(ctx)
+		if listErr != nil {
+			return nil, listErr
+		}
+		known := map[string]bool{}
+		for _, name := range before {
+			known[domain.NormaliseTag(name)] = true
+		}
+		if err := s.db.InTx(ctx, func(tx *sql.Tx) error {
+			_, txErr := store.EnsureTagsTx(ctx, tx, names)
+			return txErr
+		}); err != nil {
+			return nil, err
+		}
+		for _, name := range names {
+			if known[domain.NormaliseTag(name)] {
+				result.Skipped++
+				continue
+			}
+			known[domain.NormaliseTag(name)] = true
+			result.Tags++
+		}
+	}
+
+	// The dated terms. Skipped where the same scope already has terms starting
+	// on the same day, which is the same "merge, never overwrite" rule the
+	// catalogue follows: a restore must not quietly reprice existing work.
+	for _, carried := range backup.ContractTerms {
+		scope := domain.TermsScope(carried.Scope)
+		var scopeID int64
+		switch scope {
+		case domain.TermsForCustomer:
+			scopeID = customerIDs[strings.ToLower(carried.ScopeName)]
+		case domain.TermsForProject:
+			// Keyed by customer and project together, because two customers
+			// may each have a project called "Migration".
+			scopeID = projectIDs[projectKey(carried.CustomerName, carried.ScopeName)]
+		}
+		if scopeID == 0 {
+			result.Problems = append(result.Problems, fmt.Sprintf(
+				"terms refer to %s %q, which is not in the backup",
+				carried.Scope, carried.ScopeName))
+			continue
+		}
+
+		existing, termsErr := s.db.ListContractTerms(ctx, scope, scopeID)
+		if termsErr != nil {
+			return nil, termsErr
+		}
+		already := false
+		for _, t := range existing {
+			if t.EffectiveFrom == carried.EffectiveFrom {
+				already = true
+				break
+			}
+		}
+		if already {
+			result.Skipped++
+			continue
+		}
+
+		terms := domain.ContractTerms{
+			Scope: scope, ScopeID: scopeID,
+			EffectiveFrom: carried.EffectiveFrom, Rules: carried.Rules,
+			Note: carried.Note,
+		}
+		if err := terms.Validate(); err != nil {
+			result.Problems = append(result.Problems, fmt.Sprintf("terms were invalid: %s", err))
+			continue
+		}
+		if _, err := s.db.CreateContractTerms(ctx, terms); err != nil {
+			return nil, err
+		}
+		result.ContractTerms++
+	}
+
+	// The billing history. Matched on the same key the file uses, so restoring
+	// twice does not produce two invoices for one month.
+	runIDs := map[string]int64{}
+	if len(backup.BillingRuns) > 0 {
+		existing, runErr := s.db.ListBillingRuns(ctx, 0, 0)
+		if runErr != nil {
+			return nil, runErr
+		}
+		for _, run := range existing {
+			runIDs[billingRunKey(run)] = run.ID
+		}
+
+		for _, carried := range backup.BillingRuns {
+			if _, there := runIDs[carried.Key]; there {
+				result.Skipped++
+				continue
+			}
+			customerID := customerIDs[strings.ToLower(carried.Customer)]
+			if customerID == 0 {
+				result.Problems = append(result.Problems, fmt.Sprintf(
+					"a billing run refers to customer %q, which is not in the backup",
+					carried.Customer))
+				continue
+			}
+
+			run := domain.BillingRun{
+				CustomerID: customerID, StartsOn: carried.StartsOn, EndsOn: carried.EndsOn,
+				Reference: carried.Reference, Note: carried.Note, Currency: carried.Currency,
+				EntryCount: carried.EntryCount, BillableSeconds: carried.BillableSeconds,
+				AmountMinor: carried.AmountMinor,
+				CreatedBy:   actor.ID, CreatedAt: carried.CreatedAt,
+			}
+			if run.CreatedAt.IsZero() {
+				run.CreatedAt = s.now()
+			}
+
+			var written domain.BillingRun
+			if err := s.db.InTx(ctx, func(tx *sql.Tx) error {
+				var txErr error
+				written, txErr = store.CreateBillingRunTx(ctx, tx, run)
+				if txErr != nil {
+					return txErr
+				}
+				// A run that was voided comes back voided. Un-voiding one on
+				// restore would make credited time billable again, which is
+				// the opposite of what its record says.
+				if carried.VoidedAt != nil {
+					return store.VoidBillingRunTx(ctx, tx, written.ID, actor.ID,
+						carried.VoidedAt.UTC().Format(time.RFC3339))
+				}
+				return nil
+			}); err != nil {
+				return nil, err
+			}
+			runIDs[carried.Key] = written.ID
+			result.BillingRuns++
+		}
+	}
+
+	return runIDs, nil
+}
+
+// restorePersonalRecords puts back what belongs to a person: their leave,
+// their weekday templates and the submission state of their weeks.
+//
+// They come back as the restoring person's, which is the convention the
+// entries already set. See collectTheRest for why, and for what that means in
+// a multi-person instance.
+func (s *Service) restorePersonalRecords(ctx context.Context, backup Backup, assignmentIDs map[string]int64, result *RestoreResult) error {
+	actor, err := auth.MustUser(ctx)
+	if err != nil {
+		return err
+	}
+	now := s.now()
+
+	// Leave. Matched on kind and span, so restoring twice is harmless.
+	if len(backup.Absences) > 0 {
+		existing, absErr := s.db.ListAbsences(ctx, actor.ID, "0001-01-01", "9999-12-31")
+		if absErr != nil {
+			return absErr
+		}
+		seen := map[string]bool{}
+		for _, a := range existing {
+			seen[absenceKey(string(a.Kind), a.StartsOn, a.EndsOn)] = true
+		}
+		for _, carried := range backup.Absences {
+			key := absenceKey(carried.Kind, carried.StartsOn, carried.EndsOn)
+			if seen[key] {
+				result.Skipped++
+				continue
+			}
+			absence := domain.Absence{
+				Kind: domain.AbsenceKind(carried.Kind), StartsOn: carried.StartsOn,
+				EndsOn: carried.EndsOn, Note: carried.Note,
+				CreatedBy: actor.ID, CreatedAt: now,
+			}
+			// A public holiday belongs to the instance and so to nobody; any
+			// other leave is the restoring person's.
+			if !absence.Kind.Everybodys() {
+				absence.UserID = actor.ID
+			}
+			if err := absence.Validate(); err != nil {
+				result.Problems = append(result.Problems, fmt.Sprintf("leave was invalid: %s", err))
+				continue
+			}
+			if err := s.db.InTx(ctx, func(tx *sql.Tx) error {
+				_, txErr := store.CreateAbsenceTx(ctx, tx, absence)
+				return txErr
+			}); err != nil {
+				return err
+			}
+			seen[key] = true
+			result.Absences++
+		}
+	}
+
+	// Weekday templates.
+	if len(backup.Routines) > 0 {
+		existing, routineErr := s.Routines(ctx, false)
+		if routineErr != nil {
+			return routineErr
+		}
+		seen := map[string]bool{}
+		for _, r := range existing {
+			seen[r.Name] = true
+		}
+		for _, carried := range backup.Routines {
+			if seen[carried.Name] {
+				result.Skipped++
+				continue
+			}
+			assignmentID := assignmentIDs[assignmentKey(carried.Customer, carried.Project, carried.Assignment)]
+			if assignmentID == 0 {
+				result.Problems = append(result.Problems, fmt.Sprintf(
+					"the routine %q refers to %s / %s / %s, which is not in the backup",
+					carried.Name, carried.Customer, carried.Project, carried.Assignment))
+				continue
+			}
+			routine := domain.Routine{
+				UserID: actor.ID, AssignmentID: assignmentID,
+				Name: carried.Name, Note: carried.Note, Weekdays: carried.Weekdays,
+				StartTime: carried.StartTime, DurationSeconds: carried.DurationSeconds,
+				Billable: carried.Billable, Kind: domain.EntryKind(carried.Kind),
+				Tags: carried.Tags, Active: carried.Active, SortOrder: carried.SortOrder,
+			}
+			if err := routine.Validate(); err != nil {
+				result.Problems = append(result.Problems, fmt.Sprintf(
+					"the routine %q was invalid: %s", carried.Name, err))
+				continue
+			}
+			if _, err := s.db.CreateRoutine(ctx, routine); err != nil {
+				return err
+			}
+			seen[carried.Name] = true
+			result.Routines++
+		}
+	}
+
+	// Which weeks were submitted and approved. Without these a restored
+	// instance believes nothing was ever submitted, so every locked week
+	// unlocks - the week lock undone by the recovery path rather than by
+	// anybody deciding.
+	for _, carried := range backup.Periods {
+		existing, periodErr := s.db.GetPeriod(ctx, actor.ID, carried.WeekStart)
+		if periodErr != nil {
+			return periodErr
+		}
+		// GetPeriod invents an open week for one that has never been stored,
+		// so "already there" means one that is not open.
+		if existing.Status != "" && existing.Status != domain.PeriodOpen {
+			result.Skipped++
+			continue
+		}
+		status := domain.PeriodStatus(carried.Status)
+		if status == "" || status == domain.PeriodOpen {
+			// An open week is the default state; writing one back says
+			// nothing and would overwrite a week that has since been
+			// submitted here.
+			continue
+		}
+		period := domain.TimesheetPeriod{
+			UserID: actor.ID, WeekStart: carried.WeekStart, Status: status,
+			Note: carried.Note, SubmittedSeconds: carried.SubmittedSeconds,
+		}
+		if carried.SubmittedAt != nil {
+			period.SubmittedAt = *carried.SubmittedAt
+		}
+		if carried.DecidedAt != nil {
+			period.DecidedAt = *carried.DecidedAt
+			period.DecidedBy = actor.ID
+		}
+		if err := s.db.UpsertPeriod(ctx, period); err != nil {
+			return err
+		}
+		result.Periods++
+	}
+
+	return nil
+}
+
+// absenceKey identifies a span of leave within a restore.
+func absenceKey(kind, from, to string) string {
+	return strings.Join([]string{kind, from, to}, "\x1f")
 }
 
 // restoreExpenses creates expenses that are not already present.
