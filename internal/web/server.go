@@ -378,6 +378,15 @@ func templateFuncs() template.FuncMap {
 		// and a template function cannot be generic.
 		"subSeconds": func(a, b int64) int64 { return a - b },
 		"addSeconds": func(a, b int64) int64 { return a + b },
+		// A balance is shown as a magnitude with a word beside it rather than
+		// as a signed duration, so the template needs the size of a negative
+		// one.
+		"negSeconds": func(a int64) int64 {
+			if a < 0 {
+				return -a
+			}
+			return a
+		},
 		"divide": func(value int64, by int64) int64 {
 			if by == 0 {
 				return 0

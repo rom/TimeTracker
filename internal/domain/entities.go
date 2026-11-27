@@ -85,7 +85,12 @@ type User struct {
 	// ExpectedWeeklyMinutes is this person's full week; -1 follows the
 	// instance. Part time is a property of the person, not the organisation.
 	ExpectedWeeklyMinutes int
-	Active                bool
+	// BalanceStartsOn is when this person's running over-or-under starts
+	// counting, as an ISO date. Empty follows the instance, which is also
+	// empty by default and means no balance is shown; somebody who joined in
+	// June sets their own so they are not born owing five months.
+	BalanceStartsOn string
+	Active          bool
 	// ClientCustomerID scopes a user with the client role to one customer. It is
 	// zero for every other role.
 	ClientCustomerID int64

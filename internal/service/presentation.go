@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/rom/timetracker/internal/auth"
 	"github.com/rom/timetracker/internal/domain"
@@ -36,6 +37,11 @@ type PresentationInput struct {
 	// ExpectedWeeklyMinutes is this person's full week, or negative to follow
 	// the instance.
 	ExpectedWeeklyMinutes int
+	// BalanceStartsOn is when this person's running balance starts counting.
+	// Empty follows the instance; a date earlier than the instance's is
+	// ignored, since an account cannot award itself a longer run at the figure
+	// than the instance is counting.
+	BalanceStartsOn string
 }
 
 // UpdatePresentation saves the acting user's own presentation choices.
@@ -65,6 +71,13 @@ func (s *Service) UpdatePresentation(ctx context.Context, in PresentationInput) 
 	}
 	if in.ExpectedWeeklyMinutes >= 0 && in.ExpectedWeeklyMinutes <= 7*24*60 {
 		chosen.ExpectedWeeklyMinutes = in.ExpectedWeeklyMinutes
+	}
+	// Kept only if it reads as a date; the comparison against the instance's
+	// own start happens where the balance is computed, so this stores what the
+	// person asked for rather than a figure derived from a setting that may
+	// change afterwards.
+	if _, err := time.Parse("2006-01-02", in.BalanceStartsOn); err == nil {
+		chosen.BalanceStartsOn = in.BalanceStartsOn
 	}
 	// Both or neither. Taking one of somebody's hours and one of the
 	// instance's could produce an end before a start, which the normaliser

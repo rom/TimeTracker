@@ -186,6 +186,28 @@ the decision.
   grids have honoured it, but it was labelled only "first day of the week" -
   which leaves somebody to work out for themselves that Monday ends the week
   with the weekend and Saturday starts it with one. It now says so.
+* **A month has a target, and a balance runs across the weeks.** Expected
+  hours answered one week at a time; the question that follows it immediately
+  is the one flexitime actually turns on, and nothing could answer it. The
+  month view now reads "This month: 70h 00m of 168h 00m" - the week's figure
+  spread over the month's own working days, because February and March differ
+  by four of them - and both the week and the month carry a running
+  over-or-under beside the total.
+
+  Three decisions worth stating. It is derived from the entries rather than
+  stored, so correcting last March corrects the balance; a stored column would
+  need every write to remember to adjust it and would drift the first time one
+  forgot. It counts whole weeks only, because a balance that included the week
+  in progress would read as thirty-two hours down every Monday morning, which
+  is both true and useless - the week on screen is shown as its own figure
+  beside it. And it is off unless somebody turns it on: a running figure is
+  read as hours owed, in both directions, by people who did not choose to be
+  measured that way, so an instance says when the count starts or no balance
+  appears at all. A person may start later than the instance, which is how
+  somebody who joined in June is not born owing five months; earlier is
+  ignored, since an account cannot award itself a longer run at the figure than
+  the instance is counting. Days away fill their share, so a fortnight off
+  leaves the balance where it was.
 * **Days away can be imported from a calendar** (`/calendar`). Every country
   that has public holidays publishes them as an `.ics` feed, and the one
   category of absence that is identical for everybody and already written down

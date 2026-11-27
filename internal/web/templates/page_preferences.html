@@ -107,6 +107,18 @@
                placeholder="{{asDuration $instance.ExpectedWeeklyMinutes}}"
                value="{{if ge $me.ExpectedWeeklyMinutes 0}}{{asDuration $me.ExpectedWeeklyMinutes}}{{end}}">
       </label>
+      {{/* Offered only where the instance counts a balance at all: a date on a
+           screen that produces no figure is a control that does nothing. */}}
+      {{if $instance.BalanceStartsOn}}
+        <label>
+          {{.T "preferences.balance"}}
+          <input type="date" name="balance_starts_on"
+                 min="{{$instance.BalanceStartsOn}}"
+                 placeholder="{{$instance.BalanceStartsOn}}"
+                 value="{{$me.BalanceStartsOn}}">
+        </label>
+        <p class="field-help">{{.T "preferences.balance.help"}}</p>
+      {{end}}
     </fieldset>
 
     <button type="submit" class="btn btn-primary">{{.T "settings.save"}}</button>

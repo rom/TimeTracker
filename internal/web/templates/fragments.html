@@ -476,6 +476,26 @@
         {{else}}
           {{$page.T "period.total" ($page.Printer.FormatDuration .TotalSeconds)}}
         {{end}}
+        {{/* The running over-or-under, when the instance counts one. Before
+             this week rather than including it: a balance that counted the
+             week in progress would read as a disaster every Monday morning,
+             which is true and useless. Said in words - "ahead" or "behind" -
+             because a bare signed duration leaves the reader working out which
+             way it points. */}}
+        {{if .Balance.Counted}}
+          <span class="period-balance {{if lt .Balance.Seconds 0}}is-behind{{else}}is-ahead{{end}}"
+                title="{{$page.T "period.balance.since"
+                         ($page.Printer.FormatDate .Balance.From)
+                         ($page.Printer.FormatDate .Balance.To)}}">
+            {{if lt .Balance.Seconds 0}}
+              {{$page.T "period.balance.behind"
+                  ($page.Printer.FormatDuration (negSeconds .Balance.Seconds))}}
+            {{else}}
+              {{$page.T "period.balance.ahead"
+                  ($page.Printer.FormatDuration .Balance.Seconds)}}
+            {{end}}
+          </span>
+        {{end}}
       </span>
 
       {{if .CanSubmit}}

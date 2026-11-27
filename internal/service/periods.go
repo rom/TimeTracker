@@ -48,6 +48,11 @@ type PeriodView struct {
 	// off is a complete week, not a week somebody failed to fill in.
 	AbsentSeconds int64
 	AbsentDays    int
+	// Balance is the running over-or-under across the whole weeks before this
+	// one, when the instance has turned it on. Deliberately excluding the week
+	// on screen: that week's own figure is beside it, and adding a week in
+	// progress to a balance makes every Monday read as a disaster.
+	Balance Balance
 	// CanSubmit, CanWithdraw, CanApprove and CanReopen say which controls to
 	// offer. The template asks these rather than re-deriving the rules, so the
 	// interface and the enforcement cannot disagree.
@@ -128,6 +133,10 @@ func (s *Service) periodFor(ctx context.Context, actor domain.User, ownerID int6
 				view.AbsentDays = absent
 			}
 		}
+	}
+
+	if view.Balance, err = s.balanceWith(ctx, settings, owner, date); err != nil {
+		return PeriodView{}, err
 	}
 
 	own := ownerID == actor.ID

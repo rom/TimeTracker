@@ -29,6 +29,50 @@
        for as often as the total: a month with eleven recorded days out of
        twenty-two working ones is a conversation, and the grid below shows which
        eleven. */}}
+  {{/* What the month asked for, before what it contains. The week view has
+       had a target since expected hours were added, and the month is where
+       somebody actually asks the question - a month is the unit a timesheet is
+       reconciled in, and "165 of 176" is the sentence they are after.
+
+       The running balance beside it stops at the last whole week, as it does
+       on the week screen: a balance that counted the days since Monday would
+       read as a disaster every Monday. */}}
+  {{if gt $month.ExpectedSeconds 0}}
+    <p class="month-expected">
+      <span class="period-total">
+        {{.T "month.total.of"
+            ($.Printer.FormatDuration $month.Totals.SummedSeconds)
+            ($.Printer.FormatDuration $month.ExpectedSeconds)}}
+      </span>
+      {{if gt $month.AbsentSeconds 0}}
+        <span class="period-away">{{.T "period.away"
+          ($.Printer.FormatDuration $month.AbsentSeconds)}}</span>
+      {{end}}
+      {{$covered := addSeconds $month.Totals.SummedSeconds $month.AbsentSeconds}}
+      {{if lt $covered $month.ExpectedSeconds}}
+        <span class="period-short">{{.T "period.short"
+          ($.Printer.FormatDuration (subSeconds $month.ExpectedSeconds $covered))}}</span>
+      {{end}}
+      {{if $month.Balance.Counted}}
+        <span class="period-balance {{if lt $month.Balance.Seconds 0}}is-behind{{else}}is-ahead{{end}}"
+              {{/* The month's own wording: the week banner's version ends
+                   "this week is counted separately", which is true and reads
+                   as a non-sequitur on a calendar of a different month. */}}
+              title="{{.T "month.balance.since"
+                       ($.Printer.FormatDate $month.Balance.From)
+                       ($.Printer.FormatDate $month.Balance.To)}}">
+          {{if lt $month.Balance.Seconds 0}}
+            {{.T "period.balance.behind"
+                ($.Printer.FormatDuration (negSeconds $month.Balance.Seconds))}}
+          {{else}}
+            {{.T "period.balance.ahead"
+                ($.Printer.FormatDuration $month.Balance.Seconds)}}
+          {{end}}
+        </span>
+      {{end}}
+    </p>
+  {{end}}
+
   <p class="month-summary">
     {{.T "month.recorded" $month.DaysRecorded $month.DaysInMonth}}
     {{if not $month.BusiestDay.IsZero}}
