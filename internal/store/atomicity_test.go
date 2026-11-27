@@ -182,6 +182,23 @@ func TestEveryTransactionalWriteReportsAFailureRatherThanSwallowingIt(t *testing
 				StartsOn: "2026-03-16", EndsOn: "2026-03-20",
 			})
 		},
+		"CreateBillingRunTx": func(tx *sql.Tx) error {
+			_, err := CreateBillingRunTx(ctx, tx, domain.BillingRun{
+				CustomerID: 1, StartsOn: "2026-03-01", EndsOn: "2026-03-31",
+				Reference: "INV-1", Currency: "SEK", EntryCount: 1,
+				BillableSeconds: 3600, AmountMinor: 125000,
+				CreatedBy: user.ID,
+				CreatedAt: time.Date(2026, 4, 1, 9, 0, 0, 0, time.UTC),
+			})
+			return err
+		},
+		"StampEntriesTx": func(tx *sql.Tx) error {
+			_, err := StampEntriesTx(ctx, tx, 1, []int64{1})
+			return err
+		},
+		"VoidBillingRunTx": func(tx *sql.Tx) error {
+			return VoidBillingRunTx(ctx, tx, 1, user.ID, "2026-04-02T09:00:00Z")
+		},
 		"CaptureTx": func(tx *sql.Tx) error {
 			_, err := CaptureTx(ctx, tx, DeletedRecord{
 				Kind: "time_entry", RecordID: 1, UserID: user.ID,

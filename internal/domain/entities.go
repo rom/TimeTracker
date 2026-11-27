@@ -292,9 +292,14 @@ type TimeEntry struct {
 	DecisionNote string
 	// Flagged marks an entry needing human review, e.g. a timer that ran past the
 	// maximum. Flagged entries are excluded from totals until resolved.
-	Flagged   bool
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	Flagged bool
+	// BillingRunID is the invoice this hour went out on, or zero when it has
+	// not been billed. A billed entry is not editable: changing an hour that
+	// has already been charged for makes the invoice silently wrong, which is
+	// the same reason an approved week is locked.
+	BillingRunID int64
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 
 	// Tags are cross-cutting labels, loaded with the entry for display and
 	// written back on save. Normalised names, not ids: the caller says what the

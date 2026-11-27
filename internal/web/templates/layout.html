@@ -145,6 +145,14 @@
       <a href="/admin"   {{if eq .Active "admin"}}class="active" aria-current="page"{{end}}>{{.T "nav.admin"}}</a>
       <a href="/routines" {{if eq .Active "routines"}}class="active" aria-current="page"{{end}}>{{.T "nav.routines"}}</a>
       <a href="/reports" {{if eq .Active "reports"}}class="active" aria-current="page"{{end}}>{{.T "nav.reports"}}</a>
+      {{/* Billing sits in the quiet tier beside the reports: it is read far
+           more often than it is written, and it is nobody's daily screen.
+           Offered only to somebody who administers a customer, because
+           invoicing is that authority and the screen refuses everybody else -
+           a link that 404s is worse than no link. */}}
+      {{if .CanBill}}
+        <a href="/billing" {{if eq .Active "billing"}}class="active" aria-current="page"{{end}}>{{.T "nav.billing"}}</a>
+      {{end}}
       {{/* Renaming and deleting tags is administration of the instance - a tag
            is shared by every project, and deleting one takes it off entries
            everywhere - and so is the user list. Neither link is offered to

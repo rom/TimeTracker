@@ -61,6 +61,11 @@ func (e TimeEntry) ForClient() TimeEntry {
 	e.Tags = nil
 	e.AttachmentCount = 0
 
+	// Which invoice this hour went out on is the supplier's bookkeeping. A
+	// client has their invoice; the run that produced it is a record of this
+	// side of the arrangement.
+	e.BillingRunID = 0
+
 	return e
 }
 

@@ -90,6 +90,15 @@ func (s *Service) MoveEntries(ctx context.Context, entryIDs []int64, targetAssig
 			result.Skipped++
 			continue
 		}
+		// And billed time keeps its assignment: moving it to another project
+		// would change what the invoice was for, under the invoice. Skipped
+		// rather than refused outright, like every other per-entry judgement
+		// in this loop, so a selection spanning billed and unbilled time moves
+		// the part that can move and says what it left.
+		if err := s.checkNotBilled(ctx, entry); err != nil {
+			result.Skipped++
+			continue
+		}
 
 		moved := entry
 		moved.AssignmentID = targetAssignmentID

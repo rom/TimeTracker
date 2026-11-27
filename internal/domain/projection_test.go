@@ -164,6 +164,7 @@ func TestAnEntryForAClient(t *testing.T) {
 			"DecisionNote":        "as DecidedBy",
 			"Tags":                "internal labels, and nothing stops one being a candid opinion",
 			"AttachmentCount":     "a client cannot fetch an attachment",
+			"BillingRunID":        "which invoice this went on is the supplier's bookkeeping",
 		},
 		[]string{"ID", "UserID", "AssignmentID", "StartedAt", "EndedAt",
 			"DurationSeconds", "Billable", "Kind", "Status", "TimeZone",

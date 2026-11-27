@@ -459,6 +459,11 @@ Some things automation cannot honestly settle, checked before each release:
   tests hold the rules that can be computed - opacity, declared sizes, the
   maskable safe zone, an installable manifest - but whether the mark reads at 16
   pixels, and whether the platform's own rounding suits it, only a screen shows.
+* **A billing run against a real invoice.** Record a run for a customer and a
+  month, then check the hours and the amount against what the accounting system
+  was asked to invoice. The arithmetic has tests; whether the two systems agree
+  about which days a month contains, and about which hours were meant to be on
+  it, is a judgement nothing here can make.
 * **An encrypted backup archive opened in another tool.** This one is not
   optional. A round trip through our own reader passes with a counter running
   the wrong way, a missing flag bit, or a mislabelled method — the archive is

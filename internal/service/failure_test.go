@@ -241,6 +241,22 @@ func TestEveryServiceMethodReportsADeadDatabase(t *testing.T) {
 				map[string]bool{"holiday": true})
 			return err
 		},
+		"BillingCandidatesFor": func() error {
+			_, err := svc.BillingCandidatesFor(ctx, f.customerID, f.now.AddDate(0, 0, -7), f.now)
+			return err
+		},
+		"RecordBillingRun": func() error {
+			_, err := svc.RecordBillingRun(ctx, BillingInput{
+				CustomerID: f.customerID,
+				StartsOn:   f.now.AddDate(0, 0, -7).Format("2006-01-02"),
+				EndsOn:     f.now.Format("2006-01-02"),
+			})
+			return err
+		},
+		"VoidBillingRun":    func() error { return svc.VoidBillingRun(ctx, 1) },
+		"BillingRuns":       func() error { _, err := svc.BillingRuns(ctx, 0, 20); return err },
+		"BillingRun":        func() error { _, _, err := svc.BillingRun(ctx, 1); return err },
+		"BillingRunSummary": func() error { _, err := svc.BillingRunSummary(ctx, 1); return err },
 		"ParseQuickAdd":     func() error { _, err := svc.ParseQuickAdd(ctx, "2h Development"); return err },
 		"ParseTimeCSV":      func() error { _, err := svc.ParseTimeCSV(ctx, strings.NewReader(oneRowCSV), false); return err },
 		"PendingCount":      func() error { _, err := svc.PendingCount(ctx); return err },
@@ -443,6 +459,8 @@ func TestEveryServiceMethodReportsADeadDatabase(t *testing.T) {
 		// Each asks the authoriser and returns a bool: there is no error to
 		// report, which is the point of them - a template cannot handle one.
 		"MayManageCatalogue": true, "MayAdministerInstance": true,
+		// Asks the authoriser and nothing else, like the two beside it.
+		"MayBillAnything":  true,
 		"PendingApprovals": true, "ApprovedPeriods": true,
 	}
 	serviceType := reflect.TypeOf(svc)

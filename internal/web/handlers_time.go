@@ -181,6 +181,15 @@ type pageData struct {
 	ImportPreview       *service.ImportPreview
 	ImportCreateMissing bool
 
+	// Billing. BillingCandidates is what a run would cover if it were made
+	// now, and is nil until a customer has been chosen; BillingRuns is what
+	// has been billed already, which is the half of the screen worth opening
+	// on its own.
+	BillingCandidates *service.BillingCandidates
+	BillingRuns       []domain.BillingRun
+	BillingFrom       string
+	BillingTo         string
+
 	// Calendar import. CalendarFile carries the uploaded text back to the
 	// commit step so the file does not have to be found twice.
 	CalendarPreview *service.CalendarPreview
@@ -244,6 +253,10 @@ type pageData struct {
 	// the customers and projects they are a member of, and the instance is the
 	// administrator's - so the two cannot be one flag.
 	CanAdminister bool
+	// CanBill hides the billing screen from somebody who administers no
+	// customer. A member may record time against a customer and may not
+	// invoice one, so the link would be a 404 with a label on it.
+	CanBill bool
 }
 
 // T translates a key in the page's language. Templates call it directly, which
@@ -367,6 +380,7 @@ func (s *Server) newPageData(r *http.Request, title, active string) (pageData, e
 		IsClient:        user.Role == domain.RoleClient,
 		CanManage:       s.svc.MayManageCatalogue(r.Context()),
 		CanAdminister:   s.svc.MayAdministerInstance(r.Context()),
+		CanBill:         s.svc.MayBillAnything(r.Context()),
 		Zone:            userLocation(r),
 	}, nil
 }

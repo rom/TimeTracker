@@ -186,6 +186,38 @@ the decision.
   grids have honoured it, but it was labelled only "first day of the week" -
   which leaves somebody to work out for themselves that Monday ends the week
   with the weekend and Saturday starts it with one. It now says so.
+* **What has been billed is recorded** (`/billing`,
+  [ADR-0039](adr/0039-billing-is-a-run.md), migration `0020_billing_runs.sql`).
+  The money layer computed an exact figure for every entry and froze it, reports
+  totalled it and exports itemised it - and nothing anywhere recorded that an
+  invoice had been sent. So the application could not answer "what is still
+  unbilled", which is the question the whole layer exists to serve, and nothing
+  stopped the same fortnight going out twice.
+
+  A run is a row per customer per period capturing what it included, with the
+  entries pointing back at it: unbilled is then "belongs to no run", a query
+  rather than a convention. The screen shows what would go out before it goes -
+  the totals and every entry behind them, because the figure on an invoice is
+  the one queried afterwards. The totals are copied onto the run rather than
+  derived from it, for the reason the entry's own snapshot is copied: next
+  quarter's rate must not change what last quarter's invoice said.
+
+  Billed time is frozen. Editing, deleting or moving an entry that belongs to a
+  run is refused, with a message naming the run and the way back - this is the
+  week lock one step further out, and sharper, because a changed approved week
+  is a timesheet somebody re-approves while a changed billed hour is an invoice
+  that no longer matches what was sent. Voiding a run releases its entries and
+  keeps the record, because an invoice that was credited is still part of the
+  account's history.
+
+  Billing is the customer's administrator's: an administrator, or a manager of
+  one of its projects - the same authority that sets the customer's rates,
+  which is the act those rates exist for. A member cannot, and the navigation
+  does not offer them the screen. A client never learns which invoice their
+  hour went out on; the projection removes it. This does not issue invoices and
+  does not number them (DESIGN.md §11): the reference field is where the number
+  from whatever does issue them goes. Expenses are not covered, which is stated
+  rather than implied.
 * **A month has a target, and a balance runs across the weeks.** Expected
   hours answered one week at a time; the question that follows it immediately
   is the one flexitime actually turns on, and nothing could answer it. The
@@ -1057,28 +1089,39 @@ the decision.
 
 ### Known gaps
 
-* **A backup carries attachment metadata but not the bytes.** The blobs live on
-  disk and must be copied separately. Stated in the help text and in
-  [ADR-0021](adr/0021-json-backups-that-merge.md); a zip container holding both
-  is the obvious fix.
+Current as of this release. Everything the earlier version of this section
+listed as outstanding - attachments, expenses, proxy entries, tags, approvals,
+weekly submit-and-approve, PDF and DOCX export, zip backups carrying their
+attachments, the narrowed client projection, budget burn - has shipped. A list
+of gaps that is not maintained is worse than none: it tells a reader the
+application is less finished than it is, and hides the gaps that are real.
+
+* **Deleting an attachment on its own is not recoverable.** The blob is swept
+  before the row, so a bin entry could not produce the file
+  ([ADR-0037](adr/0037-deletion-is-recoverable.md)). An expense carries its
+  receipt rows into the bin; a restored one whose file has since been swept
+  reports the receipt as missing.
+* **Billing covers time, not expenses.** A billing run stamps time entries, so
+  "unbilled" is true of time only ([ADR-0039](adr/0039-billing-is-a-run.md)).
+  Extending a run to expenses is additive.
 * **CSV import writes row by row rather than in one transaction.** The preview
   makes a mid-import failure vanishingly unlikely, but it is not impossible.
 * **The PDF layout engine is minimal**: text, rules, tables and page breaks. No
-  images, no embedded fonts. Its output is structurally verified but has not
-  been opened in a viewer here — see the manual checks in
-  [TEST.md](TEST.md) §5.
-* **Weekly submit-and-approve** is still outstanding from layer 4, as are budget
-  burn reporting and the narrowed `client` projection from layer 5.
+  images, no embedded fonts. Its output is structurally verified but is opened
+  in a real viewer only by the manual checks in [TEST.md](TEST.md) §5.
+* **Recurring events are not expanded on import.** A calendar's recurrence rule
+  is not read, so only the occurrence actually present in the file is offered,
+  and it says so. This bites hardest on a public holiday feed that states "every
+  25 December" rather than listing them.
 * **TOTP and API tokens are designed for but not built.** Neither is
   load-bearing for a small team behind SSO, and both are additive.
-* **PDF and DOCX export return 501.** Both arrive in layer 5. CSV and JSON are
-  complete.
-* **The HTMX library is not vendored yet.** The templates use HTMX's attribute
+* **The HTMX library is not vendored.** The templates use HTMX's attribute
   vocabulary, and `static/js/app.js` implements the subset the application
   relies on (`hx-post`, `hx-confirm`, and the `HX-Request`/`HX-Refresh` header
   protocol). Dropping the upstream library in its place needs no template
   changes. Until then the tree contains no third-party JavaScript at all.
-* Attachments, expenses, proxy entries, tags and approvals are designed for but
-  not implemented; see [MVP_PLAN.md](MVP_PLAN.md).
+* **Nothing is scheduled.** Reminders are computed when a screen is drawn
+  ([ADR-0034](adr/0034-reminders-are-shown-not-sent.md)) and nothing is sent, so
+  a person who does not open the application is not nudged by it.
 
 [Unreleased]: https://github.com/rom/timetracker/commits/main

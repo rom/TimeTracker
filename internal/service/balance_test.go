@@ -54,6 +54,9 @@ func (f *fixture) record(t *testing.T, day string, seconds int64) {
 	if _, err := f.svc.CreateEntry(f.ctx, EntryInput{
 		AssignmentID: f.assignment.ID, StartedAt: start,
 		DurationSeconds: seconds, Note: "Work",
+		// As the add form does: the assignment decides, and the fixture's is
+		// billable, so this is chargeable time with an amount on it.
+		BillableFromAssignment: true,
 	}); err != nil {
 		t.Fatalf("record %s: %v", day, err)
 	}

@@ -491,7 +491,9 @@ func TestBothSweepsCoverTheSameSurface(t *testing.T) {
 		// anything: the answer is the actor's own permission, not anybody's
 		// data.
 		"MayManageCatalogue": true, "MayAdministerInstance": true,
-		"TermsOn": true, "TermsCurrency": true,
+		// Asks the authoriser and nothing else, like the two beside it.
+		"MayBillAnything": true,
+		"TermsOn":         true, "TermsCurrency": true,
 		"ParseQuickAdd": true, "ParseTimeCSV": true, "ParseCalendar": true,
 		// PreviewArchive is the same shape as the parsers above: the caller
 		// hands it the bytes, so it describes a file they already hold and
@@ -526,7 +528,14 @@ func TestBothSweepsCoverTheSameSurface(t *testing.T) {
 		// rather than by project membership; the write goes through
 		// RecordAbsence, whose bounds are asserted in absence_test.go.
 		"ParseCalendarAsAbsence": true, "ImportCalendarAsAbsence": true,
-		"ReindexSearch": true, "SaveContractTerms": true,
+		// Billing is bounded by who administers the customer, which is the
+		// authority that sets its rates - not by project membership, and not
+		// by whose time it is. The bounds are asserted directly in
+		// billingruns_test.go, including that a member cannot reach any of it.
+		"BillingCandidatesFor": true, "RecordBillingRun": true,
+		"VoidBillingRun": true, "BillingRuns": true, "BillingRun": true,
+		"BillingRunSummary": true,
+		"ReindexSearch":     true, "SaveContractTerms": true,
 		"DeleteContractTerms": true, "SaveRoutine": true, "DeleteRoutine": true,
 		"ApplyRoutine": true, "ApplyAllRoutines": true, "CopyDay": true,
 		"CopyWeek": true, "MoveEntries": true, "MoveExpenses": true,

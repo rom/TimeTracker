@@ -161,6 +161,14 @@ func (s *Server) routes() {
 	mux.HandleFunc("POST /entries/bulk", s.handleBulkEntries)
 
 	// The days somebody was not working.
+	// What has been billed. Reading it is bounded by who administers the
+	// customer, which the service enforces; the link is offered to everybody
+	// but a client, and somebody who may not bill anything sees an empty list
+	// rather than a refusal.
+	mux.HandleFunc("GET /billing", s.handleBilling)
+	mux.HandleFunc("POST /billing", s.handleRecordBilling)
+	mux.HandleFunc("POST /billing/{id}/void", s.handleVoidBilling)
+
 	mux.HandleFunc("GET /absence", s.handleAbsence)
 	mux.HandleFunc("POST /absence", s.handleRecordAbsence)
 	mux.HandleFunc("GET /absence/{id}/edit", s.handleEditAbsence)

@@ -1,0 +1,173 @@
+{{/*
+  What has been billed.
+
+  Two halves. Above, what is still to invoice for one customer over a range -
+  the totals and every entry behind them, because the figure on an invoice is
+  the one queried afterwards and seeing the forty rows beforehand is what makes
+  it checkable. Below, what has gone out already, which is the half worth
+  opening on its own: "did we bill March" is asked more often than March is
+  billed.
+
+  Nothing here issues an invoice. This application does not number them and
+  should not pretend to (DESIGN.md §11); the reference field is where the
+  number from the system that does issue them goes.
+*/}}
+{{define "content"}}
+<section class="billing">
+
+  <header class="screen-header">
+    <div class="screen-title"><h1>{{.T "billing.title"}}</h1></div>
+  </header>
+
+  <p class="field-help">{{.T "billing.help"}}</p>
+
+  {{/* Choosing what to look at. A GET, so the result has a URL somebody can
+       send to the person who actually does the invoicing. */}}
+  <form class="filter" method="get" action="/billing">
+    <label>
+      {{.T "billing.customer"}}
+      <select name="customer">
+        <option value="">{{.T "entry.choose"}}</option>
+        {{$chosen := 0}}
+        {{if .BillingCandidates}}{{$chosen = .BillingCandidates.CustomerID}}{{end}}
+        {{range .Customers}}
+          <option value="{{.ID}}" {{if eq .ID $chosen}}selected{{end}}>{{.Name}}</option>
+        {{end}}
+      </select>
+    </label>
+    <label>
+      {{.T "entries.from"}}
+      <input type="date" name="from" value="{{.BillingFrom}}">
+    </label>
+    <label>
+      {{.T "billing.to"}}
+      <input type="date" name="to" value="{{.BillingTo}}">
+    </label>
+    <button type="submit" class="btn btn-quiet">{{.T "billing.show"}}</button>
+  </form>
+
+  {{with .BillingCandidates}}
+    {{if .Entries}}
+      <dl class="totals">
+        <div class="total">
+          <dt>{{$.T "billing.entries"}}</dt>
+          <dd class="total-value">{{len .Entries}}</dd>
+        </div>
+        <div class="total">
+          <dt>{{$.T "totals.billable"}}</dt>
+          <dd class="total-value">{{$.Printer.FormatDuration .BillableSeconds}}</dd>
+        </div>
+        <div class="total">
+          <dt>{{$.T "billing.amount"}}</dt>
+          <dd class="total-value">
+            {{if gt .Currencies 1}}
+              {{$.T "reports.mixed"}}
+            {{else}}
+              {{$.Printer.FormatMoney .AmountMinor .Currency}}
+            {{end}}
+          </dd>
+        </div>
+      </dl>
+
+      {{if gt .Currencies 1}}
+        {{/* Refused rather than summed: adding kronor to euros produces a
+             number that is wrong in a way nobody notices until the invoice is
+             queried. */}}
+        <div class="banner banner-error" role="alert">{{$.T "billing.mixed"}}</div>
+      {{else}}
+        <form method="post" action="/billing" class="entry-form">
+          {{template "csrf" $.CSRFToken}}
+          <input type="hidden" name="customer" value="{{.CustomerID}}">
+          <input type="hidden" name="from" value="{{.StartsOn}}">
+          <input type="hidden" name="to" value="{{.EndsOn}}">
+          <label>
+            {{$.T "billing.reference"}}
+            <input type="text" name="reference" maxlength="60"
+                   placeholder="{{$.T "billing.reference.placeholder"}}">
+          </label>
+          <label>
+            {{$.T "absence.note"}}
+            <input type="text" name="note" maxlength="200">
+          </label>
+          <button type="submit" class="btn btn-primary">{{$.T "billing.record"}}</button>
+        </form>
+      {{end}}
+
+      {{/* What is about to go out, in full. */}}
+      <h2>{{$.T "billing.what"}}</h2>
+      <div class="grid-scroll"><table class="entries">
+        <thead>
+          <tr>
+            <th scope="col">{{$.T "entries.from"}}</th>
+            <th scope="col">{{$.T "entry.assignment"}}</th>
+            <th scope="col">{{$.T "totals.billable"}}</th>
+            <th scope="col">{{$.T "billing.amount"}}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Entries}}
+            <tr>
+              <td class="cell-time">{{$.Printer.FormatDate .StartedAt}}</td>
+              <td class="cell-what">
+                <span class="entry-assignment">{{.AssignmentName}}</span>
+                <span class="entry-path">{{.CustomerName}}{{if .ProjectName}} / {{.ProjectName}}{{end}}</span>
+              </td>
+              <td class="cell-time">{{$.Printer.FormatDuration .BillableSeconds}}</td>
+              <td class="cell-time">{{$.Printer.FormatMoney .AmountMinor .Currency}}</td>
+            </tr>
+          {{end}}
+        </tbody>
+      </table></div>
+    {{else}}
+      <p class="empty">{{$.T "billing.nothing" .CustomerName}}</p>
+    {{end}}
+  {{end}}
+
+  <h2>{{.T "billing.history"}}</h2>
+  {{if .BillingRuns}}
+    <div class="grid-scroll"><table class="entries">
+      <thead>
+        <tr>
+          <th scope="col">{{.T "billing.customer"}}</th>
+          <th scope="col">{{.T "billing.period"}}</th>
+          <th scope="col">{{.T "billing.reference"}}</th>
+          <th scope="col">{{.T "totals.billable"}}</th>
+          <th scope="col">{{.T "billing.amount"}}</th>
+          <th scope="col"><span class="visually-hidden">{{.T "absence.actions"}}</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .BillingRuns}}
+          {{/* A voided run stays on the list. An invoice that went out and was
+               credited is part of the account's history, and the next question
+               after "was this billed" is "what happened to it". */}}
+          <tr class="{{if .Voided}}archived{{end}}">
+            <td>{{.CustomerName}}</td>
+            <td class="cell-time">{{.StartsOn}} – {{.EndsOn}}</td>
+            <td>
+              {{.Reference}}
+              {{if .Voided}}<span class="badge badge-flagged">{{$.T "billing.voided"}}</span>{{end}}
+              {{if .Note}}<span class="entry-path">{{.Note}}</span>{{end}}
+            </td>
+            <td class="cell-time">{{$.Printer.FormatDuration .BillableSeconds}}</td>
+            <td class="cell-time">{{$.Printer.FormatMoney .AmountMinor .Currency}}</td>
+            <td class="cell-actions">
+              {{if not .Voided}}
+                <form method="post" action="/billing/{{.ID}}/void"
+                      hx-post="/billing/{{.ID}}/void"
+                      hx-confirm="{{$.T "billing.void.confirm"}}">
+                  {{template "csrf" $.CSRFToken}}
+                  <button type="submit" class="btn btn-small btn-quiet">{{$.T "billing.void"}}</button>
+                </form>
+              {{end}}
+            </td>
+          </tr>
+        {{end}}
+      </tbody>
+    </table></div>
+  {{else}}
+    <p class="empty">{{.T "billing.history.empty"}}</p>
+  {{end}}
+
+</section>
+{{end}}

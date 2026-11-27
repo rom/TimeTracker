@@ -19,7 +19,7 @@ const entrySelect = `
 	SELECT e.id, e.user_id, e.entered_by, e.assignment_id, e.started_at, e.ended_at,
 	       e.duration_seconds, e.note, e.billable, e.kind, e.status, e.time_zone,
 	       e.rounding_rule_applied, e.billable_seconds, e.rate_minor, e.amount_minor,
-	       e.currency, e.flagged, e.created_at, e.updated_at,
+	       e.currency, e.flagged, e.billing_run_id, e.created_at, e.updated_at,
 	       e.decided_by, e.decided_at, e.decision_note,
 	       a.name, a.colour_key, a.icon, p.name, c.name, u.display_name, eb.display_name,
 	       a.project_id, p.customer_id,
@@ -282,6 +282,14 @@ type EntryFilter struct {
 	CountingOnly bool
 	// BillableOnly restricts to entries marked billable.
 	BillableOnly bool
+	// UnbilledOnly restricts to entries that belong to no billing run, which
+	// is what "still to invoice" means. A separate flag rather than a run id
+	// of zero, so that a caller which does not know about billing cannot ask
+	// for it by accident.
+	UnbilledOnly bool
+	// BillingRunID narrows to the entries of one run, which is how an invoice
+	// is looked at after the fact.
+	BillingRunID int64
 	// Tags narrows to entries carrying all of them. All rather than any: asking
 	// for #incident and #billable-review means entries that are both, which is
 	// what somebody looking for a specific slice expects.
@@ -411,6 +419,13 @@ func (f EntryFilter) buildConditions() (string, []any, SearchMode, error) {
 	}
 	if f.BillableOnly {
 		conditions = append(conditions, `e.billable = 1`)
+	}
+	if f.UnbilledOnly {
+		conditions = append(conditions, `e.billing_run_id = 0`)
+	}
+	if f.BillingRunID != 0 {
+		conditions = append(conditions, `e.billing_run_id = ?`)
+		args = append(args, f.BillingRunID)
 	}
 	// With the owner: a member's own timesheet includes the time they recorded,
 	// including against an assignment on a project they do not belong to -
@@ -690,7 +705,7 @@ func scanEntry(row rowScanner) (domain.TimeEntry, error) {
 	err := row.Scan(&e.ID, &e.UserID, &e.EnteredBy, &e.AssignmentID, &startedAt, &endedAt,
 		&e.DurationSeconds, &e.Note, &billable, &kind, &status, &e.TimeZone,
 		&e.RoundingRuleApplied, &e.BillableSeconds, &e.RateMinor, &e.AmountMinor,
-		&e.Currency, &flagged, &createdAt, &updatedAt,
+		&e.Currency, &flagged, &e.BillingRunID, &createdAt, &updatedAt,
 		&e.DecidedBy, &decidedAt, &e.DecisionNote,
 		&e.AssignmentName, &e.ColourKey, &e.Icon, &e.ProjectName, &e.CustomerName,
 		&e.UserName, &e.EnteredByName,

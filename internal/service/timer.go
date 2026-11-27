@@ -398,6 +398,11 @@ func (s *Service) UpdateEntry(ctx context.Context, entryID int64, in EntryInput)
 	if err := s.canModify(ctx, existing); err != nil {
 		return domain.TimeEntry{}, notFoundFor(err)
 	}
+	// Time that has been invoiced does not change under the invoice. The week
+	// lock below is the same idea one step earlier in the chain.
+	if err := s.checkNotBilled(ctx, existing); err != nil {
+		return domain.TimeEntry{}, err
+	}
 	// Both weeks are checked, because an edit can move an entry between them:
 	// taking an hour out of an approved week is as much a change to it as
 	// editing one inside it.
@@ -473,6 +478,11 @@ func (s *Service) DeleteEntry(ctx context.Context, entryID int64) error {
 	}
 	if err := s.canDelete(ctx, existing); err != nil {
 		return notFoundFor(err)
+	}
+	// Deleting billed time is the sharper half of the same rule: the invoice
+	// would then cover an hour that does not exist.
+	if err := s.checkNotBilled(ctx, existing); err != nil {
+		return err
 	}
 	if err := s.checkPeriodOpen(ctx, existing.UserID, existing.StartedAt); err != nil {
 		return err
