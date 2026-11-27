@@ -218,6 +218,20 @@ type EntryInput struct {
 	EndedAt         *time.Time
 	Note            string
 	Billable        bool
+	// BillableFromAssignment ignores Billable and takes the answer from the
+	// assignment's own default instead.
+	//
+	// A checkbox cannot say "I have no opinion": unticked and never-looked-at
+	// arrive identically. The add form on Today has no assignment chosen when
+	// it is drawn, so whatever it renders is a guess about an assignment the
+	// person has not picked yet - and it guessed "billable" for years, which
+	// put internal time into the Amount column of a client's export. The form
+	// says so now, and the assignment that was actually chosen answers.
+	//
+	// The correction form does not set this: editing an entry is a statement
+	// about that entry, and reverting it to the assignment's default on every
+	// save would be a different feature.
+	BillableFromAssignment bool
 	// Kind is work, overtime or travel. Empty means work, so a caller that does
 	// not know about kinds records ordinary work rather than nothing.
 	Kind domain.EntryKind
@@ -227,6 +241,18 @@ type EntryInput struct {
 	// OnBehalfOf, when set to another user, makes this a proxy proposal that
 	// requires that user's confirmation before it counts.
 	OnBehalfOf int64
+}
+
+// billableFor answers whether this time is chargeable.
+//
+// The assignment is the authority when the caller has not stated one, which is
+// what the timer and quick-add have always done - this only gives the manual
+// form the same answer.
+func billableFor(in EntryInput, assignment domain.Assignment) bool {
+	if in.BillableFromAssignment {
+		return assignment.BillableDefault
+	}
+	return in.Billable
 }
 
 // CreateEntry records time that has already happened.
@@ -305,7 +331,7 @@ func (s *Service) prepareEntry(ctx context.Context, in EntryInput) (domain.TimeE
 		AssignmentID: in.AssignmentID,
 		StartedAt:    in.StartedAt,
 		Note:         in.Note,
-		Billable:     in.Billable,
+		Billable:     billableFor(in, assignment),
 		Kind:         in.Kind,
 		Tags:         in.Tags,
 		Status:       status,
@@ -371,6 +397,11 @@ func (s *Service) UpdateEntry(ctx context.Context, entryID int64, in EntryInput)
 	}
 	if err := s.canModify(ctx, existing); err != nil {
 		return domain.TimeEntry{}, notFoundFor(err)
+	}
+	// Time that has been invoiced does not change under the invoice. The week
+	// lock below is the same idea one step earlier in the chain.
+	if err := s.checkNotBilled(ctx, existing); err != nil {
+		return domain.TimeEntry{}, err
 	}
 	// Both weeks are checked, because an edit can move an entry between them:
 	// taking an hour out of an approved week is as much a change to it as
@@ -447,6 +478,11 @@ func (s *Service) DeleteEntry(ctx context.Context, entryID int64) error {
 	}
 	if err := s.canDelete(ctx, existing); err != nil {
 		return notFoundFor(err)
+	}
+	// Deleting billed time is the sharper half of the same rule: the invoice
+	// would then cover an hour that does not exist.
+	if err := s.checkNotBilled(ctx, existing); err != nil {
+		return err
 	}
 	if err := s.checkPeriodOpen(ctx, existing.UserID, existing.StartedAt); err != nil {
 		return err

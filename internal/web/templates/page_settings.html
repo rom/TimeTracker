@@ -210,6 +210,16 @@
       </label>
       <p class="field-help">{{.T "settings.expectedweek.help"}}</p>
 
+      {{/* A date rather than a switch: the balance has to start somewhere, and
+           naming the day is the same act as turning it on. Empty is the
+           default and shows no balance at all. */}}
+      <label>
+        {{.T "settings.balance"}}
+        <input type="date" name="balance_starts_on"
+               value="{{.Settings.BalanceStartsOn}}">
+      </label>
+      <p class="field-help">{{.T "settings.balance.help"}}</p>
+
       <label>
         {{.T "settings.maxtimer"}}
         <input type="number" name="max_timer_hours" min="1" max="168"

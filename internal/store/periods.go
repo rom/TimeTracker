@@ -230,6 +230,28 @@ func (db *DB) WeekSeconds(ctx context.Context, userID int64, weekStart string) (
 	return total.Int64, nil
 }
 
+// RangeSeconds totals the confirmed, unflagged time a person recorded between
+// two days, the first included and the second excluded.
+//
+// The same counting rule and the same index-friendly comparison as
+// WeekSeconds: whole weeks summed in one query rather than one query a week,
+// because a balance that starts three years ago is a hundred and fifty weeks.
+func (db *DB) RangeSeconds(ctx context.Context, userID int64, from, to string) (int64, error) {
+	var total sql.NullInt64
+	err := db.read.QueryRowContext(ctx, `
+		SELECT SUM(duration_seconds) FROM time_entries
+		WHERE user_id = ?
+		  AND status = 'confirmed'
+		  AND flagged = 0
+		  AND started_at >= ? || 'T00:00:00Z'
+		  AND started_at < ? || 'T00:00:00Z'`,
+		userID, from, to).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("total range: %w", err)
+	}
+	return total.Int64, nil
+}
+
 func collectPeriods(rows *sql.Rows) ([]domain.TimesheetPeriod, error) {
 	defer func() { _ = rows.Close() }()
 

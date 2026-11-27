@@ -230,6 +230,33 @@ func TestEveryServiceMethodReportsADeadDatabase(t *testing.T) {
 			_, err := svc.ParseCalendar(ctx, strings.NewReader(oneEventCalendar), f.assignment.ID)
 			return err
 		},
+		"ParseCalendarAsAbsence": func() error {
+			_, err := svc.ParseCalendarAsAbsence(ctx,
+				strings.NewReader(oneHolidayCalendar), domain.AbsenceHoliday)
+			return err
+		},
+		"ImportCalendarAsAbsence": func() error {
+			_, err := svc.ImportCalendarAsAbsence(ctx,
+				strings.NewReader(oneHolidayCalendar), domain.AbsenceHoliday,
+				map[string]bool{"holiday": true})
+			return err
+		},
+		"BillingCandidatesFor": func() error {
+			_, err := svc.BillingCandidatesFor(ctx, f.customerID, f.now.AddDate(0, 0, -7), f.now)
+			return err
+		},
+		"RecordBillingRun": func() error {
+			_, err := svc.RecordBillingRun(ctx, BillingInput{
+				CustomerID: f.customerID,
+				StartsOn:   f.now.AddDate(0, 0, -7).Format("2006-01-02"),
+				EndsOn:     f.now.Format("2006-01-02"),
+			})
+			return err
+		},
+		"VoidBillingRun":    func() error { return svc.VoidBillingRun(ctx, 1) },
+		"BillingRuns":       func() error { _, err := svc.BillingRuns(ctx, 0, 20); return err },
+		"BillingRun":        func() error { _, _, err := svc.BillingRun(ctx, 1); return err },
+		"BillingRunSummary": func() error { _, err := svc.BillingRunSummary(ctx, 1); return err },
 		"ParseQuickAdd":     func() error { _, err := svc.ParseQuickAdd(ctx, "2h Development"); return err },
 		"ParseTimeCSV":      func() error { _, err := svc.ParseTimeCSV(ctx, strings.NewReader(oneRowCSV), false); return err },
 		"PendingCount":      func() error { _, err := svc.PendingCount(ctx); return err },
@@ -332,7 +359,13 @@ func TestEveryServiceMethodReportsADeadDatabase(t *testing.T) {
 			return err
 		},
 		"DeleteAbsence": func() error { return svc.DeleteAbsence(ctx, 1) },
-		"SettingsFor":   func() error { _, err := svc.SettingsFor(ctx); return err },
+		"UpdateAbsence": func() error {
+			_, err := svc.UpdateAbsence(ctx, 1, AbsenceInput{
+				Kind: domain.AbsenceHoliday, StartsOn: "2026-03-16", EndsOn: "2026-03-17",
+			})
+			return err
+		},
+		"SettingsFor": func() error { _, err := svc.SettingsFor(ctx); return err },
 		"UpdatePresentation": func() error {
 			return svc.UpdatePresentation(ctx, PresentationInput{
 				ClockFormat: "24h", DayStartHour: -1, DayEndHour: -1,
@@ -426,6 +459,8 @@ func TestEveryServiceMethodReportsADeadDatabase(t *testing.T) {
 		// Each asks the authoriser and returns a bool: there is no error to
 		// report, which is the point of them - a template cannot handle one.
 		"MayManageCatalogue": true, "MayAdministerInstance": true,
+		// Asks the authoriser and nothing else, like the two beside it.
+		"MayBillAnything":  true,
 		"PendingApprovals": true, "ApprovedPeriods": true,
 	}
 	serviceType := reflect.TypeOf(svc)
@@ -453,6 +488,11 @@ func TestEveryServiceMethodReportsADeadDatabase(t *testing.T) {
 const oneEventCalendar = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n" +
 	"BEGIN:VEVENT\r\nUID:one\r\nDTSTART:20260316T090000Z\r\nDTEND:20260316T100000Z\r\n" +
 	"SUMMARY:Planning\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+
+// An all-day event, which is what a public holiday feed is made of.
+const oneHolidayCalendar = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n" +
+	"BEGIN:VEVENT\r\nUID:holiday\r\nDTSTART;VALUE=DATE:20261225\r\n" +
+	"DTEND;VALUE=DATE:20261226\r\nSUMMARY:Christmas Day\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
 
 const oneRowCSV = "date,hours,assignment\n2026-03-16,1.5,Development\n"
 

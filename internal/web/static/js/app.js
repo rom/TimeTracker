@@ -459,6 +459,57 @@
     }
   }
 
+  /* ------------------------------------------------- billable default ---- */
+
+  /*
+   * Show what the chosen assignment says about billing, and get out of the way
+   * once the person has an opinion.
+   *
+   * The server decides this with or without the script: a form that still
+   * carries billable_source="assignment" has not been spoken for, and the
+   * assignment's own default answers. What the script adds is sight of the
+   * answer before the entry is saved, which is the difference between a
+   * default and a surprise.
+   */
+  function initBillableDefault() {
+    var forms = document.querySelectorAll(
+      'form input[name="billable_source"][value="assignment"]'
+    );
+
+    Array.prototype.forEach.call(forms, function (marker) {
+      var form = marker.form;
+      if (!form) {
+        return;
+      }
+      var picker = form.querySelector('select[name="assignment_id"]');
+      var box = form.querySelector("[data-billable-box]");
+      if (!picker || !box) {
+        return;
+      }
+
+      function follow() {
+        if (marker.value !== "assignment") {
+          return;
+        }
+        var chosen = picker.options[picker.selectedIndex];
+        /* No assignment chosen yet: nothing to follow, and an unticked box is
+           the honest picture of "not decided". */
+        box.checked = !!chosen && chosen.getAttribute("data-billable") === "1";
+      }
+
+      picker.addEventListener("change", follow);
+
+      /* The person touching the box is the whole point of the marker: from
+         here the form states a value and the assignment stops speaking for
+         it, including if they pick a different assignment afterwards. */
+      box.addEventListener("change", function () {
+        marker.value = "person";
+      });
+
+      follow();
+    });
+  }
+
   /* --------------------------------------------------------- shortcuts ---- */
 
   /*
@@ -915,6 +966,7 @@
       ["forms", initAjaxForms],
       ["paste", initPaste],
       ["help", initHelp],
+      ["billable default", initBillableDefault],
       ["shortcuts", initShortcuts],
       ["timeline", initTimeline],
       ["idle watch", initIdleWatch],

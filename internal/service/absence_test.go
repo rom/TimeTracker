@@ -322,3 +322,120 @@ func TestAColleaguesAbsenceIsNotEverybodysToRemove(t *testing.T) {
 		t.Error("somebody else's holiday was removed by a colleague with no claim on it")
 	}
 }
+
+// Correcting one that is already recorded.
+//
+// The case this exists for is a sick day that turned into three. Until there
+// was an edit, saying so meant deleting the record and typing it again: two
+// actions for one correction, and the original gone.
+func TestAnAbsenceCanBeCorrected(t *testing.T) {
+	f := newFixture(t)
+
+	absence, err := f.svc.RecordAbsence(f.ctx, AbsenceInput{
+		Kind:     domain.AbsenceSick,
+		StartsOn: "2026-03-16",
+		EndsOn:   "2026-03-16",
+		Note:     "Flu",
+	})
+	if err != nil {
+		t.Fatalf("record: %v", err)
+	}
+
+	updated, err := f.svc.UpdateAbsence(f.ctx, absence.ID, AbsenceInput{
+		Kind:     domain.AbsenceSick,
+		StartsOn: "2026-03-16",
+		EndsOn:   "2026-03-18",
+		Note:     "Flu, and it kept going",
+	})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if updated.EndsOn != "2026-03-18" {
+		t.Errorf("ends on %q, want 2026-03-18", updated.EndsOn)
+	}
+
+	// And it is one record afterwards, not two.
+	stored, err := f.svc.Absences(f.ctx,
+		time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(stored) != 1 {
+		t.Fatalf("%d absences recorded, want 1: a correction is not a second record", len(stored))
+	}
+	if stored[0].Note != "Flu, and it kept going" {
+		t.Errorf("note is %q, so the correction did not land", stored[0].Note)
+	}
+
+	// The whole point: the longer absence now covers the extra days.
+	days, err := f.svc.absentDaysFor(f.ctx, f.user.ID,
+		time.Date(2026, 3, 16, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, 3, 20, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("absent days: %v", err)
+	}
+	for _, day := range []string{"2026-03-16", "2026-03-17", "2026-03-18"} {
+		if _, away := days[day]; !away {
+			t.Errorf("%s is not covered after the correction", day)
+		}
+	}
+}
+
+// A correction may not move a record across the line between a person's own
+// leave and the instance's day off. The two answer to different permissions,
+// so a form that could do it quietly would be a way around the one that
+// refuses.
+func TestACorrectionCannotTurnLeaveIntoAPublicHoliday(t *testing.T) {
+	f := newFixture(t)
+
+	mine, err := f.svc.RecordAbsence(f.ctx, AbsenceInput{
+		Kind: domain.AbsenceHoliday, StartsOn: "2026-03-16", EndsOn: "2026-03-16",
+	})
+	if err != nil {
+		t.Fatalf("record: %v", err)
+	}
+
+	_, err = f.svc.UpdateAbsence(f.ctx, mine.ID, AbsenceInput{
+		Kind: domain.AbsencePublic, StartsOn: "2026-03-16", EndsOn: "2026-03-16",
+	})
+	if !errors.Is(err, ErrValidation) {
+		t.Errorf("turning a holiday into everybody's day off returned %v, "+
+			"want a refusal: the two are different records", err)
+	}
+}
+
+// Changing somebody else's leave is the same power as deleting it, and is
+// bounded the same way. This is the defect that was found in DeleteAbsence
+// written again for the edit, because an edit that was not bounded would be
+// the same hole with a different verb.
+func TestAColleaguesAbsenceIsNotEverybodysToCorrect(t *testing.T) {
+	f := newFixture(t)
+
+	absence, err := f.svc.RecordAbsence(f.ctx, AbsenceInput{
+		Kind:     domain.AbsenceHoliday,
+		StartsOn: f.now.Format("2006-01-02"),
+		EndsOn:   f.now.Format("2006-01-02"),
+	})
+	if err != nil {
+		t.Fatalf("record: %v", err)
+	}
+
+	stranger, err := f.db.CreateUser(f.ctx, domain.User{
+		DisplayName: "Stranger", Role: domain.RoleMember,
+		TimeZone: "UTC", Theme: "light", Active: true,
+	})
+	if err != nil {
+		t.Fatalf("create stranger: %v", err)
+	}
+
+	office, _ := officeContext(t, f)
+	if _, err := office.UpdateAbsence(auth.WithUser(f.ctx, stranger), absence.ID,
+		AbsenceInput{
+			Kind:     domain.AbsenceHoliday,
+			StartsOn: f.now.Format("2006-01-02"),
+			EndsOn:   f.now.AddDate(0, 0, 14).Format("2006-01-02"),
+		}); err == nil {
+		t.Error("a colleague with no claim on this person extended their holiday")
+	}
+}

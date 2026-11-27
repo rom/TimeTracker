@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/rom/timetracker/internal/domain"
 
@@ -66,6 +67,7 @@ func (s *Server) handleUpdatePreferences(w http.ResponseWriter, r *http.Request)
 		// Blank means "follow the instance", which is -1 rather than 0: zero
 		// is a legitimate choice meaning "do not compare my week to anything".
 		ExpectedWeeklyMinutes: minutesFromDuration(r.FormValue("expected_week"), -1),
+		BalanceStartsOn:       balanceDate(r.FormValue("balance_starts_on")),
 	})
 	if err != nil {
 		s.fail(w, r, err)
@@ -97,4 +99,21 @@ func minutesFromDuration(value string, unset int) int {
 		return unset
 	}
 	return int(seconds / 60)
+}
+
+// balanceDate reads the day a running balance starts counting.
+//
+// Anything that is not a date becomes empty, which turns the balance off
+// rather than counting from the year one - the failure a zero time would
+// produce silently. A browser's date input cannot submit anything else, but a
+// form is not only ever submitted by a browser.
+func balanceDate(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if _, err := time.Parse("2006-01-02", value); err != nil {
+		return ""
+	}
+	return value
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/rom/timetracker/internal/auth"
 	"github.com/rom/timetracker/internal/domain"
@@ -60,7 +61,12 @@ type SettingsInput struct {
 	// the importers' settings - would quietly start refusing weekends.
 	// ExpectedWeeklyMinutes is a full working week; negative leaves it as it
 	// was, and zero turns the comparison off.
-	ExpectedWeeklyMinutes    int
+	ExpectedWeeklyMinutes int
+	// BalanceStartsOn is the day the running over-or-under begins counting, as
+	// an ISO date. Empty shows no balance at all, which is both the default
+	// and how it is turned off again: naming the day is the same act as
+	// turning it on.
+	BalanceStartsOn          string
 	WeekendRecordingDisabled bool
 	// WeekendColour is a palette key for the day numbers of a weekend.
 	WeekendColour string
@@ -154,6 +160,13 @@ func (s *Service) UpdateSettings(ctx context.Context, in SettingsInput) error {
 	// screen honest about what is in force.
 	// Negative means the form did not say, which leaves the instance's figure
 	// alone; zero is a deliberate "do not compare" and is kept.
+	// A date the application cannot read is no date, which turns the balance
+	// off rather than counting from the year one.
+	balanceStart := ""
+	if _, err := time.Parse("2006-01-02", in.BalanceStartsOn); err == nil {
+		balanceStart = in.BalanceStartsOn
+	}
+
 	expectedWeek := existing.ExpectedWeeklyMinutes
 	if in.ExpectedWeeklyMinutes >= 0 && in.ExpectedWeeklyMinutes <= 7*24*60 {
 		expectedWeek = in.ExpectedWeeklyMinutes
@@ -191,6 +204,7 @@ func (s *Service) UpdateSettings(ctx context.Context, in SettingsInput) error {
 		DayEndHour:            window.EndHour,
 		DayOverflow:           string(domain.DayOverflow(in.DayOverflow).OrDefault()),
 		ExpectedWeeklyMinutes: expectedWeek,
+		BalanceStartsOn:       balanceStart,
 		WeekendRecording:      !in.WeekendRecordingDisabled,
 		WeekendColour:         weekendColour,
 		BackupPassword:        backupPassword,

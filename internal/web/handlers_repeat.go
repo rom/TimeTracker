@@ -173,6 +173,19 @@ func (s *Server) handleSaveRoutine(w http.ResponseWriter, r *http.Request) {
 		Active:          r.FormValue("active") != "",
 		SortOrder:       int(int64Param(r.FormValue("sort_order"))),
 	}
+	// A new routine follows its assignment the way a new entry does; an
+	// existing one states its own value, which is what the form shows. The
+	// marker is only in the form that creates one, so an edit never silently
+	// reverts a routine somebody deliberately made non-billable.
+	if r.FormValue("billable_source") == "assignment" {
+		assignment, err := s.svc.Assignment(r.Context(), routine.AssignmentID)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		routine.Billable = assignment.BillableDefault
+	}
+
 	if err := s.svc.SaveRoutine(r.Context(), routine); err != nil {
 		s.fail(w, r, err)
 		return

@@ -113,6 +113,14 @@ func (p *Printer) FormatDuration(seconds int64) string {
 	if seconds < 0 {
 		return "−" + p.FormatDuration(-seconds)
 	}
+	// Zero is written in the units of the column it sits in. "0s" is true and
+	// unreadable: in a Billable column whose other rows say "52h 30m" it reads
+	// like a stopwatch somebody left running, and the eye has to stop and
+	// convert. Seconds are for a duration that genuinely is seconds - a timer
+	// a moment after it was started - and nothing is not.
+	if seconds == 0 {
+		return fmt.Sprintf("0%s 00%s", p.T("unit.hours"), p.T("unit.minutes"))
+	}
 	if seconds < 60 {
 		return fmt.Sprintf("%d%s", seconds, p.T("unit.seconds"))
 	}

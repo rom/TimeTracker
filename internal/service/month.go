@@ -54,6 +54,19 @@ type MonthView struct {
 	// BusiestDay is the day with the most time on it, and the zero time when the
 	// month is empty.
 	BusiestDay time.Time
+	// ExpectedSeconds is what a full month asks for: the week's figure spread
+	// over the month's working days. Zero where the instance has turned the
+	// comparison off. The week view has had this since expected hours were
+	// added; the month is where somebody actually asks it, because a month is
+	// the unit a timesheet is reconciled in.
+	ExpectedSeconds int64
+	// AbsentSeconds is the share of that which recorded absence accounts for,
+	// and AbsentDays how many working days produced it.
+	AbsentSeconds int64
+	AbsentDays    int
+	// Balance is the running over-or-under before this month's first whole
+	// week, on the same terms as the week view's.
+	Balance Balance
 }
 
 // MonthWeek is one row of the calendar.
@@ -239,6 +252,36 @@ func (s *Service) Month(ctx context.Context, date time.Time) (MonthView, error) 
 		}
 		return view.ByAssignment[a].Assignment.Label() < view.ByAssignment[b].Assignment.Label()
 	})
+
+	// What the month asked for, and what absence covers of it.
+	//
+	// Spread over the month's working days rather than stored per month: a
+	// forty-hour week is eight hours a working day, and February and March
+	// differ by four of them. The same arithmetic as the week view's, over a
+	// different number of days.
+	expectedWeek := int64(expectedMinutesFor(settings, actor)) * 60
+	if expectedWeek > 0 {
+		away, awayErr := s.absentDaysFor(ctx, actor.ID, start, end.AddDate(0, 0, -1))
+		if awayErr != nil {
+			return MonthView{}, awayErr
+		}
+		const workingDaysInWeek = 5
+		perDay := expectedWeek / workingDaysInWeek
+		for day := start; day.Before(end); day = day.AddDate(0, 0, 1) {
+			if domain.IsWeekend(day) {
+				continue
+			}
+			view.ExpectedSeconds += perDay
+			if _, off := away[day.Format("2006-01-02")]; off {
+				view.AbsentSeconds += perDay
+				view.AbsentDays++
+			}
+		}
+	}
+
+	if view.Balance, err = s.balanceWith(ctx, settings, actor, start); err != nil {
+		return MonthView{}, err
+	}
 
 	return view, nil
 }

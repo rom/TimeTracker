@@ -230,6 +230,18 @@ func (s *Service) MayAdministerInstance(ctx context.Context) bool {
 	return s.authz.Can(ctx, auth.ActionManage, auth.Resource{Type: "settings"}) == nil
 }
 
+// MayBillAnything reports whether the actor may record what has been billed.
+//
+// The same question the billing screen's own guard asks, with no customer
+// named: "may this person bill at all" rather than "may they bill this one".
+// It exists so the navigation can offer the screen exactly when it works - a
+// member who followed the link got a 404, which the role sweep over the
+// rendered navigation caught, and which is the right answer to the request and
+// the wrong thing to have offered.
+func (s *Service) MayBillAnything(ctx context.Context) bool {
+	return s.authz.Can(ctx, auth.ActionManage, auth.Resource{Type: "customer"}) == nil
+}
+
 // maySeeMoney reports whether the actor may read commercial figures.
 //
 // Asked of the authoriser rather than written as a role test, because the

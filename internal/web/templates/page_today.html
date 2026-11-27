@@ -309,8 +309,17 @@
       <select name="kind" aria-label="{{.T "entry.kind"}}">
         {{range entryKinds}}<option value="{{.}}">{{$.T .MessageKey}}</option>{{end}}
       </select>
+      {{/* Billable follows the assignment until the person says otherwise.
+           This box was ticked unconditionally, which meant time recorded
+           against a deliberately non-billable assignment arrived chargeable
+           and reached a client's export that way. The hidden field says the
+           form has not been spoken for; the script clears it the moment
+           somebody touches the box, and with no script the assignment's own
+           default decides, which is what the timer and quick-add have always
+           done. */}}
+      <input type="hidden" name="billable_source" value="assignment">
       <label class="inline-check">
-        <input type="checkbox" name="billable" checked> {{.T "entry.billable"}}
+        <input type="checkbox" name="billable" data-billable-box> {{.T "entry.billable"}}
       </label>
       <button type="submit" class="btn btn-primary">{{.T "entry.add"}}</button>
     </form>

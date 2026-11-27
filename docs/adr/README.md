@@ -64,6 +64,7 @@ Statuses: `proposed` → `accepted` → `superseded by ADR-NNNN` | `deprecated`.
 | [0036](0036-the-weekend-is-a-policy-not-a-lock.md) | The weekend is a policy about arrival, not a lock on what is there | accepted | 2026-11-26 | ASR-020 |
 | [0037](0037-deletion-is-recoverable.md) | A deletion is recoverable, not merely recorded | accepted | 2026-11-27 | ASR-010, ASR-020 |
 | [0038](0038-absence-is-its-own-record.md) | Absence is its own record, not a kind of time | accepted | 2026-11-27 | ASR-020, ASR-027 |
+| [0039](0039-billing-is-a-run.md) | Billing is a run, not a flag | accepted | 2026-11-27 | ASR-014, ASR-021 |
 
 ## Writing a new one
 

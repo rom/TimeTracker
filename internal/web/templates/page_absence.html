@@ -9,34 +9,58 @@
 
   <p class="field-help">{{.T "absence.help"}}</p>
 
-  {{/* One day is the common case, so the second date may be left blank and
+  {{/* One form, two jobs: recording a day away and correcting one already
+       recorded. The same five fields either way, so a second template would be
+       the same thing twice and one of them would drift.
+
+       One day is the common case, so the second date may be left blank and
        means the same day. A public holiday is offered only to somebody who may
-       administer the instance: it is everybody's day off, not theirs. */}}
-  <form class="entry-form" method="post" action="/absence">
+       administer the instance: it is everybody's day off, not theirs.
+
+       A correction cannot change which of those two a record is - the service
+       refuses it, because the two answer to different permissions - so while
+       editing, the kind offered is the kind it already is, among its own
+       sort. */}}
+  {{$editing := .EditingAbsence}}
+  <form class="entry-form" method="post"
+        action="{{if $editing}}/absence/{{$editing.ID}}{{else}}/absence{{end}}">
     {{template "csrf" .CSRFToken}}
     <label>
       {{.T "absence.kind"}}
       <select name="kind">
         {{range .AbsenceKinds}}
+          {{/* While editing, only the kinds on the same side of the line. */}}
           {{if or (not .Everybodys) $.CanAdminister}}
-            <option value="{{.}}">{{$.T .MessageKey}}</option>
+            {{if or (not $editing) (eq .Everybodys $editing.Kind.Everybodys)}}
+              <option value="{{.}}"
+                {{if $editing}}{{if eq (printf "%s" .) (printf "%s" $editing.Kind)}}selected{{end}}{{end}}>{{$.T .MessageKey}}</option>
+            {{end}}
           {{end}}
         {{end}}
       </select>
     </label>
     <label>
       {{.T "absence.from"}}
-      <input type="date" name="starts_on" required>
+      <input type="date" name="starts_on" required
+             value="{{if $editing}}{{$editing.StartsOn}}{{end}}">
     </label>
     <label>
       {{.T "absence.to"}}
-      <input type="date" name="ends_on">
+      <input type="date" name="ends_on"
+             value="{{if $editing}}{{$editing.EndsOn}}{{end}}">
     </label>
     <label>
       {{.T "absence.note"}}
-      <input type="text" name="note" maxlength="200">
+      <input type="text" name="note" maxlength="200"
+             value="{{if $editing}}{{$editing.Note}}{{end}}">
     </label>
-    <button type="submit" class="btn btn-primary">{{.T "absence.record"}}</button>
+    <button type="submit" class="btn btn-primary">
+      {{if $editing}}{{.T "action.save"}}{{else}}{{.T "absence.record"}}{{end}}
+    </button>
+    {{if $editing}}
+      {{/* A way out that does not require guessing which link goes back. */}}
+      <a class="btn btn-quiet" href="/absence">{{.T "action.cancel"}}</a>
+    {{end}}
   </form>
 
   {{if .Absences}}
@@ -47,12 +71,14 @@
             <th scope="col">{{.T "absence.kind"}}</th>
             <th scope="col">{{.T "absence.days"}}</th>
             <th scope="col">{{.T "absence.note"}}</th>
-            <th scope="col"><span class="visually-hidden">{{.T "action.delete"}}</span></th>
+            <th scope="col"><span class="visually-hidden">{{.T "absence.actions"}}</span></th>
           </tr>
         </thead>
         <tbody>
           {{range .Absences}}
-            <tr>
+            {{/* The row the form above is correcting, so the answer to "which
+                 one am I changing" is on the screen rather than in the URL. */}}
+            <tr {{if $editing}}{{if eq .ID $editing.ID}}class="is-editing"{{end}}{{end}}>
               <td>
                 {{$.T .Kind.MessageKey}}
                 {{/* A public holiday is the instance's, and saying so is what
@@ -66,6 +92,11 @@
               </td>
               <td>{{.Note}}</td>
               <td class="cell-actions">
+                {{/* Correcting rather than deleting and retyping: a sick day
+                     that turned into three is one record with a later end,
+                     not two records. */}}
+                <a class="btn btn-small btn-quiet"
+                   href="/absence/{{.ID}}/edit">{{$.T "action.edit"}}</a>
                 <form method="post" action="/absence/{{.ID}}/delete"
                       hx-post="/absence/{{.ID}}/delete"
                       hx-confirm="{{$.T "absence.delete.confirm"}}">

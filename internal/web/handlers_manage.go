@@ -334,6 +334,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		// a form that omits the box entirely leaves weekends recordable rather
 		// than silently forbidding them.
 		ExpectedWeeklyMinutes:    minutesFromDuration(r.FormValue("expected_week"), -1),
+		BalanceStartsOn:          balanceDate(r.FormValue("balance_starts_on")),
 		WeekendRecordingDisabled: r.FormValue("weekend_recording") == "",
 		WeekendColour:            r.FormValue("weekend_colour"),
 

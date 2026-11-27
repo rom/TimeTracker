@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/rom/timetracker/internal/domain"
 )
 
 // Importing a calendar.
@@ -30,6 +32,7 @@ func (s *Server) handleCalendarForm(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	data.AbsenceKinds = domain.AbsenceKinds
 	s.render(w, r, "page_calendar.html", data)
 }
 
@@ -51,6 +54,31 @@ func (s *Server) handleCalendarPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	data.AbsenceKinds = domain.AbsenceKinds
+	data.CalendarTarget = r.FormValue("target")
+	data.CalendarKind = r.FormValue("absence_kind")
+
+	// The file travels back with the form, so committing does not need it
+	// uploaded twice. It is the same trade the CSV import declines to make -
+	// there, the file can be large; a calendar export is small, and asking
+	// somebody to find the file again after reviewing forty meetings is worse.
+	data.CalendarFile = string(body)
+
+	// The same file, read two ways. A calendar read as a timesheet and a
+	// calendar read as a leave register disagree about every event in it, so
+	// they are two previews rather than one with a column that changes.
+	if data.CalendarTarget == calendarAsAbsence {
+		preview, err := s.svc.ParseCalendarAsAbsence(r.Context(),
+			bytes.NewReader(body), domain.AbsenceKind(data.CalendarKind))
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		data.HolidayPreview = &preview
+		s.render(w, r, "page_calendar.html", data)
+		return
+	}
+
 	preview, err := s.svc.ParseCalendar(r.Context(), bytes.NewReader(body),
 		int64Param(r.FormValue("default_assignment")))
 	if err != nil {
@@ -58,19 +86,22 @@ func (s *Server) handleCalendarPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data.CalendarPreview = &preview
-	// The file travels back with the form, so committing does not need it
-	// uploaded twice. It is the same trade the CSV import declines to make -
-	// there, the file can be large; a calendar export is small, and asking
-	// somebody to find the file again after reviewing forty meetings is worse.
-	data.CalendarFile = string(body)
 
 	s.render(w, r, "page_calendar.html", data)
 }
+
+// calendarAsAbsence is the target that reads a file as days away.
+const calendarAsAbsence = "absence"
 
 // handleCalendarImport writes the events the user ticked.
 func (s *Server) handleCalendarImport(w http.ResponseWriter, r *http.Request) {
 	if err := parseForm(r); err != nil {
 		s.fail(w, r, err)
+		return
+	}
+
+	if r.FormValue("target") == calendarAsAbsence {
+		s.importCalendarAsAbsence(w, r)
 		return
 	}
 
@@ -103,6 +134,39 @@ func (s *Server) handleCalendarImport(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	s.render(w, r, "page_calendar.html", data)
+}
+
+// importCalendarAsAbsence records the all-day events the user ticked.
+//
+// No assignment to choose here, so the form carries checkboxes alone and the
+// kind is one choice for the whole file.
+func (s *Server) importCalendarAsAbsence(w http.ResponseWriter, r *http.Request) {
+	selected := map[string]bool{}
+	for _, uid := range r.Form["event"] {
+		selected[uid] = true
+	}
+	if len(selected) == 0 {
+		s.fail(w, r, domainValidation("nothing was selected to import"))
+		return
+	}
+
+	result, err := s.svc.ImportCalendarAsAbsence(r.Context(),
+		strings.NewReader(r.FormValue("calendar")),
+		domain.AbsenceKind(r.FormValue("absence_kind")), selected)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	data, err := s.newPageData(r, "", "entries")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	data.Title = data.Printer.T("calendar.title")
+	data.AbsenceKinds = domain.AbsenceKinds
+	data.HolidayResult = &result
 	s.render(w, r, "page_calendar.html", data)
 }
 

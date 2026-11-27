@@ -61,6 +61,10 @@ type pageData struct {
 	// the kinds its form offers.
 	Absences     []domain.Absence
 	AbsenceKinds []domain.AbsenceKind
+	// EditingAbsence is the record the form at the top of the leave screen is
+	// correcting, if it is correcting one. Nil means the form records a new
+	// one, which is what it does nearly all of the time.
+	EditingAbsence *domain.Absence
 	// InstanceDefaults are the instance's settings before this person's own
 	// choices are overlaid, so the preferences screen can say what each
 	// "follow the instance" option actually follows.
@@ -177,11 +181,34 @@ type pageData struct {
 	ImportPreview       *service.ImportPreview
 	ImportCreateMissing bool
 
+	// Billing. BillingCandidates is what a run would cover if it were made
+	// now, and is nil until a customer has been chosen; BillingRuns is what
+	// has been billed already, which is the half of the screen worth opening
+	// on its own.
+	BillingCandidates *service.BillingCandidates
+	BillingRuns       []domain.BillingRun
+	BillingFrom       string
+	BillingTo         string
+
 	// Calendar import. CalendarFile carries the uploaded text back to the
 	// commit step so the file does not have to be found twice.
 	CalendarPreview *service.CalendarPreview
 	CalendarFile    string
 	CalendarResult  *service.CalendarImportResult
+	// The same screen reading the same file as leave rather than as time. A
+	// national holiday calendar is published as an .ics feed by every country
+	// that has one, and all-day events are precisely what the time import
+	// throws away.
+	HolidayPreview *service.HolidayPreview
+	HolidayResult  *service.HolidayImportResult
+	// CalendarTarget is "absence" when the file is being read as days away,
+	// and empty when it is being read as time. It travels with the form so the
+	// second step knows what the first one showed.
+	CalendarTarget string
+	// CalendarKind is the kind of absence chosen for the whole file. A
+	// calendar of public holidays is all public holidays; a mixed file is not
+	// a thing people have.
+	CalendarKind string
 
 	// Backup and restore.
 	Backups        []service.BackupFile
@@ -226,6 +253,10 @@ type pageData struct {
 	// the customers and projects they are a member of, and the instance is the
 	// administrator's - so the two cannot be one flag.
 	CanAdminister bool
+	// CanBill hides the billing screen from somebody who administers no
+	// customer. A member may record time against a customer and may not
+	// invoice one, so the link would be a 404 with a label on it.
+	CanBill bool
 }
 
 // T translates a key in the page's language. Templates call it directly, which
@@ -349,6 +380,7 @@ func (s *Server) newPageData(r *http.Request, title, active string) (pageData, e
 		IsClient:        user.Role == domain.RoleClient,
 		CanManage:       s.svc.MayManageCatalogue(r.Context()),
 		CanAdminister:   s.svc.MayAdministerInstance(r.Context()),
+		CanBill:         s.svc.MayBillAnything(r.Context()),
 		Zone:            userLocation(r),
 	}, nil
 }
@@ -967,9 +999,14 @@ func (s *Server) entryInputFromForm(r *http.Request) (service.EntryInput, error)
 		AssignmentID: int64Param(r.FormValue("assignment_id")),
 		Note:         r.FormValue("note"),
 		Billable:     r.FormValue("billable") != "",
-		Kind:         kind,
-		Tags:         domain.ParseTagList(r.FormValue("tags")),
-		OnBehalfOf:   int64Param(r.FormValue("on_behalf_of")),
+		// Whether the person said anything about it. The add form is drawn
+		// before an assignment is chosen, so its checkbox is a guess until the
+		// person touches it; the correction form sends nothing here and keeps
+		// stating a value, as editing an entry should.
+		BillableFromAssignment: r.FormValue("billable_source") == "assignment",
+		Kind:                   kind,
+		Tags:                   domain.ParseTagList(r.FormValue("tags")),
+		OnBehalfOf:             int64Param(r.FormValue("on_behalf_of")),
 	}
 
 	// The date and start time are entered in the user's local zone; they become
