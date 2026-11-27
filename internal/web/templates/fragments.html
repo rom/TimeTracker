@@ -183,7 +183,32 @@
            every billable row of a Swedish instance with a currency that
            instance has never used. U+00A4 is the sign that exists precisely to
            mean "money, unspecified", which is what the column is saying. */}}
-      {{if $e.Billable}}<span aria-hidden="true">¤</span><span class="visually-hidden">{{$page.T "entry.billable"}}</span>{{end}}
+      {{if $e.Billable}}
+        {{/* What the hour is worth, where the reader may see it. The snapshot
+             is written when the entry is billed and frozen there (ADR-0014),
+             and until now it reached no screen at all: the most carefully
+             computed number in the application was invisible everywhere
+             except an export. A reader who may not see money has had it
+             removed from the record before it got here, so this prints what
+             is present rather than deciding who may look. */}}
+        {{if $e.Currency}}
+          <span class="cell-amount">{{$page.Printer.FormatMoney $e.AmountMinor $e.Currency}}</span>
+        {{else}}
+          <span aria-hidden="true">¤</span><span class="visually-hidden">{{$page.T "entry.billable"}}</span>
+        {{end}}
+        {{/* And what rounding did to it, shown only when it did something.
+             An hour and seven minutes billed as an hour and a quarter is the
+             figure a client queries, and the rule that produced it was stored
+             on the entry precisely so the question could be answered - then
+             never displayed. */}}
+        {{if ne $e.BillableSeconds $e.DurationSeconds}}
+          {{$rule := roundingLabel $e.RoundingRuleApplied}}
+          <span class="cell-rounded"
+                title="{{if $rule}}{{$page.T "entry.rounded.rule" ($page.Printer.FormatDuration $e.BillableSeconds) ($page.T $rule)}}{{else}}{{$page.T "entry.rounded" ($page.Printer.FormatDuration $e.BillableSeconds)}}{{end}}">
+            {{$page.Printer.FormatDuration $e.BillableSeconds}}
+          </span>
+        {{end}}
+      {{end}}
     </td>
     <td class="cell-actions">
       {{if gt $e.AttachmentCount 0}}

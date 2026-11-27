@@ -186,6 +186,14 @@ the decision.
   grids have honoured it, but it was labelled only "first day of the week" -
   which leaves somebody to work out for themselves that Monday ends the week
   with the weekend and Saturday starts it with one. It now says so.
+* **An entry says what it is worth, and what rounding did to it.** Every entry
+  has carried a frozen billing snapshot since the money work, and none of it
+  reached a screen: the most carefully computed number in the application was
+  visible only in an export. The amount now appears on the entry, and where
+  rounding moved the figure the billed duration appears beside it with the rule
+  that produced it - an hour and seven minutes billed as an hour and a quarter
+  is the figure a client queries, and the rule was stored on the entry
+  precisely so that question could be answered.
 * **Changing many entries at once.** Tick rows on the entries screen and move
   them to another assignment, add or remove a tag, or delete them. Re-tagging a
   week of misfiled time was thirty round trips through a correction form. Every
@@ -275,6 +283,28 @@ the decision.
 
 ### Fixed
 
+* **A member was sent the billing snapshot on every entry they read.** The
+  rate, the amount, the currency and the rounding rule are frozen onto each
+  entry when it is billed ([ADR-0014](adr/0014-exact-money-and-duration.md)),
+  which makes them the most commercially sensitive thing an entry carries, and
+  they left the service on every read. Nothing had gone wrong on screen,
+  because no template printed them - the only thing between somebody who may
+  not see money and the rate their colleague's hour is sold at was a page that
+  had never been asked to show it. They are removed in the service now, as the
+  client projection's fields already were, which is what made it safe to show
+  the amount at all.
+* **The navigation was starving itself.** Making the bar wrap left `.mainnav`
+  with `flex: 1`, so it took whatever the search box and the right-hand cluster
+  did not want: 149px for twelve links at 1000px wide, wrapped onto seven rows,
+  with a 1024px laptop worse off than a 768px tablet. A minimum width inverts
+  it - the chrome wraps below the navigation instead - taking 1024px from 248px
+  of header to 128px and 1280px from 133px to 94px. A phone also loses the
+  clock and the date from the bar, and the mark shares its row with the search
+  field.
+* **The entries table crushed the column carrying the words**, stacking a
+  customer and project four lines deep while the duration beside them sat half
+  empty. Tighter cells on a narrow screen, and the path clipped to one line
+  with the whole of it one tap away on the entry's own screen.
 * **A new instance taught nothing and offered three controls that could only
   fail.** The quick-add box carried a worked example naming a customer and a
   project that did not exist, so the first thing anybody typed came back "could

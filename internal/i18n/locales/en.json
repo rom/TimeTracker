@@ -255,6 +255,8 @@
   "entry.note.placeholder": "What did you do?",
   "entry.pending": "pending",
   "entry.pending.title": "Not counted until confirmed",
+  "entry.rounded": "Billed as %s",
+  "entry.rounded.rule": "Billed as %s · %s",
   "entry.running": "running",
   "entry.start": "Start time",
   "entry.tags": "Tags",

@@ -311,6 +311,24 @@ func templateFuncs() template.FuncMap {
 		// in, so no conversion happens here - doing one would be the bug, not
 		// the fix.
 		"isWeekend": func(t time.Time) bool { return domain.IsWeekend(t) },
+		// roundingLabel names the rule that was applied to an entry, so a
+		// billed figure can be explained rather than merely asserted. The
+		// stored value is a serialised rule like "up/900/0"; the catalogue
+		// has a phrase for each preset. An empty answer means no rounding
+		// happened or the rule is not one of the presets - a custom rule
+		// entered by hand - and the screen then shows the figure without
+		// claiming to name the reason for it.
+		"roundingLabel": func(rule string) string {
+			if rule == "" || rule == "none" {
+				return ""
+			}
+			for _, preset := range domain.NamedRoundingRules {
+				if preset.Key == rule {
+					return preset.MessageKey
+				}
+			}
+			return ""
+		},
 		// barStep turns a percentage into the width class a bar is drawn with.
 		//
 		// A class rather than style="width: 42%", because the Content Security

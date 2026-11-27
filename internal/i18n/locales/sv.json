@@ -255,6 +255,8 @@
   "entry.note.placeholder": "Vad gjorde du?",
   "entry.pending": "väntar",
   "entry.pending.title": "Räknas inte förrän den bekräftats",
+  "entry.rounded": "Debiteras som %s",
+  "entry.rounded.rule": "Debiteras som %s · %s",
   "entry.running": "pågår",
   "entry.start": "Starttid",
   "entry.tags": "Etiketter",
