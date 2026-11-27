@@ -136,16 +136,34 @@ func (s *Service) DeleteTag(ctx context.Context, id int64) error {
 		}
 	}
 
-	return s.mutate(ctx, "tag.delete", "tag", map[string]any{
-		"name":    removed.Name,
-		"entries": removed.EntryCount,
-	}, func(tx *sql.Tx) (int64, error) {
-		if err := store.DeleteTagTx(ctx, tx, id); err != nil {
-			return 0, err
-		}
-		_, err := store.ReindexSearchTx(ctx, tx)
-		return id, err
-	})
+	// A tag belongs to the instance rather than to a person - it is shared by
+	// every project, and deleting one takes it off entries everywhere - so it
+	// is binned with no owner, and only somebody who may administer the
+	// instance can put it back. That is the same bound that let them delete it.
+	//
+	// entry_tags travels with it: a vocabulary word restored without the work
+	// that carried it is a different tag with the same name.
+	// Data rather than prose: the summary is stored at deletion time and read
+	// back on a screen that may be in either language, and the service layer
+	// has no translator. A name and a count say enough and say it in both.
+	summary := fmt.Sprintf("#%s (%d)", removed.Name, removed.EntryCount)
+
+	return s.binDeletion(ctx, "tag", id, 0, summary,
+		[]store.Capture{
+			{Table: "tags", Where: "id = ?", Args: []any{id}},
+			{Table: "entry_tags", Where: "tag_id = ?", Args: []any{id}},
+		},
+		"tag.delete", "tag", map[string]any{
+			"name":    removed.Name,
+			"entries": removed.EntryCount,
+		},
+		func(ctx context.Context, tx *sql.Tx) error {
+			if err := store.DeleteTagTx(ctx, tx, id); err != nil {
+				return err
+			}
+			_, err := store.ReindexSearchTx(ctx, tx)
+			return err
+		})
 }
 
 // ReindexSearch rebuilds the full-text index.

@@ -284,7 +284,9 @@ func TestRenamingATagRenamesItEverywhere(t *testing.T) {
 		t.Error("renaming a tag left the old name on the entry")
 	}
 
-	if rec := admin.post(t, "/tags/1/delete", url.Values{}); rec.Code != http.StatusSeeOther {
+	// confirmed=1 is what the browser sends once the person has answered the
+	// confirmation - the dialog with script, the interstitial page without.
+	if rec := admin.post(t, "/tags/1/delete", url.Values{"confirmed": {"1"}}); rec.Code != http.StatusSeeOther {
 		t.Fatalf("deleting the tag = %d", rec.Code)
 	}
 	after := admin.get(t, "/entries").Body.String()

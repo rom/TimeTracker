@@ -561,6 +561,13 @@ var strangerReads = map[string]bool{
 	"EntryForEdit": true, "CustomerForEdit": true, "ProjectForEdit": true,
 	"AssignmentForEdit": true, "TagsForAdmin": true, "SettingsForAdmin": true,
 	"Attachments": true, "CreateBackup": true,
+	// The recycle bin is scoped by who deleted the record rather than by
+	// project membership: a deletion belongs to the person whose record it was,
+	// and a record with no owner - a tag, a contract term - belongs to the
+	// instance and is shown only to somebody who may administer it. Both bounds
+	// are asserted directly in recycle_test.go, where they can be stated in
+	// terms of owners rather than squeezed into a membership sweep.
+	"RecentlyDeleted": true, "RestoreDeleted": true,
 }
 
 // TestReadsAreScopedByProjectMembership.

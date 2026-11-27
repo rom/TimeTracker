@@ -452,23 +452,33 @@ func (s *Service) DeleteEntry(ctx context.Context, entryID int64) error {
 		return err
 	}
 
-	err = s.db.InTx(ctx, func(tx *sql.Tx) error {
-		if _, txErr := tx.ExecContext(ctx, `DELETE FROM time_entries WHERE id = ?`, entryID); txErr != nil {
-			return txErr
-		}
-		return s.audit(ctx, tx, "time_entry.delete", "time_entry", entryID, 0, map[string]any{
+	// Captured into the recycle bin before it goes, in the same transaction, so
+	// a deletion is recoverable rather than merely recorded. The entry's tags
+	// travel with it: an entry without its tags is not the entry that was
+	// deleted.
+	summary := fmt.Sprintf("%s · %s · %s",
+		existing.AssignmentName,
+		existing.StartedAt.Format("2006-01-02 15:04"),
+		domain.FormatDuration(existing.DurationSeconds))
+	if existing.Note != "" {
+		summary += " · " + existing.Note
+	}
+
+	return s.binDeletion(ctx, "time_entry", entryID, existing.UserID, summary,
+		[]store.Capture{
+			{Table: "time_entries", Where: "id = ?", Args: []any{entryID}},
+			{Table: "entry_tags", Where: "entry_id = ?", Args: []any{entryID}},
+		},
+		"time_entry.delete", "time_entry", map[string]any{
 			"assignment":       existing.AssignmentName,
 			"started_at":       existing.StartedAt,
 			"duration_seconds": existing.DurationSeconds,
 			"note":             existing.Note,
+		},
+		func(ctx context.Context, tx *sql.Tx) error {
+			_, err := tx.ExecContext(ctx, `DELETE FROM time_entries WHERE id = ?`, entryID)
+			return err
 		})
-	})
-	if err != nil {
-		return err
-	}
-
-	s.auditLog(ctx, "time_entry.delete", "time_entry", entryID)
-	return nil
 }
 
 // Entry loads one entry, authorised.

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"sort"
 	"time"
@@ -417,7 +418,21 @@ func (s *Service) DeleteRoutine(ctx context.Context, id int64) error {
 	if existing.UserID != actor.ID {
 		return notFoundFor(ErrForbidden)
 	}
-	return s.db.DeleteRoutine(ctx, id)
+
+	// Through the bin, which also gives this the audit row it never had: it
+	// was the one deletion in the application that went straight to the store,
+	// so a routine could disappear leaving nothing behind that said so.
+	return s.binDeletion(ctx, "routine", id, existing.UserID,
+		fmt.Sprintf("%s · %s", existing.Name, existing.AssignmentName),
+		[]store.Capture{{Table: "routines", Where: "id = ?", Args: []any{id}}},
+		"routine.delete", "routine", map[string]any{
+			"name":       existing.Name,
+			"assignment": existing.AssignmentName,
+		},
+		func(ctx context.Context, tx *sql.Tx) error {
+			_, err := tx.ExecContext(ctx, `DELETE FROM routines WHERE id = ?`, id)
+			return err
+		})
 }
 
 // ------------------------------------------------------------- switching ----

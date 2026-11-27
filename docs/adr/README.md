@@ -62,6 +62,7 @@ Statuses: `proposed` → `accepted` → `superseded by ADR-NNNN` | `deprecated`.
 | [0034](0034-reminders-are-shown-not-sent.md) | Reminders are shown, not sent | accepted | 2026-08-29 | ASR-027 |
 | [0035](0035-burn-is-a-projection.md) | A burn rate is a projection, and says so | accepted | 2026-08-30 | ASR-028 |
 | [0036](0036-the-weekend-is-a-policy-not-a-lock.md) | The weekend is a policy about arrival, not a lock on what is there | accepted | 2026-11-26 | ASR-020 |
+| [0037](0037-deletion-is-recoverable.md) | A deletion is recoverable, not merely recorded | accepted | 2026-11-27 | ASR-010, ASR-020 |
 
 ## Writing a new one
 

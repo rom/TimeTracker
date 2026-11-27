@@ -1,0 +1,27 @@
+{{define "content"}}
+<section class="confirm-screen">
+
+  {{/* The second ask, for somebody with no JavaScript.
+
+       hx-confirm is the only confirmation the interface had, and it is a
+       window.confirm in a script: it disappears along with the script, so
+       without JavaScript a single click deleted. The script now says that it
+       asked, by sending confirmed=1, and the server asks here when it did not.
+
+       So this page is never seen with JavaScript on - the dialog has already
+       happened - and is the whole confirmation without it. */}}
+  <h1>{{.T "confirm.title"}}</h1>
+  <p class="confirm-what">{{.Confirm.What}}</p>
+  <p class="field-help">{{.T "confirm.recoverable"}}</p>
+
+  <div class="confirm-actions">
+    <form method="post" action="{{.Confirm.Action}}">
+      {{template "csrf" .CSRFToken}}
+      <input type="hidden" name="confirmed" value="1">
+      <button type="submit" class="btn btn-danger">{{.T "action.delete"}}</button>
+    </form>
+    <a class="btn btn-quiet" href="{{.Confirm.Cancel}}">{{.T "action.cancel"}}</a>
+  </div>
+
+</section>
+{{end}}

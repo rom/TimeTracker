@@ -1,9 +1,11 @@
 package web
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/rom/timetracker/internal/domain"
+	"github.com/rom/timetracker/internal/i18n"
 )
 
 // handleAdmin renders the catalogue administration screen: customers, projects
@@ -269,7 +271,33 @@ func (s *Server) handleUpdateTag(w http.ResponseWriter, r *http.Request) {
 
 // handleDeleteTag removes a tag from every entry carrying it.
 func (s *Server) handleDeleteTag(w http.ResponseWriter, r *http.Request) {
-	if err := s.svc.DeleteTag(r.Context(), int64Param(r.PathValue("id"))); err != nil {
+	if err := parseForm(r); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	id := int64Param(r.PathValue("id"))
+
+	// Named with its entry count, because that is the fact that makes this
+	// deletion different from the others: a tag is shared by every project and
+	// removing one takes it off work everywhere.
+	tags, _ := s.svc.TagsForAdmin(r.Context())
+	describe := func(*i18n.Printer) string {
+		for _, tag := range tags {
+			if tag.ID == id {
+				// A name and a count: the catalogue has no phrase for "on 14
+				// entries" and a number beside the name says it in both
+				// languages.
+				return fmt.Sprintf("#%s (%d)", tag.Name, tag.EntryCount)
+			}
+		}
+		return ""
+	}
+	if s.needsConfirming(w, r, describe, "/tags") {
+		return
+	}
+
+	if err := s.svc.DeleteTag(r.Context(), id); err != nil {
 		s.fail(w, r, err)
 		return
 	}

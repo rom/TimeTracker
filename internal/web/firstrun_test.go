@@ -1,9 +1,11 @@
 package web
 
 import (
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 // What a brand-new instance says.
@@ -178,4 +180,64 @@ func resultsTable(t *testing.T, srv *Server, path string) string {
 		t.Fatalf("the entries table is never closed on %s", path)
 	}
 	return body[at : at+end]
+}
+
+// TestDeletingWithoutJavaScriptAsksFirst.
+//
+// hx-confirm was the only confirmation the interface had, and it is a
+// window.confirm inside a script: it disappears along with the script, so
+// without JavaScript a single click deleted. The script now reports that it
+// asked, by sending confirmed=1, and the server asks when it did not.
+func TestDeletingWithoutJavaScriptAsksFirst(t *testing.T) {
+	srv, _ := newTestServer(t)
+	seedCatalogue(t, srv)
+
+	// Today's date, because this server runs on the real clock and the entries
+	// listing defaults to the last thirty days: an entry dated in a fixed past
+	// would be created successfully and then be invisible to the assertions
+	// below, which would read as a deletion that had already happened.
+	today := time.Now().UTC().Format("2006-01-02")
+	post(t, srv, "/entries", url.Values{
+		"assignment_id": {"1"}, "date": {today}, "start": {"09:00"},
+		"duration": {"2h"}, "note": {"not deleted yet"}, "billable": {"on"},
+	})
+
+	// What a browser with no script sends: the form, and nothing else.
+	asked := post(t, srv, "/entries/1/delete", url.Values{})
+	if asked.Code != http.StatusOK {
+		t.Fatalf("deleting without an answer = %d, want the question", asked.Code)
+	}
+	body := asked.Body.String()
+	if !strings.Contains(body, "Are you sure?") {
+		t.Error("the second ask does not ask anything")
+	}
+	// Naming the record, because "delete this entry?" cannot be answered from a
+	// page that does not say which entry.
+	if !strings.Contains(body, "not deleted yet") {
+		t.Errorf("the question does not say what would be deleted:\n%s", body)
+	}
+	// And it says the deletion is recoverable, which is the honest thing to
+	// say now that it is.
+	if !strings.Contains(body, "Recently deleted") {
+		t.Error("the question does not say the deletion can be undone")
+	}
+
+	// Nothing happened yet.
+	if !strings.Contains(resultsTable(t, srv, "/entries"), "not deleted yet") {
+		t.Fatal("the entry was deleted by the request that only asked about it")
+	}
+
+	// Answering deletes.
+	if done := post(t, srv, "/entries/1/delete", url.Values{"confirmed": {"1"}}); done.Code >= 400 {
+		t.Fatalf("confirming the deletion = %d", done.Code)
+	}
+	if strings.Contains(resultsTable(t, srv, "/entries"), "not deleted yet") {
+		t.Error("the entry survived a confirmed deletion")
+	}
+
+	// And it is recoverable.
+	bin := get(t, srv, "/deleted").Body.String()
+	if !strings.Contains(bin, "not deleted yet") {
+		t.Error("the deleted entry is not in the recycle bin")
+	}
 }

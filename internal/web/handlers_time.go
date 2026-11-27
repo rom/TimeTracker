@@ -47,6 +47,12 @@ type pageData struct {
 	// without being passed anything.
 	WeekendColour string
 
+	// Deleted is what the acting user may put back, on the recycle bin screen.
+	Deleted []service.DeletedRecord
+	// Confirm is the second ask, rendered when a destructive request arrives
+	// without the script's confirmation.
+	Confirm Confirmation
+
 	// Help is the context-sensitive help for the current screen.
 	Help       []helpSection
 	HelpScreen string
@@ -896,7 +902,33 @@ func (s *Server) handleUpdateEntry(w http.ResponseWriter, r *http.Request) {
 // handleDeleteEntry removes an entry. The prior state survives in the audit
 // trail, so the deletion is still explicable afterwards.
 func (s *Server) handleDeleteEntry(w http.ResponseWriter, r *http.Request) {
-	if err := s.svc.DeleteEntry(r.Context(), int64Param(r.PathValue("id"))); err != nil {
+	if err := parseForm(r); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	id := int64Param(r.PathValue("id"))
+
+	// The entry is named in the question, read before it is gone. "Delete this
+	// entry?" is a question nobody can answer from a page that does not say
+	// which entry; without JavaScript this page is the only ask there is.
+	entry, entryErr := s.svc.Entry(r.Context(), id)
+	describe := func(p *i18n.Printer) string {
+		if entryErr != nil {
+			return ""
+		}
+		what := entry.AssignmentName + " · " + p.FormatDateLong(entry.StartedAt) +
+			" · " + p.FormatDuration(entry.DurationSeconds)
+		if entry.Note != "" {
+			what += " · " + entry.Note
+		}
+		return what
+	}
+	if s.needsConfirming(w, r, describe, "/entries") {
+		return
+	}
+
+	if err := s.svc.DeleteEntry(r.Context(), id); err != nil {
 		s.fail(w, r, err)
 		return
 	}

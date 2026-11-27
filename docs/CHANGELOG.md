@@ -186,6 +186,20 @@ the decision.
   grids have honoured it, but it was labelled only "first day of the week" -
   which leaves somebody to work out for themselves that Monday ends the week
   with the weekend and Saturday starts it with one. It now says so.
+* **A deletion can be undone** ([ADR-0037](adr/0037-deletion-is-recoverable.md)).
+  Deleting a time entry, an expense, a tag, a routine or a set of contract
+  terms moves it to **Recently deleted** rather than destroying it, in the same
+  transaction that removes it, and restoring puts it back under its original
+  id - so anything that referred to it still does. Child rows travel with the
+  parent, which matters most for a tag: deleting one takes it off every entry
+  carrying it across every project, and restoring puts all of those back.
+  Restoring is checked against the timesheet lock exactly as a new entry is, so
+  it cannot put hours into a week somebody has approved.
+* **The confirmation before deleting now exists without JavaScript.** It never
+  did: `hx-confirm` is a `window.confirm` in a script, so in a browser with
+  script disabled - which this application otherwise supports throughout - a
+  single click deleted, permanently. The script now reports that it asked, and
+  a request arriving without that answer gets a page naming the record.
 * **Search is in the top bar**, on every screen. Trigram search with a scan
   fallback and optional regular expressions has existed since
   [ADR-0029](adr/0029-searching-with-trigram-and-regexp.md), reachable from one

@@ -167,6 +167,20 @@ func TestEveryTransactionalWriteReportsAFailureRatherThanSwallowingIt(t *testing
 		"DeleteTagTx": func(tx *sql.Tx) error {
 			return DeleteTagTx(ctx, tx, 1)
 		},
+		"CaptureTx": func(tx *sql.Tx) error {
+			_, err := CaptureTx(ctx, tx, DeletedRecord{
+				Kind: "time_entry", RecordID: 1, UserID: user.ID,
+				Summary: "a deleted entry", DeletedBy: user.ID,
+				DeletedAt: time.Date(2026, 3, 16, 9, 0, 0, 0, time.UTC),
+			}, []Capture{{Table: "time_entries", Where: "id = ?", Args: []any{1}}})
+			return err
+		},
+		"RestoreTx": func(tx *sql.Tx) error {
+			return RestoreTx(ctx, tx, DeletedRecord{
+				ID: 1, Kind: "time_entry", RecordID: 1,
+				Payload: `{"time_entries": []}`,
+			}, []string{"time_entries", "entry_tags"})
+		},
 		"CreateExpenseTx": func(tx *sql.Tx) error {
 			_, err := CreateExpenseTx(ctx, tx, domain.Expense{
 				UserID: user.ID, EnteredBy: user.ID, ProjectID: project.ID,

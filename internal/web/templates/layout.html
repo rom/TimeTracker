@@ -129,6 +129,11 @@
     {{if .CanAdminister}}
       <a href="/tags"  {{if eq .Active "tags"}}class="active" aria-current="page"{{end}}>{{.T "nav.tags"}}</a>
     {{end}}
+    {{/* The recycle bin. Offered to everybody who can delete anything, which is
+         everybody but a client: what a person sees there is their own
+         deletions, and a record belonging to the instance rather than to a
+         person is shown only to whoever may administer it. */}}
+    <a href="/deleted" {{if eq .Active "deleted"}}class="active" aria-current="page"{{end}}>{{.T "nav.deleted"}}</a>
     <a href="/guide"   {{if eq .Active "guide"}}class="active" aria-current="page"{{end}}>{{.T "nav.guide"}}</a>
     {{if .ServerMode}}{{if .CanAdminister}}
       <a href="/users" {{if eq .Active "users"}}class="active" aria-current="page"{{end}}>{{.T "nav.users"}}</a>

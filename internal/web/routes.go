@@ -152,6 +152,11 @@ func (s *Server) routes() {
 	mux.HandleFunc("GET /tags", s.handleTags)
 	mux.HandleFunc("POST /tags/{id}", s.handleUpdateTag)
 	mux.HandleFunc("POST /tags/{id}/delete", s.handleDeleteTag)
+
+	// The recycle bin. A deletion is recoverable rather than merely recorded
+	// (docs/adr/0037-deletion-is-recoverable.md).
+	mux.HandleFunc("GET /deleted", s.handleDeleted)
+	mux.HandleFunc("POST /deleted/{id}/restore", s.handleRestoreDeleted)
 	mux.HandleFunc("POST /search/reindex", s.handleReindexSearch)
 
 	// The user guide: how to do things, as opposed to what a screen is.

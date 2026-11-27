@@ -236,13 +236,29 @@ func (s *Service) DeleteExpense(ctx context.Context, id int64) error {
 	// The receipts go with it. Removing the references here leaves the blobs
 	// unreferenced, and the sweep collects them - so nothing on disk depends on
 	// this transaction committing.
-	return s.mutate(ctx, "expense.delete", "expense", map[string]any{
-		"amount_minor": existing.AmountMinor,
-		"currency":     existing.Currency,
-		"description":  existing.Description,
-	}, func(tx *sql.Tx) (int64, error) {
-		return id, store.DeleteExpenseTx(ctx, tx, id)
-	})
+	//
+	// Their rows are captured all the same. A restored expense whose receipt
+	// file has since been swept shows a receipt the screen reports as missing,
+	// which is what the attachment reader already does for a backup restored
+	// without its blobs - and that is a better answer than an expense that
+	// comes back silently claiming it never had one.
+	summary := fmt.Sprintf("%s · %s",
+		domain.Money{Minor: existing.AmountMinor, Currency: existing.Currency},
+		existing.Description)
+
+	return s.binDeletion(ctx, "expense", id, existing.UserID, summary,
+		[]store.Capture{
+			{Table: "expenses", Where: "id = ?", Args: []any{id}},
+			{Table: "attachments", Where: "owner_type = 'expense' AND owner_id = ?", Args: []any{id}},
+		},
+		"expense.delete", "expense", map[string]any{
+			"amount_minor": existing.AmountMinor,
+			"currency":     existing.Currency,
+			"description":  existing.Description,
+		},
+		func(ctx context.Context, tx *sql.Tx) error {
+			return store.DeleteExpenseTx(ctx, tx, id)
+		})
 }
 
 // Expense loads one expense, authorised.
