@@ -453,11 +453,47 @@ a { color: var(--accent); }
 .brand-time { color: var(--brand-time); }
 .brand-tracker { color: var(--brand-tracker); }
 
-.mainnav { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
+/* The navigation takes what it needs; the chrome beside it wraps instead.
+
+   flex: 1 alone made the nav the thing that absorbed whatever was left after
+   the search box and the right-hand cluster had taken theirs, which starved
+   it: at 1000px it was 149 pixels wide for twelve links and wrapped them onto
+   seven rows, so a laptop spent 250 pixels on navigation and a phone 268. The
+   minimum width makes the pickers and the clock drop below the navigation
+   rather than squeezing it, which is the right way round - they are the
+   secondary furniture.
+
+   min() rather than a bare 44rem so that on a phone the floor is the width of
+   the screen rather than something wider than it, which would reintroduce the
+   horizontal overflow this all started with. */
+.mainnav {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  flex: 1 1 auto; min-width: min(100%, 44rem);
+}
+/* The two tiers. Each is a flex row of its own so the group wraps as a unit
+   rather than interleaving with the other - half the daily links above a
+   stray administrative one would be worse than no grouping at all. */
+.nav-group { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+/* The daily tier takes the room it needs; the quiet one follows and wraps
+   below when there is not enough left for it. */
+.nav-primary { flex: 0 1 auto; }
+.nav-secondary {
+  flex: 1 1 auto;
+  /* A rule rather than a gap, because a gap at the wrap point disappears: when
+     the group drops to its own line the separator has to be something that
+     comes with it. */
+  padding-left: var(--gap-sm);
+  margin-left: var(--gap-sm);
+  border-left: 1px solid var(--border);
+}
 .mainnav a {
   padding: 6px 12px; border-radius: var(--radius);
   color: var(--text-muted); text-decoration: none;
 }
+/* Quieter, not hidden: smaller and lighter, so the eye lands on the daily tier
+   first and everything is still a link anybody can read and reach. */
+.nav-secondary a { padding: 5px 9px; font-size: 0.92em; opacity: 0.85; }
+.nav-secondary a:hover, .nav-secondary a.active { opacity: 1; }
 .mainnav a:hover { background: var(--surface-sunken); color: var(--text); }
 .mainnav a.active { background: var(--accent-soft); color: var(--text); font-weight: 600; }
 
@@ -700,6 +736,14 @@ input[type="text"], input[type="date"], input[type="time"], select {
 .cell-actions { text-align: right; white-space: nowrap; }
 .cell-actions form { display: inline; }
 
+/* The amount, and the billed figure where rounding moved it. Tabular figures
+   so a column of them lines up, and the rounded duration quieter than the
+   amount beside it: it is the explanation, not the number. */
+.cell-amount { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cell-rounded {
+  display: block; color: var(--text-muted); font-size: 0.85em;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
 .entry-assignment { font-weight: 600; display: block; }
 .entry-path, .entry-note { display: block; color: var(--text-muted); font-size: 0.88em; }
 
@@ -1858,6 +1902,14 @@ kbd {
 }
 
 [data-nav="left"] .mainnav { flex-direction: column; flex: 0 0 auto; gap: 2px; }
+/* In the rail the groups are stacked columns, so the separator is a rule above
+   the quiet one rather than beside it. */
+[data-nav="left"] .nav-group { flex-direction: column; align-items: stretch; gap: 2px; }
+[data-nav="left"] .nav-secondary {
+  padding-left: 0; margin-left: 0; border-left: none;
+  padding-top: var(--gap-sm); margin-top: var(--gap-sm);
+  border-top: 1px solid var(--border);
+}
 [data-nav="left"] .topbar-right {
   flex-wrap: wrap;
   /* Pushed to the foot of the rail: the pickers and the sign-out button are
@@ -1963,13 +2015,66 @@ kbd {
      in the middle of a row, and the pickers below it. Nothing is hidden: a
      phone gets the same links in the same order as a desktop. */
   .topbar { gap: var(--gap-sm); padding: 8px 12px; }
-  .topbar .brand { flex: 1 0 100%; }
+  /* The mark and the search field share the first row rather than taking one
+     each: two half-empty rows at the top of every page is a row of chrome a
+     phone cannot spare. */
+  .topbar .brand { flex: 0 0 auto; }
   .mainnav { gap: 2px; }
   .mainnav a { padding: 5px 8px; font-size: 0.95em; }
+  .nav-secondary a { padding: 4px 7px; font-size: 0.88em; }
+  /* The groups stop being boxes and their links flow as one run.
+
+     Grouping costs a row on a phone, because two flex containers cannot share
+     a line: the daily tier wrapped to two rows and the quiet one to two more,
+     where fourteen links flowing freely take three. display: contents removes
+     the boxes without removing the grouping - the links keep their order and
+     the quiet ones keep their smaller type, which is what carries the tiering
+     at this width. The rule goes with the boxes; a vertical rule at the start
+     of a wrapped row reads as a stray mark rather than as a divider. */
+  .nav-group { display: contents; }
+  .nav-secondary { padding-left: 0; margin-left: 0; border-left: none; }
   .topbar-right { flex: 1 0 100%; justify-content: flex-start; gap: var(--gap-sm); }
   /* On a phone the field takes the width it needs rather than a fixed 12rem. */
-  .topbar-search { flex: 1 0 100%; }
-  .topbar-search input[type="search"] { width: 100%; }
+  .topbar-search { flex: 1 1 8rem; }
+  .topbar-search input[type="search"] { width: 100%; min-width: 0; }
+
+  /* The clock and the date go. Both are optional chrome an administrator
+     turned on for a desk, both are decoration on a screen this size, and the
+     date is already the page's own heading two centimetres below. Dropping
+     them is most of the difference between a phone opening on navigation and
+     a phone opening on the day. */
+  .topbar .header-clock, .topbar .header-date { display: none; }
+
+  /* Tables stop crushing their widest column. The customer and project sat on
+     four lines apiece while the duration column beside them was half empty,
+     because every other column took its space first and the one carrying the
+     words absorbed the shortfall. Tighter cells, and the path clipped to one
+     line: the whole of it is on the entry's own screen, which is one tap
+     away, and four stacked lines per row is a worse way to read a day than a
+     name that ends in an ellipsis. */
+  .entries th, .entries td,
+  .admin-table th, .admin-table td { padding: 6px; }
+  .entry-path {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 11rem;
+  }
+
+  /* The day pane is deliberately left alone here, after two attempts that
+     were both worse than the thing they fixed.
+
+     Capping its height cropped it: the pane scrolls its own overflow, so a
+     20rem cap on a nine-hour day showed two of those hours and the shape of
+     the day - the only thing the pane is for - went off the bottom. Shrinking
+     the quarter-hour track did nothing at all, because the tracks are sized
+     by what is in them: a block carrying an assignment, a time and a duration
+     needs its 38 pixels whatever the floor says, and 1fr resolves against a
+     height that is itself content-driven.
+
+     What actually governs the height is how many hours the day window covers,
+     which is a setting - and one that was instance-wide until the same batch
+     of work made it personal. Somebody reading a timesheet on a phone can
+     narrow their own window; nothing here can do it for them without either
+     cropping the day or crushing the text. */
 }
 
 /* -------------------------------------------------- attachment previews --- */

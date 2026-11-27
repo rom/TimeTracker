@@ -512,7 +512,16 @@ func TestBothSweepsCoverTheSameSurface(t *testing.T) {
 		"CreateAssignment": true, "UpdateAssignment": true,
 		"SetAssignmentArchived": true, "SetFavourite": true,
 		"UpdateSettings": true, "UpdateTag": true, "DeleteTag": true,
-		"BulkEntries":   true,
+		"BulkEntries": true,
+		// Writes nothing but the acting user's own row: a person is always
+		// allowed to decide how their own screen looks, so there is no scope
+		// for a membership sweep to check.
+		"UpdatePresentation": true,
+		// Absence is scoped by whose days they are, not by project membership:
+		// a person records their own, a manager records one for somebody they may
+		// already proxy for, and a public holiday is the instance's. All three
+		// bounds are asserted directly in absence_test.go.
+		"RecordAbsence": true, "DeleteAbsence": true,
 		"ReindexSearch": true, "SaveContractTerms": true,
 		"DeleteContractTerms": true, "SaveRoutine": true, "DeleteRoutine": true,
 		"ApplyRoutine": true, "ApplyAllRoutines": true, "CopyDay": true,
@@ -563,7 +572,17 @@ var strangerReads = map[string]bool{
 	"RecentAssignments": true, "QuickStart": true, "Day": true, "Week": true,
 	"Month": true, "BudgetReportFor": true, "ApprovalReportFor": true,
 	"Summarise": true,
-	"Inbox":     true, "PendingCount": true, "ProposedByMe": true,
+	// Instance presentation with the reader's own overlaid: the same
+	// settings the page shell already reads for every user, carrying nothing
+	// that belongs to a project.
+	"SettingsFor": true,
+	// The administrator's listing of everybody's absence, refused outright to
+	// anybody who may not administer the instance.
+	"AbsencesForEveryone": true,
+	// Somebody's own days away, and the public holidays everybody shares.
+	"Absences": true,
+	"Absence":  true,
+	"Inbox":    true, "PendingCount": true, "ProposedByMe": true,
 	"PendingIdle": true, "RunningIdle": true, "RunningTimers": true,
 	"Tags": true, "Routines": true, "ContractTerms": true, "ReviewSubmission": true,
 	"PreviewExport": true, "PreviewBackupFile": true,

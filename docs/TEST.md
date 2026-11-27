@@ -419,6 +419,13 @@ Some things automation cannot honestly settle, checked before each release:
   of them scrolls sideways. The structure that makes this true — the rows that
   wrap, and the scroll container every table sits in — is asserted in Go, but
   whether it *looks* right at each size is not something a unit test can say.
+* **The two navigation tiers**, at each of those widths and in both positions:
+  that the second tier reads as quieter rather than as disabled, that the rule
+  between them is vertical across the top and horizontal down the left rail,
+  and that on a phone the groups dissolve into one flow rather than taking a
+  row each. Go asserts that every link is in a tier and that the groups are
+  given `display: contents`; whether the quiet tier is still legible is a
+  judgement.
 * Each of the eight themes viewed on each screen — automated contrast checking does
   not catch "this looks wrong".
 * Keyboard-only traversal of the primary flows, and a screen-reader pass over Today

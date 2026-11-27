@@ -38,6 +38,16 @@ type PeriodView struct {
 	Period domain.TimesheetPeriod
 	// TotalSeconds is the week as it stands now.
 	TotalSeconds int64
+	// ExpectedSeconds is a full week for whoever's week this is, or zero where
+	// the instance has turned the comparison off. A total with nothing to
+	// compare it against cannot answer the question people open a timesheet to
+	// answer on a Thursday afternoon.
+	ExpectedSeconds int64
+	// AbsentSeconds is the share of the expected week that recorded absence
+	// accounts for, and AbsentDays how many working days produced it. A week
+	// off is a complete week, not a week somebody failed to fill in.
+	AbsentSeconds int64
+	AbsentDays    int
 	// CanSubmit, CanWithdraw, CanApprove and CanReopen say which controls to
 	// offer. The template asks these rather than re-deriving the rules, so the
 	// interface and the enforcement cannot disagree.
@@ -82,6 +92,43 @@ func (s *Service) periodFor(ctx context.Context, actor domain.User, ownerID int6
 	period.CurrentSeconds = total
 
 	view := PeriodView{Period: period, TotalSeconds: total}
+
+	// How much a full week is for this person, so the total has something to
+	// be measured against. The owner's own figure where they have one, since
+	// part time is a property of the person - and the owner rather than the
+	// reader, because a manager looking at somebody's week wants to know
+	// whether THEY are short, not whether the manager would be.
+	view.ExpectedSeconds = int64(expectedMinutesFor(settings, owner)) * 60
+
+	// Days away fill their share of it, so a week's holiday reads as a
+	// complete week rather than as a failure to fill the timesheet in. The
+	// share is the week divided by its working days, which is what makes one
+	// day of leave worth a fifth of a Monday-to-Friday week without anybody
+	// storing a daily figure.
+	if view.ExpectedSeconds > 0 {
+		start, parseErr := domain.ParseWeekStart(weekStart, locationFor(owner))
+		if parseErr == nil {
+			away, awayErr := s.absentDaysFor(ctx, ownerID, start, start.AddDate(0, 0, 6))
+			if awayErr != nil {
+				return PeriodView{}, awayErr
+			}
+			working, absent := 0, 0
+			for offset := range 7 {
+				day := start.AddDate(0, 0, offset)
+				if domain.IsWeekend(day) {
+					continue
+				}
+				working++
+				if _, off := away[day.Format("2006-01-02")]; off {
+					absent++
+				}
+			}
+			if working > 0 && absent > 0 {
+				view.AbsentSeconds = view.ExpectedSeconds * int64(absent) / int64(working)
+				view.AbsentDays = absent
+			}
+		}
+	}
 
 	own := ownerID == actor.ID
 	// An empty week is not worth submitting, and submitting one would put an
@@ -460,4 +507,30 @@ func (s *Service) checkPeriodOpen(ctx context.Context, userID int64, when time.T
 	}
 	return fmt.Errorf("%w: the week of %s has been approved; ask a manager to reopen it",
 		domain.ErrPeriodLocked, weekStart)
+}
+
+// expectedMinutesFor resolves one person's full week.
+//
+// The owner's own figure where they have set one, the instance's otherwise.
+// Negative means "no preference"; zero is a deliberate choice meaning "do not
+// compare", which an instance that would rather not put a target on a
+// timesheet can set once.
+func expectedMinutesFor(settings store.Settings, owner domain.User) int {
+	// Strictly positive, not merely non-negative. The column stores -1 for
+	// "no preference", but a domain.User is also built in Go in a dozen
+	// places - CreateUser's return value, a fixture, a restored backup - and
+	// there the field is the Go zero value. Treating zero as a deliberate
+	// "do not compare" made every one of those silently turn the comparison
+	// off: the first test written against this reported a full week of zero
+	// seconds on a fresh instance whose setting plainly said forty hours.
+	//
+	// So zero from a person means "I have not said", and turning the
+	// comparison off is the instance's decision, made once, for everybody.
+	if owner.ExpectedWeeklyMinutes > 0 {
+		return owner.ExpectedWeeklyMinutes
+	}
+	if settings.ExpectedWeeklyMinutes < 0 {
+		return 0
+	}
+	return settings.ExpectedWeeklyMinutes
 }

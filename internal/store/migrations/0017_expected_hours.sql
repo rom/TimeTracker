@@ -1,0 +1,21 @@
+-- 0017_expected_hours.sql - how much is enough.
+--
+-- A timesheet that shows a total and nothing to compare it against cannot
+-- answer the question people open one to answer on a Thursday afternoon: am I
+-- on track. The week view had a total, the submission screen checked for empty
+-- days, and nothing anywhere knew what a full week was supposed to look like.
+--
+-- Minutes rather than hours because a working week is not always a whole number
+-- of them - 37.5 is the common one in several countries - and storing hours
+-- would mean either a float or a lie.
+--
+-- The instance's figure is the default and a person may have their own, which
+-- is how part time works: four days a week is a property of the person, not of
+-- the organisation. -1 on the account means "whatever the instance says", the
+-- same convention the presentation columns use.
+--
+-- 2400 is forty hours. It is a default rather than a claim: an instance whose
+-- week is 37.5 sets 2250 once, and one that would rather not have the figure at
+-- all sets zero, which turns the whole display off.
+ALTER TABLE settings ADD COLUMN expected_weekly_minutes INTEGER NOT NULL DEFAULT 2400;
+ALTER TABLE users    ADD COLUMN expected_weekly_minutes INTEGER NOT NULL DEFAULT -1;

@@ -58,6 +58,9 @@ type SettingsInput struct {
 	// permissive value. Spelt the other way round, every existing caller that
 	// does not know about this field - and there are several, in tests and in
 	// the importers' settings - would quietly start refusing weekends.
+	// ExpectedWeeklyMinutes is a full working week; negative leaves it as it
+	// was, and zero turns the comparison off.
+	ExpectedWeeklyMinutes    int
 	WeekendRecordingDisabled bool
 	// WeekendColour is a palette key for the day numbers of a weekend.
 	WeekendColour string
@@ -149,6 +152,13 @@ func (s *Service) UpdateSettings(ctx context.Context, in SettingsInput) error {
 	// rule for would render as no colour at all, which is a setting that looks
 	// saved and does nothing. Falling back to the previous value keeps the
 	// screen honest about what is in force.
+	// Negative means the form did not say, which leaves the instance's figure
+	// alone; zero is a deliberate "do not compare" and is kept.
+	expectedWeek := existing.ExpectedWeeklyMinutes
+	if in.ExpectedWeeklyMinutes >= 0 && in.ExpectedWeeklyMinutes <= 7*24*60 {
+		expectedWeek = in.ExpectedWeeklyMinutes
+	}
+
 	weekendColour := domain.ColourKeyOr(in.WeekendColour,
 		domain.ColourKeyOr(existing.WeekendColour, "red"))
 
@@ -164,25 +174,26 @@ func (s *Service) UpdateSettings(ctx context.Context, in SettingsInput) error {
 	}
 
 	updated := store.Settings{
-		DefaultCurrency:  currency,
-		DefaultRounding:  rounding,
-		DefaultRateMinor: rate.Minor,
-		WeekStart:        weekStart,
-		MaxTimerSeconds:  maxTimer,
-		IdleSeconds:      idle,
-		RemindersEnabled: !in.RemindersDisabled,
-		ReminderHour:     reminderHour,
-		ShowClock:        in.ShowClock,
-		ShowTimeAndDate:  in.ShowTimeAndDate,
-		NavPosition:      string(domain.NavPosition(in.NavPosition).OrDefault()),
-		ClockFormat:      string(domain.ClockFormat(in.ClockFormat).OrDefault()),
-		DateFormat:       string(domain.DateFormat(in.DateFormat).OrDefault()),
-		DayStartHour:     window.StartHour,
-		DayEndHour:       window.EndHour,
-		DayOverflow:      string(domain.DayOverflow(in.DayOverflow).OrDefault()),
-		WeekendRecording: !in.WeekendRecordingDisabled,
-		WeekendColour:    weekendColour,
-		BackupPassword:   backupPassword,
+		DefaultCurrency:       currency,
+		DefaultRounding:       rounding,
+		DefaultRateMinor:      rate.Minor,
+		WeekStart:             weekStart,
+		MaxTimerSeconds:       maxTimer,
+		IdleSeconds:           idle,
+		RemindersEnabled:      !in.RemindersDisabled,
+		ReminderHour:          reminderHour,
+		ShowClock:             in.ShowClock,
+		ShowTimeAndDate:       in.ShowTimeAndDate,
+		NavPosition:           string(domain.NavPosition(in.NavPosition).OrDefault()),
+		ClockFormat:           string(domain.ClockFormat(in.ClockFormat).OrDefault()),
+		DateFormat:            string(domain.DateFormat(in.DateFormat).OrDefault()),
+		DayStartHour:          window.StartHour,
+		DayEndHour:            window.EndHour,
+		DayOverflow:           string(domain.DayOverflow(in.DayOverflow).OrDefault()),
+		ExpectedWeeklyMinutes: expectedWeek,
+		WeekendRecording:      !in.WeekendRecordingDisabled,
+		WeekendColour:         weekendColour,
+		BackupPassword:        backupPassword,
 	}
 	// Audited: a rounding or rate default changes what future work is worth, so
 	// a later question about a figure needs to find when it changed. The entry

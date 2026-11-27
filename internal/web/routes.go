@@ -88,6 +88,10 @@ func (s *Server) routes() {
 
 	// Preferences. The theme is stored per user rather than only in the browser,
 	// so it follows a person between devices in server mode.
+	// The personal half of the settings, which anybody may change for
+	// themselves; /settings is the instance's and is the administrator's.
+	mux.HandleFunc("GET /preferences", s.handlePreferences)
+	mux.HandleFunc("POST /preferences", s.handleUpdatePreferences)
 	mux.HandleFunc("POST /preferences/theme", s.handleSetTheme)
 	mux.HandleFunc("POST /preferences/language", s.handleSetLanguage)
 
@@ -155,6 +159,11 @@ func (s *Server) routes() {
 
 	// One change applied to many entries at once.
 	mux.HandleFunc("POST /entries/bulk", s.handleBulkEntries)
+
+	// The days somebody was not working.
+	mux.HandleFunc("GET /absence", s.handleAbsence)
+	mux.HandleFunc("POST /absence", s.handleRecordAbsence)
+	mux.HandleFunc("POST /absence/{id}/delete", s.handleDeleteAbsence)
 
 	// Where the time went, over a range, grouped. The budget report beside it
 	// answers a different question: how much of a cap has been used.

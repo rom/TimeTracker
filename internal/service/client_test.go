@@ -379,3 +379,87 @@ func TestClientCannotTakeABackup(t *testing.T) {
 		t.Errorf("the refusal caught an administrator too: %v", err)
 	}
 }
+
+// TestAColleagueWhoMayNotSeeMoneyIsNotSentIt.
+//
+// The billing snapshot - the rate, the amount, the currency and the rounding
+// rule that produced it - is written onto every entry when it is billed and
+// frozen there (ADR-0014), which makes it the most commercially sensitive
+// thing an entry carries.
+//
+// It used to leave the service on every entry a member read. Nothing had gone
+// wrong on screen, because no template printed it; the only thing between
+// somebody who may not see money and the rate their colleague's hour is sold
+// at was a page that had never been asked to show it. The entry screens show
+// the amount now, which is what turns that from a latent leak into a live one,
+// so the projection is where the decision belongs - the same rule the client
+// work established: presentation is never the enforcement.
+func TestAColleagueWhoMayNotSeeMoneyIsNotSentIt(t *testing.T) {
+	f := newFixture(t)
+
+	member, err := f.db.CreateUser(f.ctx, domain.User{
+		DisplayName: "Member", Role: domain.RoleMember, TimeZone: "UTC",
+		Theme: "light", Active: true,
+	})
+	if err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+	if err := f.db.AddProjectMember(f.ctx, store.ProjectMember{
+		ProjectID: f.assignment.ProjectID, UserID: member.ID,
+	}); err != nil {
+		t.Fatalf("add member to the project: %v", err)
+	}
+
+	// The member records their own hour, which is the case that matters: the
+	// question is whether somebody is told what their own time is sold for.
+	office, _ := officeContext(t, f)
+	theirs := auth.WithUser(f.ctx, member)
+	if _, err := office.CreateEntry(theirs, EntryInput{
+		AssignmentID: f.assignment.ID, StartedAt: at(f.now, 9, 0),
+		DurationSeconds: 3600, Billable: true, Note: "work",
+	}); err != nil {
+		t.Fatalf("record: %v", err)
+	}
+
+	// Read by somebody who may see money, to establish there is some to
+	// remove. Asked for by owner, because a listing defaults to the reader's
+	// own time and this entry is the member's.
+	pricedFilter := wholeRange(f)
+	pricedFilter.UserID = member.ID
+	priced, err := office.Entries(auth.WithUser(f.ctx, f.user), pricedFilter)
+	if err != nil {
+		t.Fatalf("read as the office: %v", err)
+	}
+	if len(priced) == 0 || priced[0].AmountMinor == 0 {
+		t.Fatalf("the fixture entry carries no amount, so this test proves "+
+			"nothing: %+v", priced)
+	}
+
+	// And now as the member, who may not.
+	entries, err := office.Entries(theirs, wholeRange(f))
+	if err != nil {
+		t.Fatalf("read as the member: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("the member cannot see their own time at all")
+	}
+	for _, entry := range entries {
+		if entry.AmountMinor != 0 || entry.RateMinor != 0 ||
+			entry.Currency != "" || entry.RoundingRuleApplied != "" {
+			t.Errorf("a member was sent the billing snapshot: "+
+				"%d at %d %s, rounded by %q",
+				entry.AmountMinor, entry.RateMinor, entry.Currency,
+				entry.RoundingRuleApplied)
+		}
+		// And keeps everything that is about the work rather than its price:
+		// this is a colleague, not an outsider.
+		if entry.Note == "" || entry.AssignmentName == "" {
+			t.Errorf("the money projection removed more than money: %+v", entry)
+		}
+		// The duration is not money. A member who could not see how long their
+		// own entry was would not have a timesheet.
+		if entry.DurationSeconds == 0 {
+			t.Error("the member's own entry came back with no duration")
+		}
+	}
+}

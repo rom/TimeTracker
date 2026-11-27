@@ -311,6 +311,24 @@ func templateFuncs() template.FuncMap {
 		// in, so no conversion happens here - doing one would be the bug, not
 		// the fix.
 		"isWeekend": func(t time.Time) bool { return domain.IsWeekend(t) },
+		// roundingLabel names the rule that was applied to an entry, so a
+		// billed figure can be explained rather than merely asserted. The
+		// stored value is a serialised rule like "up/900/0"; the catalogue
+		// has a phrase for each preset. An empty answer means no rounding
+		// happened or the rule is not one of the presets - a custom rule
+		// entered by hand - and the screen then shows the figure without
+		// claiming to name the reason for it.
+		"roundingLabel": func(rule string) string {
+			if rule == "" || rule == "none" {
+				return ""
+			}
+			for _, preset := range domain.NamedRoundingRules {
+				if preset.Key == rule {
+					return preset.MessageKey
+				}
+			}
+			return ""
+		},
 		// barStep turns a percentage into the width class a bar is drawn with.
 		//
 		// A class rather than style="width: 42%", because the Content Security
@@ -346,6 +364,20 @@ func templateFuncs() template.FuncMap {
 		"sub": func(a, b int) int { return a - b },
 		// divide is integer division, for showing a stored seconds value as
 		// hours in a form field.
+		// asDuration renders stored minutes the way the form accepts them
+		// back, so the field round-trips without anybody dividing anything.
+		"asDuration": func(minutes int) string {
+			if minutes <= 0 {
+				return ""
+			}
+			return domain.FormatDuration(int64(minutes) * 60)
+		},
+		// Seconds arithmetic, for saying how far short a week is and how much
+		// of it leave accounts for. Named apart from add and sub above, which
+		// take ints: a duration is an int64 everywhere in this application,
+		// and a template function cannot be generic.
+		"subSeconds": func(a, b int64) int64 { return a - b },
+		"addSeconds": func(a, b int64) int64 { return a + b },
 		"divide": func(value int64, by int64) int64 {
 			if by == 0 {
 				return 0

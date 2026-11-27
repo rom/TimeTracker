@@ -167,6 +167,15 @@ func TestEveryTransactionalWriteReportsAFailureRatherThanSwallowingIt(t *testing
 		"DeleteTagTx": func(tx *sql.Tx) error {
 			return DeleteTagTx(ctx, tx, 1)
 		},
+		"CreateAbsenceTx": func(tx *sql.Tx) error {
+			_, err := CreateAbsenceTx(ctx, tx, domain.Absence{
+				UserID: user.ID, Kind: domain.AbsenceHoliday,
+				StartsOn: "2026-03-16", EndsOn: "2026-03-16",
+				CreatedBy: user.ID,
+				CreatedAt: time.Date(2026, 3, 16, 9, 0, 0, 0, time.UTC),
+			})
+			return err
+		},
 		"CaptureTx": func(tx *sql.Tx) error {
 			_, err := CaptureTx(ctx, tx, DeletedRecord{
 				Kind: "time_entry", RecordID: 1, UserID: user.ID,

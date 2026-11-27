@@ -23,6 +23,9 @@ type DayView struct {
 	// Gaps are stretches of the working day with no entry covering them. They
 	// are shown as prompts ("2h 15m unaccounted"), never filled in automatically.
 	Gaps []Gap
+	// Absence is set when the person was away this day, in which case there
+	// are no gaps: the hours are not missing, the person was not there.
+	Absence *domain.Absence
 
 	// The day drawn as blocks against a clock. Computed on the server so the
 	// timeline is right with no JavaScript at all; see timeline.go.
@@ -111,10 +114,24 @@ func (s *Service) Day(ctx context.Context, date time.Time) (DayView, error) {
 	view.Totals = s.totals(entries)
 	view.Gaps = findGaps(entries, s.now())
 
-	// The pane's window and its overflow behaviour are instance settings. A
-	// failure to read them is not worth failing the whole day screen over, so
-	// the zero value falls through to the built-in default.
-	settings, _ := s.db.GetSettings(ctx)
+	// A day somebody was away has no unaccounted time: the hours are not
+	// missing, the person was not there. Reported as the absence instead, so
+	// the pane says why the day is empty rather than complaining that it is.
+	if actor, ok := auth.UserFrom(ctx); ok {
+		away, awayErr := s.absentDaysFor(ctx, actor.ID, start, start)
+		if awayErr == nil {
+			if absence, off := away[start.Format("2006-01-02")]; off {
+				view.Absence = &absence
+				view.Gaps = nil
+			}
+		}
+	}
+
+	// The pane's window and its overflow behaviour are the reader's own where
+	// they have chosen, and the instance's otherwise. A failure to read them
+	// is not worth failing the whole day screen over, so the zero value falls
+	// through to the built-in default.
+	settings, _ := s.SettingsFor(ctx)
 	buildTimeline(&view,
 		domain.NormaliseDayWindow(settings.DayStartHour, settings.DayEndHour),
 		domain.DayOverflow(settings.DayOverflow), s.now())

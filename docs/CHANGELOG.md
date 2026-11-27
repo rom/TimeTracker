@@ -186,6 +186,44 @@ the decision.
   grids have honoured it, but it was labelled only "first day of the week" -
   which leaves somebody to work out for themselves that Monday ends the week
   with the weekend and Saturday starts it with one. It now says so.
+* **Days away can be recorded** (`/absence`,
+  [ADR-0038](adr/0038-absence-is-its-own-record.md)). Holidays, sick days,
+  parental leave and public holidays, as their own record rather than as a kind
+  of time entry - an entry needs an assignment, so recording leave as time
+  would mean a fake customer in every instance and leave appearing in every
+  report grouped by customer, which is exactly the workaround people use today.
+  A day away fills its share of the expected week, so a week off reads as a
+  complete week instead of thirty-eight hours short, and the empty-day reminder
+  and the unaccounted-time banner leave it alone: until now the application
+  told people off for being on holiday. A public holiday is the instance's,
+  recorded once by an administrator and counting for everybody.
+* **A week is measured against a full one.** Nothing knew how much was enough:
+  the week view showed a total with nothing to compare it against, and the
+  submission screen checked for empty days but not for a short week. A full
+  working week is now an instance setting with a personal override - part time
+  is a property of the person, not the organisation - and the week banner reads
+  "This week: 22h 30m of 40h 00m (17h 30m short)". An instance that would
+  rather not put a figure on somebody's week sets it to zero and gets the bare
+  total back. Stored in minutes, because 37.5 hours is the common week in
+  several countries and hours would mean a float or a lie.
+* **Presentation follows the person** (`/preferences`). The theme, the zone and
+  the language have always been the account's. The hours the day pane covers,
+  whether a clock reads 24-hour, how a date is written and where the navigation
+  sits were the instance's and settable only by an administrator - so on a
+  server with twenty people, one of them picked everybody's working hours, and
+  somebody who starts at six read their day in a pane drawn for nine. Each is
+  now personal, with "follow the instance" as the default, so nothing changes
+  for anybody until they choose. The week's first day deliberately stays the
+  instance's: it decides which Monday a timesheet period is keyed by
+  ([ADR-0023](adr/0023-week-as-the-unit-of-approval.md)).
+* **An entry says what it is worth, and what rounding did to it.** Every entry
+  has carried a frozen billing snapshot since the money work, and none of it
+  reached a screen: the most carefully computed number in the application was
+  visible only in an export. The amount now appears on the entry, and where
+  rounding moved the figure the billed duration appears beside it with the rule
+  that produced it - an hour and seven minutes billed as an hour and a quarter
+  is the figure a client queries, and the rule was stored on the entry
+  precisely so that question could be answered.
 * **Changing many entries at once.** Tick rows on the entries screen and move
   them to another assignment, add or remove a tag, or delete them. Re-tagging a
   week of misfiled time was thirty round trips through a correction form. Every
@@ -275,6 +313,42 @@ the decision.
 
 ### Fixed
 
+* **A member was sent the billing snapshot on every entry they read.** The
+  rate, the amount, the currency and the rounding rule are frozen onto each
+  entry when it is billed ([ADR-0014](adr/0014-exact-money-and-duration.md)),
+  which makes them the most commercially sensitive thing an entry carries, and
+  they left the service on every read. Nothing had gone wrong on screen,
+  because no template printed them - the only thing between somebody who may
+  not see money and the rate their colleague's hour is sold at was a page that
+  had never been asked to show it. They are removed in the service now, as the
+  client projection's fields already were, which is what made it safe to show
+  the amount at all.
+* **The navigation was starving itself.** Making the bar wrap left `.mainnav`
+  with `flex: 1`, so it took whatever the search box and the right-hand cluster
+  did not want: 149px for twelve links at 1000px wide, wrapped onto seven rows,
+  with a 1024px laptop worse off than a 768px tablet. A minimum width inverts
+  it - the chrome wraps below the navigation instead - taking 1024px from 248px
+  of header to 128px and 1280px from 133px to 94px. A phone also loses the
+  clock and the date from the bar, and the mark shares its row with the search
+  field.
+* **Fourteen navigation links in one flat list** were back to two rows on a
+  1024px laptop and read as a wall: the day's screens and the instance's
+  settings had the same weight, so neither was findable at a glance. They are
+  two tiers now - the daily screens, then what is set up once or consulted
+  occasionally, drawn quieter and separated by a rule, a vertical one across
+  the top and a horizontal one down the left rail. Grouping is normally paid
+  for in space, and this one is not: two flex containers cannot share a line,
+  which cost a whole row on a phone (231px over four rows), so below 700px the
+  groups are dissolved with `display: contents` and hand their links straight
+  back to the bar - 198px over three rows, against 201px for the flat list it
+  replaced, and two pixels narrower on every desktop width. Every link stays
+  present, focusable and in the same order: a disclosure would have hidden half
+  the navigation from the keyboard on exactly the screens where space is
+  tightest.
+* **The entries table crushed the column carrying the words**, stacking a
+  customer and project four lines deep while the duration beside them sat half
+  empty. Tighter cells on a narrow screen, and the path clipped to one line
+  with the whole of it one tap away on the entry's own screen.
 * **A new instance taught nothing and offered three controls that could only
   fail.** The quick-add box carried a worked example naming a customer and a
   project that did not exist, so the first thing anybody typed came back "could

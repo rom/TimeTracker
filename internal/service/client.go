@@ -78,18 +78,29 @@ func narrowFilter(ctx context.Context, filter EntryFilter) EntryFilter {
 
 // narrowEntries applies the projection to a listing.
 func (s *Service) narrowEntries(ctx context.Context, entries []domain.TimeEntry) []domain.TimeEntry {
-	if !actingAsClient(ctx) {
-		return entries
+	if actingAsClient(ctx) {
+		return domain.ProjectEntriesForClient(entries)
 	}
-	return domain.ProjectEntriesForClient(entries)
+	// A colleague who may not see money keeps everything about the work and
+	// loses only what it is worth. Stripped here rather than left to the
+	// screens: the billing snapshot was leaving the service on every entry a
+	// member read, and nothing but a template declining to print it stood
+	// between them and the rate their colleague's hour is sold at.
+	if !s.maySeeMoney(ctx) {
+		return domain.ProjectEntriesWithoutMoney(entries)
+	}
+	return entries
 }
 
 // narrowEntry applies the projection to one entry.
 func (s *Service) narrowEntry(ctx context.Context, entry domain.TimeEntry) domain.TimeEntry {
-	if !actingAsClient(ctx) {
-		return entry
+	if actingAsClient(ctx) {
+		return entry.ForClient()
 	}
-	return entry.ForClient()
+	if !s.maySeeMoney(ctx) {
+		return entry.WithoutMoney()
+	}
+	return entry
 }
 
 // narrowStream applies the projection to a streamed export.
@@ -99,8 +110,19 @@ func (s *Service) narrowEntry(ctx context.Context, entry domain.TimeEntry) domai
 // forwarded. Wrapping the sequence rather than narrowing at each yield site
 // keeps it one decision.
 func (s *Service) narrowStream(ctx context.Context, entries iter.Seq2[domain.TimeEntry, error]) iter.Seq2[domain.TimeEntry, error] {
-	if !actingAsClient(ctx) {
+	client := actingAsClient(ctx)
+	money := s.maySeeMoney(ctx)
+	if !client && money {
 		return entries
+	}
+	// Decided once, outside the loop: the two predicates read the context and
+	// the authorizer, and asking them per entry would turn an export of ten
+	// thousand rows into ten thousand authorisation checks.
+	narrow := func(entry domain.TimeEntry) domain.TimeEntry {
+		if client {
+			return entry.ForClient()
+		}
+		return entry.WithoutMoney()
 	}
 	return func(yield func(domain.TimeEntry, error) bool) {
 		for entry, err := range entries {
@@ -108,7 +130,7 @@ func (s *Service) narrowStream(ctx context.Context, entries iter.Seq2[domain.Tim
 				yield(domain.TimeEntry{}, err)
 				return
 			}
-			if !yield(entry.ForClient(), nil) {
+			if !yield(narrow(entry), nil) {
 				return
 			}
 		}

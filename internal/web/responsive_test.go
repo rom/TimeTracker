@@ -65,6 +65,18 @@ func TestTheRowsThatMustWrapDoWrap(t *testing.T) {
 		}
 	}
 
+	// Wrapping is not enough on its own. flex: 1 made the navigation the thing
+	// that absorbed whatever space the search box and the right-hand cluster
+	// left over, so it wrapped twelve links onto seven rows inside 149 pixels
+	// at 1000px wide while the chrome beside it sat comfortably on one. A
+	// minimum width is what makes the chrome wrap first.
+	nav := ruleFor(css, ".mainnav")
+	if !strings.Contains(nav, "min-width") {
+		t.Error(".mainnav has no minimum width, so it will be squeezed to " +
+			"whatever the search box and the pickers leave it rather than " +
+			"pushing them onto the next row")
+	}
+
 	// The exception, and it is a real one: the left-hand rail is a column, and
 	// a column that wraps wraps into a second column - which in a rail with a
 	// max-height of one viewport silently splits the navigation in two.
@@ -148,4 +160,72 @@ func ruleFor(css, selector string) string {
 		return css[at+open : at+close]
 	}
 	return ""
+}
+
+// TestEveryNavigationLinkSitsInATier.
+//
+// The navigation is two groups - the daily screens, then everything set up
+// once or consulted occasionally - and the grouping is load-bearing twice
+// over. It is what makes the second tier drawable in a quieter style, and on a
+// phone it is what the stylesheet dissolves: .nav-group { display: contents }
+// hands the links straight back to the bar, because two flex containers cannot
+// share a line and the grouping would otherwise cost a whole row (231px over
+// four rows against 198px over three, measured at 390px).
+//
+// Both halves rot the same way: a new link added to the <nav> rather than to
+// one of the two groups looks right on a desk, is styled as neither tier, and
+// on a phone sits in a third flex container that takes a row of its own.
+func TestEveryNavigationLinkSitsInATier(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("templates", "layout.html"))
+	if err != nil {
+		t.Fatalf("read layout.html: %v", err)
+	}
+	markup := string(source)
+
+	open := strings.Index(markup, `<nav class="mainnav"`)
+	shut := strings.Index(markup[open:], "</nav>")
+	if open < 0 || shut < 0 {
+		t.Fatal(`layout.html no longer has a <nav class="mainnav"> ... </nav>, ` +
+			`so this test is not checking what it claims to`)
+	}
+	nav := markup[open : open+shut]
+
+	// Tags in document order. Nested spans are real - the inbox badge is one -
+	// so the group has to be closed by depth rather than by the next </span>.
+	token := regexp.MustCompile(`<span\b[^>]*>|</span>|<a\b[^>]*>`)
+	depth, group := 0, -1
+	for _, at := range token.FindAllStringIndex(nav, -1) {
+		tag := nav[at[0]:at[1]]
+		switch {
+		case strings.HasPrefix(tag, "</span"):
+			depth--
+			if depth == group {
+				group = -1
+			}
+		case strings.HasPrefix(tag, "<span"):
+			if group < 0 && strings.Contains(tag, "nav-group") {
+				group = depth
+			}
+			depth++
+		default:
+			if group < 0 {
+				line := 1 + strings.Count(markup[:open+at[0]], "\n")
+				t.Errorf(`layout.html:%d: %s is in the navigation but in `+
+					`neither tier; put it in the nav-primary or the `+
+					`nav-secondary group`, line, strings.TrimSpace(tag))
+			}
+		}
+	}
+
+	if !strings.Contains(nav, "nav-primary") || !strings.Contains(nav, "nav-secondary") {
+		t.Error("the navigation no longer has both tiers")
+	}
+
+	css := stylesheet(t)
+	collapse := regexp.MustCompile(`\.nav-group\s*\{[^}]*display:\s*contents`)
+	if !collapse.MatchString(css) {
+		t.Error(".nav-group is never given display: contents, so on a phone " +
+			"the two tiers are two flex containers and cannot share a line: " +
+			"the grouping costs a row that the links would not")
+	}
 }

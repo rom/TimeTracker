@@ -64,6 +64,36 @@ func (e TimeEntry) ForClient() TimeEntry {
 	return e
 }
 
+// WithoutMoney returns the entry with its billing snapshot removed.
+//
+// The snapshot - the rate, the amount, the currency and the rounding rule that
+// produced it - is written onto every entry when it is billed and frozen
+// there, so an invoiced figure cannot move under a later rate change
+// (ADR-0014). That makes it the most commercially sensitive thing an entry
+// carries, and until this it left the service on every entry a member read:
+// nothing but a template declining to print it stood between somebody who may
+// not see money and the rate their colleague's hour is sold at.
+//
+// Not the same as ForClient, which also removes the note, the tags, the proxy
+// subject and the decision trail. Somebody who may not see money is a
+// colleague, not an outsider: they keep everything about the work and lose
+// only what it is worth.
+func (e TimeEntry) WithoutMoney() TimeEntry {
+	e.RateMinor = 0
+	e.AmountMinor = 0
+	e.Currency = ""
+	e.RoundingRuleApplied = ""
+	return e
+}
+
+// ProjectEntriesWithoutMoney narrows a whole listing.
+func ProjectEntriesWithoutMoney(entries []TimeEntry) []TimeEntry {
+	for i := range entries {
+		entries[i] = entries[i].WithoutMoney()
+	}
+	return entries
+}
+
 // ProjectEntriesForClient narrows a whole listing.
 //
 // A slice rather than one entry, because every read path in the service returns

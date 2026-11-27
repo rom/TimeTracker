@@ -91,54 +91,88 @@
        (docs/adr/0008-rbac-model.md). The data behind those screens is narrowed
        regardless - this is presentation, and presentation is never the
        enforcement. */}}
+  {{/* Two tiers, in one navigation landmark.
+
+       Fourteen links in a flat row is a list nobody reads: everything shouts
+       equally, so the thing somebody opens forty times a day sits beside the
+       thing they open twice a year. They are grouped by how often a hand
+       reaches for them - what you record and read every day, then everything
+       else - and the second group is drawn quieter rather than hidden.
+
+       Quieter, not collapsed. A <details> would make every link in it
+       unfocusable while shut, and data-nav promises that moving the navigation
+       changes neither the reading order nor the tab order; a disclosure would
+       change both, and would do it only on the screens where space is
+       tightest. Every link is still present, still focusable, still in the
+       same order in both layouts. */}}
   <nav class="mainnav" aria-label="{{.T "nav.main"}}">
     {{if .IsClient}}
-      <a href="/entries" {{if eq .Active "entries"}}class="active" aria-current="page"{{end}}>{{.T "nav.entries"}}</a>
-      <a href="/guide"   {{if eq .Active "guide"}}class="active" aria-current="page"{{end}}>{{.T "nav.guide"}}</a>
+      {{/* A client has one screen and the documentation. There is nothing to
+           tier. */}}
+      <span class="nav-group nav-primary">
+        <a href="/entries" {{if eq .Active "entries"}}class="active" aria-current="page"{{end}}>{{.T "nav.entries"}}</a>
+        <a href="/guide"   {{if eq .Active "guide"}}class="active" aria-current="page"{{end}}>{{.T "nav.guide"}}</a>
+      </span>
     {{else}}
-    {{/* aria-current tells assistive technology which page this is, which the
-         colour alone cannot convey. */}}
-    <a href="/today"   {{if eq .Active "today"}}class="active" aria-current="page"{{end}}>{{.T "nav.today"}}</a>
-    <a href="/week"    {{if eq .Active "week"}}class="active" aria-current="page"{{end}}>{{.T "nav.week"}}</a>
-    <a href="/month"   {{if eq .Active "month"}}class="active" aria-current="page"{{end}}>{{.T "nav.month"}}</a>
-    <a href="/entries" {{if eq .Active "entries"}}class="active" aria-current="page"{{end}}>{{.T "nav.entries"}}</a>
-    <a href="/expenses" {{if eq .Active "expenses"}}class="active" aria-current="page"{{end}}>{{.T "nav.expenses"}}</a>
-    <a href="/inbox" {{if eq .Active "inbox"}}class="active" aria-current="page"{{end}}>
-      {{.T "nav.inbox"}}
-      {{/* A proposal nobody looks at is unbilled work, so the count is on every
-           screen rather than only on the inbox itself. */}}
-      {{if gt .InboxCount 0}}<span class="badge badge-count">{{.InboxCount}}</span>{{end}}
-    </a>
-    {{/* Server mode only: with a single user there is nobody else to approve,
-         and the service refuses the action outright. */}}
-    {{if .ServerMode}}
-      <a href="/approvals" {{if eq .Active "approvals"}}class="active" aria-current="page"{{end}}>{{.T "nav.approvals"}}</a>
-    {{end}}
-    <a href="/admin"   {{if eq .Active "admin"}}class="active" aria-current="page"{{end}}>{{.T "nav.admin"}}</a>
-    {{/* The guide is how-to documentation, as opposed to the ? button's help
-         for the screen in front of you. Both exist because they answer
-         different questions. */}}
-    <a href="/routines" {{if eq .Active "routines"}}class="active" aria-current="page"{{end}}>{{.T "nav.routines"}}</a>
-    {{/* Renaming and deleting tags is administration of the instance - a tag is
-         shared by every project, and deleting one takes it off entries
-         everywhere - and so is the user list. Neither link is offered to
-         somebody both refuse, which includes a manager: they administer their
-         own customers and projects, not the instance. The catalogue screen
-         stays on the list for everybody, since reading it is in a member's role
-         and it is where a favourite is marked. */}}
-    {{if .CanAdminister}}
-      <a href="/tags"  {{if eq .Active "tags"}}class="active" aria-current="page"{{end}}>{{.T "nav.tags"}}</a>
-    {{end}}
-    <a href="/reports" {{if eq .Active "reports"}}class="active" aria-current="page"{{end}}>{{.T "nav.reports"}}</a>
-    {{/* The recycle bin. Offered to everybody who can delete anything, which is
-         everybody but a client: what a person sees there is their own
-         deletions, and a record belonging to the instance rather than to a
-         person is shown only to whoever may administer it. */}}
-    <a href="/deleted" {{if eq .Active "deleted"}}class="active" aria-current="page"{{end}}>{{.T "nav.deleted"}}</a>
-    <a href="/guide"   {{if eq .Active "guide"}}class="active" aria-current="page"{{end}}>{{.T "nav.guide"}}</a>
-    {{if .ServerMode}}{{if .CanAdminister}}
-      <a href="/users" {{if eq .Active "users"}}class="active" aria-current="page"{{end}}>{{.T "nav.users"}}</a>
-    {{end}}{{end}}
+
+    {{/* The daily tier: the time you record, the days you did not, and the
+         proposals waiting on you. aria-current tells assistive technology
+         which page this is, which the colour alone cannot convey. */}}
+    <span class="nav-group nav-primary">
+      <a href="/today"   {{if eq .Active "today"}}class="active" aria-current="page"{{end}}>{{.T "nav.today"}}</a>
+      <a href="/week"    {{if eq .Active "week"}}class="active" aria-current="page"{{end}}>{{.T "nav.week"}}</a>
+      <a href="/month"   {{if eq .Active "month"}}class="active" aria-current="page"{{end}}>{{.T "nav.month"}}</a>
+      <a href="/entries" {{if eq .Active "entries"}}class="active" aria-current="page"{{end}}>{{.T "nav.entries"}}</a>
+      <a href="/expenses" {{if eq .Active "expenses"}}class="active" aria-current="page"{{end}}>{{.T "nav.expenses"}}</a>
+      <a href="/absence" {{if eq .Active "absence"}}class="active" aria-current="page"{{end}}>{{.T "nav.absence"}}</a>
+      {{/* The inbox is in this tier because of the badge: a proposal nobody
+           looks at is unbilled work, and a count in the quiet row is a count
+           nobody sees. */}}
+      <a href="/inbox" {{if eq .Active "inbox"}}class="active" aria-current="page"{{end}}>
+        {{.T "nav.inbox"}}
+        {{if gt .InboxCount 0}}<span class="badge badge-count">{{.InboxCount}}</span>{{end}}
+      </a>
+    </span>
+
+    {{/* Everything else: set up once, consulted occasionally, or somebody
+         else's job. */}}
+    <span class="nav-group nav-secondary">
+      {{/* Server mode only: with a single user there is nobody else to
+           approve, and the service refuses the action outright. */}}
+      {{if .ServerMode}}
+        <a href="/approvals" {{if eq .Active "approvals"}}class="active" aria-current="page"{{end}}>{{.T "nav.approvals"}}</a>
+      {{end}}
+      <a href="/admin"   {{if eq .Active "admin"}}class="active" aria-current="page"{{end}}>{{.T "nav.admin"}}</a>
+      <a href="/routines" {{if eq .Active "routines"}}class="active" aria-current="page"{{end}}>{{.T "nav.routines"}}</a>
+      <a href="/reports" {{if eq .Active "reports"}}class="active" aria-current="page"{{end}}>{{.T "nav.reports"}}</a>
+      {{/* Renaming and deleting tags is administration of the instance - a tag
+           is shared by every project, and deleting one takes it off entries
+           everywhere - and so is the user list. Neither link is offered to
+           somebody both refuse, which includes a manager: they administer
+           their own customers and projects, not the instance. The catalogue
+           screen stays on the list for everybody, since reading it is in a
+           member's role and it is where a favourite is marked. */}}
+      {{if .CanAdminister}}
+        <a href="/tags"  {{if eq .Active "tags"}}class="active" aria-current="page"{{end}}>{{.T "nav.tags"}}</a>
+      {{end}}
+      {{/* The recycle bin. Offered to everybody who can delete anything, which
+           is everybody but a client: what a person sees there is their own
+           deletions, and a record belonging to the instance rather than to a
+           person is shown only to whoever may administer it. */}}
+      <a href="/deleted" {{if eq .Active "deleted"}}class="active" aria-current="page"{{end}}>{{.T "nav.deleted"}}</a>
+      {{/* The personal half of the settings. Offered to everybody, which is
+           the whole point: /settings is the instance's and is the
+           administrator's, and until this screen existed a member could not
+           choose their own working hours or date format at all. */}}
+      <a href="/preferences" {{if eq .Active "preferences"}}class="active" aria-current="page"{{end}}>{{.T "nav.preferences"}}</a>
+      {{if .ServerMode}}{{if .CanAdminister}}
+        <a href="/users" {{if eq .Active "users"}}class="active" aria-current="page"{{end}}>{{.T "nav.users"}}</a>
+      {{end}}{{end}}
+      {{/* The guide is how-to documentation, as opposed to the ? button's help
+           for the screen in front of you. Both exist because they answer
+           different questions. */}}
+      <a href="/guide"   {{if eq .Active "guide"}}class="active" aria-current="page"{{end}}>{{.T "nav.guide"}}</a>
+    </span>
     {{end}}
   </nav>
 

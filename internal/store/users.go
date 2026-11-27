@@ -36,7 +36,9 @@ type Account struct {
 const userSelect = `
 	SELECT id, display_name, email, role, time_zone, theme, language, active, created_at,
 	       password_hash, oidc_subject, oidc_issuer, totp_secret, client_customer_id,
-	       password_set_at
+	       password_set_at,
+	       clock_format, date_format, nav_position, day_overflow,
+	       day_start_hour, day_end_hour, expected_weekly_minutes
 	FROM users`
 
 // AccountByEmail loads an account for a password login.
@@ -75,7 +77,14 @@ func scanAccount(row rowScanner) (Account, error) {
 	err := row.Scan(&a.User.ID, &a.User.DisplayName, &a.User.Email, &role,
 		&a.User.TimeZone, &a.User.Theme, &a.User.Language, &active, &createdAt,
 		&a.PasswordHash, &a.OIDCSubject, &a.OIDCIssuer, &a.TOTPSecret, &a.User.ClientCustomerID,
-		&a.PasswordSetAt)
+		&a.PasswordSetAt,
+		// The same six as the identity scan. Left out here, somebody who
+		// signed in with a password would get the instance's presentation
+		// however they had set their own: the account path and the identity
+		// path have to agree about who the person is.
+		&a.User.ClockFormat, &a.User.DateFormat, &a.User.NavPosition,
+		&a.User.DayOverflow, &a.User.DayStartHour, &a.User.DayEndHour,
+		&a.User.ExpectedWeeklyMinutes)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Account{}, ErrNotFound
 	}
