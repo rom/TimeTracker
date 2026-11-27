@@ -1,0 +1,52 @@
+{{define "content"}}
+<section class="deleted-screen">
+
+  <header class="screen-header">
+    <div class="screen-title">
+      <h1>{{.T "deleted.title"}}</h1>
+    </div>
+  </header>
+
+  {{/* What this screen is for, said once. A list of deletions with no
+       explanation reads as an audit log, which is a different thing in this
+       application and lives behind the admin screen. */}}
+  <p class="field-help">{{.T "deleted.help"}}</p>
+
+  {{if .Deleted}}
+    <div class="grid-scroll"><table class="entries">
+      <thead>
+        <tr>
+          <th scope="col">{{.T "deleted.what"}}</th>
+          <th scope="col">{{.T "deleted.when"}}</th>
+          <th scope="col">{{.T "deleted.who"}}</th>
+          <th scope="col"><span class="visually-hidden">{{.T "action.restore"}}</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Deleted}}
+          <tr>
+            <td>
+              {{/* The kind first, because a summary alone does not say whether
+                   "#incident (14)" is a tag or an entry noting an incident. */}}
+              <span class="badge">{{$.T (printf "deleted.kind.%s" .Kind)}}</span>
+              <span class="deleted-summary">{{.Summary}}</span>
+            </td>
+            <td>{{$.Printer.FormatDate .DeletedAt}} {{$.Printer.FormatTime .DeletedAt $.Zone}}</td>
+            <td>{{.DeletedByName}}</td>
+            <td class="cell-actions">
+              <form method="post" action="/deleted/{{.ID}}/restore"
+                    hx-post="/deleted/{{.ID}}/restore">
+                {{template "csrf" $.CSRFToken}}
+                <button type="submit" class="btn btn-small">{{$.T "action.restore"}}</button>
+              </form>
+            </td>
+          </tr>
+        {{end}}
+      </tbody>
+    </table></div>
+  {{else}}
+    <p class="empty">{{.T "deleted.empty"}}</p>
+  {{end}}
+
+</section>
+{{end}}

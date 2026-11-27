@@ -47,7 +47,7 @@
   </form>
   {{end}}
 
-  <table class="admin-table">
+  <div class="grid-scroll"><table class="admin-table">
     {{/* The rate column is left out for a reader who may not see one, rather
          than drawn empty: a column headed "Default rate" with nothing under it
          reads as missing data. The figure is already absent from the value by
@@ -97,7 +97,7 @@
         <tr><td colspan="{{if .CanManage}}5{{else}}4{{end}}" class="empty">No customers yet.</td></tr>
       {{end}}
     </tbody>
-  </table>
+  </table></div>
 
   {{/* ------------------------------------------------------------- projects */}}
   <h2 class="section-heading">Projects</h2>
@@ -122,7 +122,7 @@
   </form>
   {{end}}
 
-  <table class="admin-table">
+  <div class="grid-scroll"><table class="admin-table">
     <thead><tr><th>Project</th><th>Customer</th>{{if .CanManage}}<th>Rate</th>{{end}}<th></th></tr></thead>
     <tbody>
       {{range .Projects}}
@@ -148,7 +148,7 @@
         <tr><td colspan="{{if .CanManage}}4{{else}}3{{end}}" class="empty">No projects yet.</td></tr>
       {{end}}
     </tbody>
-  </table>
+  </table></div>
 
   {{/* ---------------------------------------------------------- assignments */}}
   <h2 class="section-heading">Assignments</h2>
@@ -181,7 +181,7 @@
   </form>
   {{end}}
 
-  <table class="admin-table">
+  <div class="grid-scroll"><table class="admin-table">
     <thead><tr><th>Assignment</th><th>Project</th><th>Customer</th><th></th></tr></thead>
     <tbody>
       {{range .Assignments}}
@@ -226,7 +226,7 @@
         <tr><td colspan="4" class="empty">No assignments yet.</td></tr>
       {{end}}
     </tbody>
-  </table>
+  </table></div>
 
 </section>
 {{end}}

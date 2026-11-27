@@ -29,7 +29,7 @@
     <p class="empty">{{.T "report.budget.empty"}}</p>
   {{else}}
     <div class="table-scroll">
-      <table class="budget-table">
+      <div class="grid-scroll"><table class="budget-table">
         <caption class="visually-hidden">{{.T "report.budget.title"}}</caption>
         <thead>
           <tr>
@@ -113,7 +113,7 @@
             </tr>
           {{end}}
         </tbody>
-      </table>
+      </table></div>
     </div>
   {{end}}
 

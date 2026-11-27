@@ -114,7 +114,7 @@
        which the calendar cannot give: the calendar says when, this says what. */}}
   {{if $month.ByAssignment}}
     <h2>{{.T "month.went"}}</h2>
-    <table class="month-breakdown">
+    <div class="grid-scroll"><table class="month-breakdown">
       <tbody>
         {{range $month.ByAssignment}}
           <tr>
@@ -136,7 +136,7 @@
           </tr>
         {{end}}
       </tbody>
-    </table>
+    </table></div>
   {{else}}
     <p class="empty">{{.T "month.empty"}}</p>
   {{end}}

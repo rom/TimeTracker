@@ -186,6 +186,47 @@ the decision.
   grids have honoured it, but it was labelled only "first day of the week" -
   which leaves somebody to work out for themselves that Monday ends the week
   with the weekend and Saturday starts it with one. It now says so.
+* **Changing many entries at once.** Tick rows on the entries screen and move
+  them to another assignment, add or remove a tag, or delete them. Re-tagging a
+  week of misfiled time was thirty round trips through a correction form. Every
+  change goes through the single-entry path that already exists rather than
+  through SQL of its own, so the authorisation, the week lock, the weekend
+  policy, the billing recomputation and the audit row are the ones already
+  written and tested. A selection spanning a locked week changes the rest and
+  reports what it would not change and why, rather than refusing the lot.
+* **A summary report** (`/reports`): hours, billable hours and amount over any
+  range, grouped by customer, project, assignment or person, with each group's
+  share of the total and a link through to the entries behind it. The budget
+  report beside it answers a different question - how much of a cap has been
+  used - and the month view answers this one for a single month and a single
+  person. It is built on the same entry search every listing uses rather than
+  on SQL of its own, so the scope rules, the client narrowing and the money
+  projection are the ones already enforced there; amounts are stripped in the
+  service for somebody who may not see money rather than hidden by the
+  template. A range holding more than one currency says so instead of printing
+  a sum of kronor and euros.
+* **A deletion can be undone** ([ADR-0037](adr/0037-deletion-is-recoverable.md)).
+  Deleting a time entry, an expense, a tag, a routine or a set of contract
+  terms moves it to **Recently deleted** rather than destroying it, in the same
+  transaction that removes it, and restoring puts it back under its original
+  id - so anything that referred to it still does. Child rows travel with the
+  parent, which matters most for a tag: deleting one takes it off every entry
+  carrying it across every project, and restoring puts all of those back.
+  Restoring is checked against the timesheet lock exactly as a new entry is, so
+  it cannot put hours into a week somebody has approved.
+* **The confirmation before deleting now exists without JavaScript.** It never
+  did: `hx-confirm` is a `window.confirm` in a script, so in a browser with
+  script disabled - which this application otherwise supports throughout - a
+  single click deleted, permanently. The script now reports that it asked, and
+  a request arriving without that answer gets a page naming the record.
+* **Search is in the top bar**, on every screen. Trigram search with a scan
+  fallback and optional regular expressions has existed since
+  [ADR-0029](adr/0029-searching-with-trigram-and-regexp.md), reachable from one
+  filter box on one screen: the strongest way to find something in a long
+  history was the hardest thing in the interface to find. A search from the bar
+  covers every date rather than the entries screen's default last thirty days,
+  because that default is invisible from the header and an empty result would
+  look like an answer.
 * **The month's week totals open their week too.** The week number at one end of
   the row was already a link; the total at the other end is the end people
   actually read, because the eye goes to the figure. Both ends of the row now
@@ -234,6 +275,48 @@ the decision.
 
 ### Fixed
 
+* **A new instance taught nothing and offered three controls that could only
+  fail.** The quick-add box carried a worked example naming a customer and a
+  project that did not exist, so the first thing anybody typed came back "could
+  not read that: no assignment matched" - true about the parser, useless about
+  the situation. Beside it sat copy-yesterday with no yesterday to copy, and a
+  manual entry form with an empty assignment list. The screen now says what is
+  missing, links to where a customer is created and to the setup guide that was
+  already written for this moment and reachable only by knowing it was there,
+  and the three dead controls appear once there is a catalogue to use them on.
+* **Every instance was grey.** Customers and projects defaulted to the neutral
+  palette key, so the seven colours - contrast-tested in eight themes, and
+  carried by the chips, the week grid, the month calendar and every timeline
+  block - showed one colour until somebody set each customer by hand. Customers
+  now take the next colour in the palette as they are created, and a project
+  takes its customer's, so everything under one customer reads as one colour.
+* **Billable time was marked with a euro sign** whatever the currency, so every
+  billable row of a Swedish instance was stamped with a currency it has never
+  used. It is the generic currency sign now, which is the one that means
+  "money, unspecified" - which is what the column was always saying.
+* **The day pane reserved a screen of ruled hours for a day with nothing on
+  it**, which on a new instance, where every day is empty, was most of the
+  first screen anybody saw. An empty day collapses to its sentence. The
+  timeline blocks also stopped repeating the note printed in the table below
+  them: the pane is a picture of the shape of the day, and the table is the
+  list.
+* **The interface was not responsive, on any screen, at any size below a large
+  laptop.** DESIGN.md has claimed it since the first draft. The top bar was a
+  flex row with no wrap holding thirteen navigation links, two pickers, a
+  clock, a date and a name, so it ran off the side and took the page's
+  horizontal scrollbar with it: 374px of overflow on a 390px phone, 558px at
+  768, 302px at 1024 and still 46px at 1280, where it clipped the signed-in
+  name. The bar and every other row of controls that cannot fit a phone - the
+  date navigation, the export formats - now wrap, and the navigation wraps
+  rather than collapsing behind a disclosure so that no link stops being
+  focusable on a small screen.
+
+  Wide tables were the other half. Each is now in a scroll container, and the
+  container declares paint containment: `overflow-x` alone clips the table
+  visually while Chromium still propagates its layout overflow to the root, so
+  the page scrolled sideways behind a table that looked correctly contained.
+  Measured across fifteen screens at five widths from 360px up, nothing scrolls
+  sideways any more.
 * **The spring theme's green was below AA as text** - 4.07:1 on a card and
   3.77:1 on the page, in the one theme whose whole character is green and which
   therefore makes that colour the likeliest to be chosen. Found by the new

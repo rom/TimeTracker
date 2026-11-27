@@ -47,6 +47,17 @@ type pageData struct {
 	// without being passed anything.
 	WeekendColour string
 
+	// Deleted is what the acting user may put back, on the recycle bin screen.
+	Deleted []service.DeletedRecord
+	// Confirm is the second ask, rendered when a destructive request arrives
+	// without the script's confirmation.
+	Confirm Confirmation
+	// Summary is the grouped report, and Groupings are the dimensions offered.
+	Summary   service.SummaryReport
+	Groupings []service.GroupBy
+	// Bulk is the outcome of a change applied to many entries at once.
+	Bulk service.BulkResult
+
 	// Help is the context-sensitive help for the current screen.
 	Help       []helpSection
 	HelpScreen string
@@ -663,9 +674,29 @@ func (s *Server) entryFilter(r *http.Request) (service.EntryFilter, entryFilterF
 		To:   r.URL.Query().Get("to"),
 	}
 
+	// "all=1" is what the search box in the top bar sends: search everything,
+	// rather than the last thirty days this screen otherwise defaults to.
+	//
+	// It matters because the default is invisible. A search from the header for
+	// something recorded in March would come back empty in May, with nothing on
+	// the screen to say that a date range had quietly excluded it - which is
+	// precisely the failure ADR-0029 exists to prevent at the other end, where
+	// a query too short for the index says so rather than returning nothing.
+	//
+	// The resolved dates are written back into the form, so the range boxes on
+	// the screen show the search that actually ran and can be narrowed from
+	// there.
+	searchEverything := r.URL.Query().Get("all") == "1"
+
 	from, err := time.Parse("2006-01-02", form.From)
 	if err != nil {
-		from = now.AddDate(0, 0, -30)
+		if searchEverything {
+			// Before any plausible timesheet, and a date SQLite compares as a
+			// string exactly like any other.
+			from = time.Date(1970, time.January, 1, 0, 0, 0, 0, time.UTC)
+		} else {
+			from = now.AddDate(0, 0, -30)
+		}
 		form.From = from.Format("2006-01-02")
 	}
 	to, err := time.Parse("2006-01-02", form.To)
@@ -876,7 +907,33 @@ func (s *Server) handleUpdateEntry(w http.ResponseWriter, r *http.Request) {
 // handleDeleteEntry removes an entry. The prior state survives in the audit
 // trail, so the deletion is still explicable afterwards.
 func (s *Server) handleDeleteEntry(w http.ResponseWriter, r *http.Request) {
-	if err := s.svc.DeleteEntry(r.Context(), int64Param(r.PathValue("id"))); err != nil {
+	if err := parseForm(r); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
+	id := int64Param(r.PathValue("id"))
+
+	// The entry is named in the question, read before it is gone. "Delete this
+	// entry?" is a question nobody can answer from a page that does not say
+	// which entry; without JavaScript this page is the only ask there is.
+	entry, entryErr := s.svc.Entry(r.Context(), id)
+	describe := func(p *i18n.Printer) string {
+		if entryErr != nil {
+			return ""
+		}
+		what := entry.AssignmentName + " · " + p.FormatDateLong(entry.StartedAt) +
+			" · " + p.FormatDuration(entry.DurationSeconds)
+		if entry.Note != "" {
+			what += " · " + entry.Note
+		}
+		return what
+	}
+	if s.needsConfirming(w, r, describe, "/entries") {
+		return
+	}
+
+	if err := s.svc.DeleteEntry(r.Context(), id); err != nil {
 		s.fail(w, r, err)
 		return
 	}

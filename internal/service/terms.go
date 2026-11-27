@@ -188,13 +188,20 @@ func (s *Service) DeleteContractTerms(ctx context.Context, id int64) error {
 	if err != nil {
 		return err
 	}
-	return s.mutate(ctx, "contract_terms.delete", "contract_terms", map[string]any{
-		"scope":          string(existing.Scope),
-		"scope_id":       existing.ScopeID,
-		"effective_from": existing.EffectiveFrom,
-	}, func(tx *sql.Tx) (int64, error) {
-		return id, store.DeleteContractTermsTx(ctx, tx, id)
-	})
+	// Instance-level, like a tag: terms belong to a customer rather than to a
+	// person, so there is no owner to scope the bin entry to and putting one
+	// back is the same authority that removed it.
+	return s.binDeletion(ctx, "contract_term", id, 0,
+		fmt.Sprintf("%s %d · %s", existing.Scope, existing.ScopeID, existing.EffectiveFrom),
+		[]store.Capture{{Table: "contract_terms", Where: "id = ?", Args: []any{id}}},
+		"contract_terms.delete", "contract_terms", map[string]any{
+			"scope":          string(existing.Scope),
+			"scope_id":       existing.ScopeID,
+			"effective_from": existing.EffectiveFrom,
+		},
+		func(ctx context.Context, tx *sql.Tx) error {
+			return store.DeleteContractTermsTx(ctx, tx, id)
+		})
 }
 
 // TermsOn returns the rules in force for a project on a day, for callers that

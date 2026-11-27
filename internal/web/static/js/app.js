@@ -106,14 +106,32 @@
       if (!url) return;
 
       var confirmText = form.getAttribute("hx-confirm");
-      if (confirmText && !window.confirm(confirmText)) {
-        event.preventDefault();
-        return;
+      if (confirmText) {
+        if (!window.confirm(confirmText)) {
+          event.preventDefault();
+          return;
+        }
+        /* The answer travels with the request. The server asks a second time
+           when this field is absent, which is what gives the no-JavaScript
+           path a confirmation step: without it, hx-confirm was the only one
+           there was, and it disappears along with the script. Saying yes here
+           is what lets this path skip the interstitial. */
+        markConfirmed(form);
       }
 
       event.preventDefault();
       submitForm(form, url);
     });
+  }
+
+  /* Records that the person has already been asked. */
+  function markConfirmed(form) {
+    if (form.querySelector("input[name=confirmed]")) return;
+    var field = document.createElement("input");
+    field.type = "hidden";
+    field.name = "confirmed";
+    field.value = "1";
+    form.appendChild(field);
   }
 
   function submitForm(form, url) {

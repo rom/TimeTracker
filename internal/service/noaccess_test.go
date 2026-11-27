@@ -243,6 +243,14 @@ func TestSomebodyWithNoProjectsReachesNoneOfThem(t *testing.T) {
 			out, err := svc.Tags(ctx)
 			return answer{len(out), ""}, err
 		},
+		"Summarise": func() (answer, error) {
+			// Built on the same entry search every listing uses, so this is
+			// really asserting that it inherits that path's scoping rather
+			// than having opened a second one of its own - which is the whole
+			// reason it is not written as SQL.
+			out, err := svc.Summarise(ctx, f.now.AddDate(0, 0, -30), f.now, GroupByCustomer)
+			return answer{len(out.Rows), ""}, err
+		},
 		"Routines": func() (answer, error) {
 			out, err := svc.Routines(ctx, false)
 			return answer{len(out), ""}, err
@@ -504,6 +512,7 @@ func TestBothSweepsCoverTheSameSurface(t *testing.T) {
 		"CreateAssignment": true, "UpdateAssignment": true,
 		"SetAssignmentArchived": true, "SetFavourite": true,
 		"UpdateSettings": true, "UpdateTag": true, "DeleteTag": true,
+		"BulkEntries":   true,
 		"ReindexSearch": true, "SaveContractTerms": true,
 		"DeleteContractTerms": true, "SaveRoutine": true, "DeleteRoutine": true,
 		"ApplyRoutine": true, "ApplyAllRoutines": true, "CopyDay": true,
@@ -553,7 +562,8 @@ var strangerReads = map[string]bool{
 	"Projects": true, "Project": true, "Assignments": true, "Assignment": true,
 	"RecentAssignments": true, "QuickStart": true, "Day": true, "Week": true,
 	"Month": true, "BudgetReportFor": true, "ApprovalReportFor": true,
-	"Inbox": true, "PendingCount": true, "ProposedByMe": true,
+	"Summarise": true,
+	"Inbox":     true, "PendingCount": true, "ProposedByMe": true,
 	"PendingIdle": true, "RunningIdle": true, "RunningTimers": true,
 	"Tags": true, "Routines": true, "ContractTerms": true, "ReviewSubmission": true,
 	"PreviewExport": true, "PreviewBackupFile": true,
@@ -561,6 +571,13 @@ var strangerReads = map[string]bool{
 	"EntryForEdit": true, "CustomerForEdit": true, "ProjectForEdit": true,
 	"AssignmentForEdit": true, "TagsForAdmin": true, "SettingsForAdmin": true,
 	"Attachments": true, "CreateBackup": true,
+	// The recycle bin is scoped by who deleted the record rather than by
+	// project membership: a deletion belongs to the person whose record it was,
+	// and a record with no owner - a tag, a contract term - belongs to the
+	// instance and is shown only to somebody who may administer it. Both bounds
+	// are asserted directly in recycle_test.go, where they can be stated in
+	// terms of owners rather than squeezed into a membership sweep.
+	"RecentlyDeleted": true, "RestoreDeleted": true,
 }
 
 // TestReadsAreScopedByProjectMembership.

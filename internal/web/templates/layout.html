@@ -129,12 +129,38 @@
     {{if .CanAdminister}}
       <a href="/tags"  {{if eq .Active "tags"}}class="active" aria-current="page"{{end}}>{{.T "nav.tags"}}</a>
     {{end}}
+    <a href="/reports" {{if eq .Active "reports"}}class="active" aria-current="page"{{end}}>{{.T "nav.reports"}}</a>
+    {{/* The recycle bin. Offered to everybody who can delete anything, which is
+         everybody but a client: what a person sees there is their own
+         deletions, and a record belonging to the instance rather than to a
+         person is shown only to whoever may administer it. */}}
+    <a href="/deleted" {{if eq .Active "deleted"}}class="active" aria-current="page"{{end}}>{{.T "nav.deleted"}}</a>
     <a href="/guide"   {{if eq .Active "guide"}}class="active" aria-current="page"{{end}}>{{.T "nav.guide"}}</a>
     {{if .ServerMode}}{{if .CanAdminister}}
       <a href="/users" {{if eq .Active "users"}}class="active" aria-current="page"{{end}}>{{.T "nav.users"}}</a>
     {{end}}{{end}}
     {{end}}
   </nav>
+
+  {{/* Search, on every screen.
+
+       The application has had trigram search with a scan fallback and optional
+       regexp since ADR-0029, and it was reachable from one filter box on one
+       screen. The strongest way to find a thing in a long history was the
+       hardest thing in the interface to find.
+
+       all=1 searches every date rather than the entries screen's default last
+       thirty days. A header search that quietly excluded March would be worse
+       than no header search: the range is invisible from here, and the empty
+       result would look like an answer. */}}
+  <form class="topbar-search" method="get" action="/entries" role="search">
+    <input type="hidden" name="all" value="1">
+    <label>
+      <span class="visually-hidden">{{.T "nav.search"}}</span>
+      <input type="search" name="q" placeholder="{{.T "nav.search"}}"
+             aria-label="{{.T "nav.search"}}">
+    </label>
+  </form>
 
   <div class="topbar-right">
     {{if .HasHelp}}

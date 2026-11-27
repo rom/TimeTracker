@@ -64,7 +64,7 @@
 
     {{/* The summary an invoice is written from. */}}
     <h2 class="section-heading">{{.T "export.preview.bycustomer"}}</h2>
-    <table class="entries billing-summary">
+    <div class="grid-scroll"><table class="entries billing-summary">
       <thead>
         <tr>
           <th scope="col">{{.T "entries.customer"}}</th>
@@ -94,7 +94,7 @@
           {{end}}
         {{end}}
       </tbody>
-    </table>
+    </table></div>
     {{if $preview.Truncated}}
       <p class="field-help">{{.T "export.preview.truncated"}}</p>
     {{end}}

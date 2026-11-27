@@ -97,6 +97,11 @@
 {{- /* The date is shown wherever a row could be from any day. On the day
        screen it would repeat the heading forty times and say nothing. */ -}}
 {{- $showDate := .ShowDate -}}
+{{- /* Select adds a checkbox for the bulk bar. It is only set on the entries
+       listing: the day view has one day's worth of rows and a correction form
+       beside each, and a column of checkboxes there would be furniture nobody
+       uses. */ -}}
+{{- $select := .Select -}}
   {{/* The row accepts a pasted image, which attaches it to this entry. It posts
        to the same endpoint a file input does, so there is no second, laxer path
        into the blob store. */}}
@@ -106,6 +111,17 @@
   <tr class="entry-row {{if $e.Flagged}}flagged{{end}} {{if eq (printf "%s" $e.Status) "pending"}}pending{{end}}"
       data-colour="{{$e.ColourKey}}"
       data-paste-target="/attachments/time_entry/{{$e.ID}}" tabindex="0">
+    {{if $select}}
+      {{/* form= rather than a wrapping <form>: the row already contains forms
+           of its own - stop, delete, attach - and a form inside a form is
+           invalid markup that browsers resolve by dropping one of them. The
+           attribute associates the checkbox with the bulk form further down
+           the page, which is plain HTML and needs no script. */}}
+      <td class="cell-select">
+        <input type="checkbox" name="id" value="{{$e.ID}}" form="bulk-form"
+               aria-label="{{$page.T "bulk.select"}}">
+      </td>
+    {{end}}
     <td class="cell-chip">
       <span class="chip" data-colour="{{$e.ColourKey}}" title="{{$e.CustomerName}}">
         {{if $e.Icon}}{{$e.Icon}}{{else}}●{{end}}
@@ -160,8 +176,14 @@
     </td>
     <td class="cell-billable">
       {{/* An icon alone would carry meaning by shape only; the visually hidden
-           text is what a screen reader announces. */}}
-      {{if $e.Billable}}<span aria-hidden="true">€</span><span class="visually-hidden">{{$page.T "entry.billable"}}</span>{{end}}
+           text is what a screen reader announces.
+
+           The generic currency sign rather than a euro. This column means "this
+           time is billable", not "this time is in euros", and it was marking
+           every billable row of a Swedish instance with a currency that
+           instance has never used. U+00A4 is the sign that exists precisely to
+           mean "money, unspecified", which is what the column is saying. */}}
+      {{if $e.Billable}}<span aria-hidden="true">¤</span><span class="visually-hidden">{{$page.T "entry.billable"}}</span>{{end}}
     </td>
     <td class="cell-actions">
       {{if gt $e.AttachmentCount 0}}
@@ -524,7 +546,11 @@
       </p>
     {{end}}
 
-    <div class="timeline" data-timeline data-slots="{{$day.Slots}}"
+    {{/* is-empty collapses the pane. A day with nothing on it needs a sentence,
+         not a screen of ruled hours with a sentence in the middle of it - and
+         on a new instance, where every day is empty, that pane was most of the
+         first screen anybody saw. */}}
+    <div class="timeline {{if not $day.Blocks}}is-empty{{end}}" data-timeline data-slots="{{$day.Slots}}"
          data-date="{{date $day.Date}}"
          data-start-hour="{{$day.StartHour}}" data-end-hour="{{$day.EndHour}}">
       {{/* The hour rules, sharing the grid's row template so a label lines up
@@ -556,7 +582,13 @@
                 {{$page.Printer.FormatTime $entry.StartedAt $day.Location}}
                 · {{$page.Printer.FormatDuration $entry.DurationSeconds}}
               </span>
-              {{if $entry.Note}}<span class="timeline-note">{{$entry.Note}}</span>{{end}}
+              {{/* No note here. The table below this pane lists the same
+                   entries with their notes, their customer and project, and
+                   the controls to act on them; repeating the note inside a
+                   block that is often an hour tall meant the screen said
+                   everything twice and the pane stopped being a picture of
+                   the shape of the day. The block carries what the table
+                   cannot: when it happened, and for how long. */}}
             </a>
 
             {{/* The no-script path, and the accessible one: a real form with a
@@ -607,7 +639,10 @@
       </p>
     {{end}}
 
-    <p class="field-help">{{.T "timeline.help"}}</p>
+    {{/* The instructions describe dragging a block, so they are shown when
+         there is a block to drag. On an empty day they described furniture
+         that was not on the screen. */}}
+    {{if $day.Blocks}}<p class="field-help">{{.T "timeline.help"}}</p>{{end}}
   </section>
 {{end}}
 

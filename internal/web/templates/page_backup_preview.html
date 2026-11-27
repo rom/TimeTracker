@@ -50,7 +50,7 @@
     <p class="empty">{{.T "backup.preview.empty"}}</p>
   {{else}}
     <h2 class="section-heading">{{.T "backup.preview.contents"}}</h2>
-    <table class="entries">
+    <div class="grid-scroll"><table class="entries">
       <tbody>
         <tr><th scope="row">{{.T "admin.customers"}}</th><td class="cell-number">{{$preview.Counts.Customers}}</td></tr>
         <tr><th scope="row">{{.T "admin.projects"}}</th><td class="cell-number">{{$preview.Counts.Projects}}</td></tr>
@@ -75,7 +75,7 @@
           </td>
         </tr>
       </tbody>
-    </table>
+    </table></div>
 
     {{/* The period and the customers: "which one is this" asked two ways. */}}
     {{if not $preview.FirstEntry.IsZero}}

@@ -70,7 +70,7 @@
 
   {{if $review.Expenses}}
     <h2 class="section-heading">{{.T "submit.review.expenses"}}</h2>
-    <table class="entries">
+    <div class="grid-scroll"><table class="entries">
       <thead>
         <tr>
           <th scope="col">{{.T "expenses.date"}}</th>
@@ -103,7 +103,7 @@
           </tr>
         {{end}}
       </tbody>
-    </table>
+    </table></div>
   {{end}}
 
   {{/* The decision. A plain form, so it works without script, and the same

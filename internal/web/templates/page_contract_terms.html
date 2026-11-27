@@ -44,7 +44,7 @@
   {{/* The revisions, newest first - the order they are resolved in. */}}
   <h2 class="section-heading" id="revisions">{{.T "terms.revisions"}}</h2>
   {{if $view.Terms}}
-    <table class="entries" aria-labelledby="revisions">
+    <div class="grid-scroll"><table class="entries" aria-labelledby="revisions">
       <thead>
         <tr>
           <th scope="col">{{.T "terms.from"}}</th>
@@ -85,7 +85,7 @@
           </tr>
         {{end}}
       </tbody>
-    </table>
+    </table></div>
   {{else}}
     <p class="empty">{{.T "terms.empty"}}</p>
   {{end}}

@@ -160,9 +160,16 @@
   </p>
 
   {{if .Entries}}
-    <table class="entries">
+    <div class="grid-scroll"><table class="entries">
       <thead>
         <tr>
+          <th scope="col" class="cell-select">
+            {{/* No "select all" box: without script it could not do anything,
+                 and a control that works in one browser configuration and not
+                 another is worse than one that is not there. The rows are
+                 selected individually. */}}
+            <span class="visually-hidden">{{.T "bulk.select"}}</span>
+          </th>
           <th scope="col"><span class="visually-hidden">{{.T "entry.colour"}}</span></th>
           <th scope="col">{{.T "entry.date"}}</th>
           <th scope="col">{{.T "entry.assignment"}}</th>
@@ -180,7 +187,7 @@
         {{range .EntryGroups}}
           {{if .Heading}}
             <tr class="month-heading">
-              <th colspan="4" scope="colgroup">
+              <th colspan="5" scope="colgroup">
                 {{.Heading}}
                 {{/* The count carries its own number: Printer.N prepends it,
                      which is why the singular form in the catalogue has a %d in
@@ -190,10 +197,44 @@
               <td colspan="2" class="month-heading-total">{{$.Printer.FormatDuration .Seconds}}</td>
             </tr>
           {{end}}
-          {{template "entry-row" (dict "Entry" .Entry "Page" $ "ShowDate" true)}}
+          {{template "entry-row" (dict "Entry" .Entry "Page" $ "ShowDate" true "Select" true)}}
         {{end}}
       </tbody>
-    </table>
+    </table></div>
+
+    {{/* One change applied to everything ticked above. The checkboxes live in
+         the table and point here with form=, because the rows already carry
+         forms of their own and nesting them is invalid markup.
+
+         Plain form controls, so this works with no script at all: pick an
+         action, give it a value where it needs one, submit. */}}
+    <form id="bulk-form" class="bulk-bar" method="post" action="/entries/bulk">
+      {{template "csrf" $.CSRFToken}}
+      <span class="bulk-label">{{.T "bulk.apply"}}</span>
+      <label>
+        <span class="visually-hidden">{{.T "bulk.action"}}</span>
+        <select name="action">
+          <option value="reassign">{{.T "bulk.action.reassign"}}</option>
+          <option value="add_tag">{{.T "bulk.action.add_tag"}}</option>
+          <option value="remove_tag">{{.T "bulk.action.remove_tag"}}</option>
+          <option value="delete">{{.T "bulk.action.delete"}}</option>
+        </select>
+      </label>
+      <label>
+        <span class="visually-hidden">{{.T "bulk.value.assignment"}}</span>
+        {{/* One field for both kinds of value: an assignment id when moving,
+             a tag name when tagging. A datalist rather than a select, because
+             the same box has to accept a tag that does not exist yet - typing
+             one is how a tag is created everywhere else in the application. */}}
+        <input type="text" name="value" list="bulk-values"
+               placeholder="{{.T "bulk.value.tag"}}">
+        <datalist id="bulk-values">
+          {{range .Assignments}}<option value="{{.ID}}">{{.Label}}</option>{{end}}
+          {{range .Tags}}<option value="{{.Name}}">#{{.Name}}</option>{{end}}
+        </datalist>
+      </label>
+      <button type="submit" class="btn">{{.T "action.apply"}}</button>
+    </form>
     {{template "pager" (dict "Page" $ "Filter" .Filter)}}
   {{else}}
     {{/* A page past the end is a stale bookmark or a filter that narrowed under

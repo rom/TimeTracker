@@ -312,10 +312,20 @@ func TestEveryServiceMethodReportsADeadDatabase(t *testing.T) {
 		"SubmitWeek":            func() error { _, err := svc.SubmitWeek(ctx, f.now); return err },
 		"SweepBlobs":            func() error { _, err := svc.SweepBlobs(ctx); return err },
 		"SwitchTo":              func() error { _, err := svc.SwitchTo(ctx, f.assignment.ID, ""); return err },
-		"Tags":                  func() error { _, err := svc.Tags(ctx); return err },
-		"TermsCurrency":         func() error { _, err := svc.TermsCurrency(ctx, domain.TermsForCustomer, f.customerID); return err },
-		"TermsOn":               func() error { _, err := svc.TermsOn(ctx, f.customerID, f.projectID, f.now); return err },
-		"UpdateAssignment":      func() error { return svc.UpdateAssignment(ctx, f.assignment) },
+		"BulkEntries": func() error {
+			_, err := svc.BulkEntries(ctx, []int64{1}, BulkAddTag, "incident")
+			return err
+		},
+		"RecentlyDeleted": func() error { _, err := svc.RecentlyDeleted(ctx); return err },
+		"Summarise": func() error {
+			_, err := svc.Summarise(ctx, f.now.AddDate(0, 0, -30), f.now, GroupByCustomer)
+			return err
+		},
+		"RestoreDeleted":   func() error { return svc.RestoreDeleted(ctx, 1) },
+		"Tags":             func() error { _, err := svc.Tags(ctx); return err },
+		"TermsCurrency":    func() error { _, err := svc.TermsCurrency(ctx, domain.TermsForCustomer, f.customerID); return err },
+		"TermsOn":          func() error { _, err := svc.TermsOn(ctx, f.customerID, f.projectID, f.now); return err },
+		"UpdateAssignment": func() error { return svc.UpdateAssignment(ctx, f.assignment) },
 		"UpdateCustomer": func() error {
 			return svc.UpdateCustomer(ctx, domain.Customer{ID: f.customerID, Name: "Acme", Currency: "SEK"})
 		},

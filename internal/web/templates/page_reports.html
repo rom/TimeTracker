@@ -1,0 +1,113 @@
+{{define "content"}}
+{{$report := .Summary}}
+<section class="reports-screen">
+
+  <header class="screen-header">
+    <div class="screen-title">
+      <h1>{{.T "reports.title"}}</h1>
+    </div>
+  </header>
+
+  {{/* The range and the dimension, in one form. Both are GET parameters, so a
+       report somebody wants again is a bookmark rather than six clicks. */}}
+  <form class="filter" method="get" action="/reports">
+    <label>
+      {{.T "reports.from"}}
+      <input type="date" name="from" value="{{date $report.From}}">
+    </label>
+    <label>
+      {{.T "reports.to"}}
+      <input type="date" name="to" value="{{date $report.To}}">
+    </label>
+    <label>
+      {{.T "reports.groupby"}}
+      <select name="group">
+        {{$current := $report.Group}}
+        {{range .Groupings}}
+          <option value="{{.}}" {{if eq . $current}}selected{{end}}>{{$.T (printf "reports.group.%s" .)}}</option>
+        {{end}}
+      </select>
+    </label>
+    <button type="submit" class="btn btn-primary">{{.T "action.apply"}}</button>
+  </form>
+
+  {{/* No totals card here. The table's own footer is the total, and the shared
+       card reads pageData.Totals - which this screen does not set, so it drew
+       a confident 0s above a table saying 26h. Two totals on one screen is the
+       duplication fixed on the day view; two totals that disagree is worse. */}}
+
+  {{if $report.Rows}}
+    <div class="grid-scroll">
+      <table class="entries report-table">
+        <thead>
+          <tr>
+            <th scope="col">{{.T (printf "reports.group.%s" $report.Group)}}</th>
+            <th scope="col" class="col-total">{{.T "reports.hours"}}</th>
+            <th scope="col" class="col-total">{{.T "reports.billable"}}</th>
+            {{if $report.Money}}<th scope="col" class="col-total">{{.T "reports.amount"}}</th>{{end}}
+            <th scope="col" class="cell-share">{{.T "reports.share"}}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range $report.Rows}}
+            <tr>
+              <th scope="row" {{if .ColourKey}}data-colour="{{.ColourKey}}"{{end}}>
+                {{if .ColourKey}}
+                  <span class="chip" data-colour="{{.ColourKey}}" aria-hidden="true">●</span>
+                {{end}}
+                <span class="assignment-name">{{.Label}}</span>
+                {{if .Detail}}<span class="assignment-path">{{.Detail}}</span>{{end}}
+              </th>
+              <td class="cell-total">{{$.Printer.FormatDuration .Seconds}}</td>
+              <td class="cell-total">{{$.Printer.FormatDuration .BillableSeconds}}</td>
+              {{if $report.Money}}
+                <td class="cell-total">
+                  {{if .Currency}}{{$.Printer.FormatMoney .AmountMinor .Currency}}{{end}}
+                </td>
+              {{end}}
+              <td class="cell-share">
+                {{/* The bar is a picture of the share and the number beside it
+                     is the share: a bar with no figure is unreadable to
+                     anybody who cannot see it. */}}
+                <span class="budget-bar" aria-hidden="true"><span class="budget-fill bar-step-{{barStep .Percent}}"></span></span>
+                <span class="share-figure">{{printf "%d%%" .Percent}}</span>
+              </td>
+            </tr>
+          {{end}}
+        </tbody>
+        <tfoot>
+          <tr>
+            <th scope="row">{{.T "reports.total"}}</th>
+            <td class="cell-total">{{.Printer.FormatDuration $report.Totals.SummedSeconds}}</td>
+            <td class="cell-total">{{.Printer.FormatDuration $report.Totals.BillableSeconds}}</td>
+            {{if $report.Money}}
+              <td class="cell-total">
+                {{/* Two currencies in one range do not add up, and printing a
+                     sum of kronor and euros would be a figure somebody quotes. */}}
+                {{if $report.Mixed}}
+                  <span class="mixed-currency">{{.T "reports.mixed"}}</span>
+                {{else if $report.Currency}}
+                  {{.Printer.FormatMoney $report.AmountMinor $report.Currency}}
+                {{end}}
+              </td>
+            {{end}}
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    {{/* The same range, as entries. A summary answers "how much"; the next
+         question is always "of what", and retyping the range to find out is
+         what makes a report screen a dead end. */}}
+    <p class="report-drill">
+      <a class="btn btn-quiet" href="/entries?from={{date $report.From}}&to={{date $report.To}}">
+        {{.T "reports.entries"}}
+      </a>
+    </p>
+  {{else}}
+    <p class="empty">{{.T "reports.empty"}}</p>
+  {{end}}
+
+</section>
+{{end}}
