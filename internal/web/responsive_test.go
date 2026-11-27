@@ -65,6 +65,18 @@ func TestTheRowsThatMustWrapDoWrap(t *testing.T) {
 		}
 	}
 
+	// Wrapping is not enough on its own. flex: 1 made the navigation the thing
+	// that absorbed whatever space the search box and the right-hand cluster
+	// left over, so it wrapped twelve links onto seven rows inside 149 pixels
+	// at 1000px wide while the chrome beside it sat comfortably on one. A
+	// minimum width is what makes the chrome wrap first.
+	nav := ruleFor(css, ".mainnav")
+	if !strings.Contains(nav, "min-width") {
+		t.Error(".mainnav has no minimum width, so it will be squeezed to " +
+			"whatever the search box and the pickers leave it rather than " +
+			"pushing them onto the next row")
+	}
+
 	// The exception, and it is a real one: the left-hand rail is a column, and
 	// a column that wraps wraps into a second column - which in a rail with a
 	// max-height of one viewport silently splits the navigation in two.
