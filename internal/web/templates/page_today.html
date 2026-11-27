@@ -237,7 +237,7 @@
 
   <h2 class="section-heading" id="entries-heading">{{.T "day.entries"}}</h2>
   {{if $day.Entries}}
-    <table class="entries" aria-labelledby="entries-heading">
+    <div class="grid-scroll"><table class="entries" aria-labelledby="entries-heading">
       <thead>
         <tr>
           <th scope="col"><span class="visually-hidden">{{.T "entry.colour"}}</span></th>
@@ -250,7 +250,7 @@
       <tbody>
         {{range $day.Entries}}{{template "entry-row" (dict "Entry" . "Page" $ "ShowDate" false)}}{{end}}
       </tbody>
-    </table>
+    </table></div>
   {{else}}
     <p class="empty">{{.T "day.empty"}}</p>
   {{end}}

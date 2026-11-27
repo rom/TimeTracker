@@ -160,7 +160,7 @@
   </p>
 
   {{if .Entries}}
-    <table class="entries">
+    <div class="grid-scroll"><table class="entries">
       <thead>
         <tr>
           <th scope="col"><span class="visually-hidden">{{.T "entry.colour"}}</span></th>
@@ -193,7 +193,7 @@
           {{template "entry-row" (dict "Entry" .Entry "Page" $ "ShowDate" true)}}
         {{end}}
       </tbody>
-    </table>
+    </table></div>
     {{template "pager" (dict "Page" $ "Filter" .Filter)}}
   {{else}}
     {{/* A page past the end is a stale bookmark or a filter that narrowed under

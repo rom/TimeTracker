@@ -400,8 +400,25 @@ a { color: var(--accent); }
 
 /* ------------------------------------------------------------ topbar ------ */
 
+/* The bar wraps rather than overflows.
+
+   Until this it did neither: .topbar and .mainnav were both flex rows with no
+   wrap, so thirteen navigation links in a bar that also holds two pickers, a
+   clock, a date and a name simply ran off the side and took the page's
+   horizontal scrollbar with them. Measured against the document width, the
+   overflow was 374px on a 390px phone, 558px at 768, 302px at 1024 and still
+   46px at 1280 - which is why the signed-in name was clipped on an ordinary
+   laptop. Nothing below 1440 fitted, on every screen in the application.
+
+   Wrapping rather than collapsing behind a disclosure. A <details> would make
+   every link unfocusable while it was shut, and this bar is the one piece of
+   furniture every screen shares: data-nav already promises that moving the
+   navigation does not change the reading order or the tab order, and hiding it
+   from the keyboard on small screens would break that promise far worse than
+   two rows of links do. */
 .topbar {
   display: flex; align-items: center; gap: var(--gap-lg);
+  flex-wrap: wrap; row-gap: var(--gap-sm);
   padding: 10px 20px;
   background: var(--surface-raised);
   border-bottom: 1px solid var(--border);
@@ -436,7 +453,7 @@ a { color: var(--accent); }
 .brand-time { color: var(--brand-time); }
 .brand-tracker { color: var(--brand-tracker); }
 
-.mainnav { display: flex; gap: 4px; flex: 1; }
+.mainnav { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
 .mainnav a {
   padding: 6px 12px; border-radius: var(--radius);
   color: var(--text-muted); text-decoration: none;
@@ -444,7 +461,7 @@ a { color: var(--accent); }
 .mainnav a:hover { background: var(--surface-sunken); color: var(--text); }
 .mainnav a.active { background: var(--accent-soft); color: var(--text); font-weight: 600; }
 
-.topbar-right { display: flex; align-items: center; gap: var(--gap); }
+.topbar-right { display: flex; align-items: center; flex-wrap: wrap; gap: var(--gap); }
 .whoami { color: var(--text-muted); font-size: 0.9em; }
 
 /* ------------------------------------------------- running timer bar ------ */
@@ -471,7 +488,10 @@ a { color: var(--accent); }
   gap: var(--gap); flex-wrap: wrap; margin-bottom: var(--gap);
 }
 .screen-title { display: flex; align-items: baseline; gap: var(--gap-sm); }
-.date-nav { display: flex; gap: 4px; }
+/* Wraps for the same reason the top bar does: previous/today/next, a date
+   picker, Go and Month is more than a phone's width, and without this the row
+   pushed the whole page sideways once the header stopped doing it. */
+.date-nav { display: flex; flex-wrap: wrap; gap: 4px; }
 .section-heading { border-bottom: 1px solid var(--border); padding-bottom: 4px; }
 
 .footer {
@@ -1139,7 +1159,16 @@ input[type="text"], input[type="date"], input[type="time"], select {
 
 /* --------------------------------------------------------- week grid ----- */
 
-.grid-scroll { overflow-x: auto; }
+/* A wide table scrolls inside its own box rather than widening the page.
+
+   contain: paint is doing real work here and is not decoration. overflow-x
+   alone clips the table visually but Chromium still propagates the table's
+   layout overflow to the root, and the whole page scrolls sideways behind an
+   apparently contained table: measured at 74px of page scroll on a 390px
+   screen with the table correctly clipped at 350px. Paint containment says
+   what is already true of a scroll container - nothing inside paints outside
+   it - and stops the propagation, taking the page scroll to zero. */
+.grid-scroll { overflow-x: auto; contain: paint; }
 .week-grid { min-width: 720px; }
 .col-assignment { width: 30%; }
 .col-day, .cell-day, .cell-day-total, .cell-total {
@@ -1349,8 +1378,8 @@ input[type="text"], input[type="date"], input[type="time"], select {
 }
 
 /* Jumping to a date, beside the previous/next steps. */
-.date-jump { display: flex; gap: 4px; align-items: center; }
-.date-jump input { min-width: 9rem; }
+.date-jump { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.date-jump input { min-width: 9rem; max-width: 100%; }
 
 /* ------------------------------------------------------------- forms ------ */
 
@@ -1382,7 +1411,9 @@ input[type="text"], input[type="date"], input[type="time"], select {
 .filter label { display: flex; flex-direction: column; gap: 2px; font-size: 0.85em; color: var(--text-muted); }
 .manual-entry summary { cursor: pointer; color: var(--text-muted); margin-top: var(--gap-lg); }
 
-.export-bar { display: flex; align-items: center; gap: var(--gap-sm); margin-bottom: var(--gap); }
+/* Six export formats and a preview link is more than a phone's width, and the
+   row was the last thing on any screen still pushing the page sideways. */
+.export-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-sm); margin-bottom: var(--gap); }
 
 /* -------------------------------------------------------------- notes ----- */
 
@@ -1761,6 +1792,10 @@ kbd {
 [data-nav="left"] .topbar {
   grid-area: rail;
   flex-direction: column;
+  /* A column that wraps wraps into a second column, which in a rail with a
+     max-height of one viewport means the navigation silently splits in two.
+     The top bar's wrapping is for rows. */
+  flex-wrap: nowrap;
   align-items: stretch;
   gap: var(--gap);
   /* Sticky rather than fixed, so the rail scrolls its own overflow when the
@@ -1807,6 +1842,7 @@ kbd {
     overflow-y: visible;
     border-bottom: 1px solid var(--border);
   }
+  [data-nav="left"] .topbar { flex-wrap: wrap; }
   [data-nav="left"] .mainnav { flex-direction: row; flex: 1; }
   [data-nav="left"] .topbar-right { margin-top: 0; }
   [data-nav="left"] .topbar-right .picker,
@@ -1875,6 +1911,17 @@ kbd {
   /* On a narrow screen the numbers are the first thing to go: previous and next
      are what a thumb reaches for. */
   .pager-pages { display: none; }
+
+  /* The bar wraps at any width; this only stops it from eating the screen when
+     it does. Tighter padding and a smaller hit area on the links, the brand on
+     a line of its own so the navigation starts from the left edge rather than
+     in the middle of a row, and the pickers below it. Nothing is hidden: a
+     phone gets the same links in the same order as a desktop. */
+  .topbar { gap: var(--gap-sm); padding: 8px 12px; }
+  .topbar .brand { flex: 1 0 100%; }
+  .mainnav { gap: 2px; }
+  .mainnav a { padding: 5px 8px; font-size: 0.95em; }
+  .topbar-right { flex: 1 0 100%; justify-content: flex-start; gap: var(--gap-sm); }
 }
 
 /* -------------------------------------------------- attachment previews --- */

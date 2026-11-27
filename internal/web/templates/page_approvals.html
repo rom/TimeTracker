@@ -26,7 +26,7 @@
 
   <h2 class="section-heading" id="queue-heading">{{.T "approvals.queue"}}</h2>
   {{if .Approvals}}
-    <table class="entries" aria-labelledby="queue-heading">
+    <div class="grid-scroll"><table class="entries" aria-labelledby="queue-heading">
       <thead>
         <tr>
           <th scope="col">{{.T "approvals.who"}}</th>
@@ -79,7 +79,7 @@
           </tr>
         {{end}}
       </tbody>
-    </table>
+    </table></div>
   {{else}}
     <p class="empty">{{.T "approvals.queue.empty"}}</p>
   {{end}}
@@ -89,7 +89,7 @@
        which is worse than an audited reopening. */}}
   {{if .Approved}}
     <h2 class="section-heading" id="approved-heading">{{.T "approvals.approved"}}</h2>
-    <table class="entries" aria-labelledby="approved-heading">
+    <div class="grid-scroll"><table class="entries" aria-labelledby="approved-heading">
       <thead>
         <tr>
           <th scope="col">{{.T "approvals.who"}}</th>
@@ -120,12 +120,12 @@
           </tr>
         {{end}}
       </tbody>
-    </table>
+    </table></div>
   {{end}}
 
   <h2 class="section-heading" id="mine-heading">{{.T "approvals.mine"}}</h2>
   {{if .MyPeriods}}
-    <table class="entries" aria-labelledby="mine-heading">
+    <div class="grid-scroll"><table class="entries" aria-labelledby="mine-heading">
       <thead>
         <tr>
           <th scope="col">{{.T "approvals.week"}}</th>
@@ -157,7 +157,7 @@
           </tr>
         {{end}}
       </tbody>
-    </table>
+    </table></div>
   {{else}}
     <p class="empty">{{.T "approvals.mine.empty"}}</p>
   {{end}}

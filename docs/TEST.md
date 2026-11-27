@@ -415,6 +415,10 @@ Some things automation cannot honestly settle, checked before each release:
 
 * Generated DOCX opened in **Microsoft Word** and **LibreOffice Writer**; PDF in at
   least two viewers.
+* Every screen at 360, 390, 768, 1024 and 1280 pixels wide, checking that none
+  of them scrolls sideways. The structure that makes this true — the rows that
+  wrap, and the scroll container every table sits in — is asserted in Go, but
+  whether it *looks* right at each size is not something a unit test can say.
 * Each of the eight themes viewed on each screen — automated contrast checking does
   not catch "this looks wrong".
 * Keyboard-only traversal of the primary flows, and a screen-reader pass over Today

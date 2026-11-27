@@ -234,6 +234,23 @@ the decision.
 
 ### Fixed
 
+* **The interface was not responsive, on any screen, at any size below a large
+  laptop.** DESIGN.md has claimed it since the first draft. The top bar was a
+  flex row with no wrap holding thirteen navigation links, two pickers, a
+  clock, a date and a name, so it ran off the side and took the page's
+  horizontal scrollbar with it: 374px of overflow on a 390px phone, 558px at
+  768, 302px at 1024 and still 46px at 1280, where it clipped the signed-in
+  name. The bar and every other row of controls that cannot fit a phone - the
+  date navigation, the export formats - now wrap, and the navigation wraps
+  rather than collapsing behind a disclosure so that no link stops being
+  focusable on a small screen.
+
+  Wide tables were the other half. Each is now in a scroll container, and the
+  container declares paint containment: `overflow-x` alone clips the table
+  visually while Chromium still propagates its layout overflow to the root, so
+  the page scrolled sideways behind a table that looked correctly contained.
+  Measured across fifteen screens at five widths from 360px up, nothing scrolls
+  sideways any more.
 * **The spring theme's green was below AA as text** - 4.07:1 on a card and
   3.77:1 on the page, in the one theme whose whole character is green and which
   therefore makes that colour the likeliest to be chosen. Found by the new

@@ -17,7 +17,7 @@
   <p class="screen-intro">{{.T "tags.intro"}}</p>
 
   {{if .Tags}}
-    <table class="entries">
+    <div class="grid-scroll"><table class="entries">
       <thead>
         <tr>
           <th scope="col">{{.T "tags.name"}}</th>
@@ -62,7 +62,7 @@
           </tr>
         {{end}}
       </tbody>
-    </table>
+    </table></div>
   {{else}}
     <p class="empty">{{.T "tags.empty"}}</p>
   {{end}}

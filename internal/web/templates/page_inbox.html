@@ -12,7 +12,7 @@
 
   {{if .Inbox.Entries}}
     <h2 class="section-heading">{{.T "inbox.proposed"}}</h2>
-    <table class="entries">
+    <div class="grid-scroll"><table class="entries">
       <thead>
         <tr>
           <th scope="col">{{.T "entry.date"}}</th>
@@ -57,12 +57,12 @@
           </tr>
         {{end}}
       </tbody>
-    </table>
+    </table></div>
   {{end}}
 
   {{if .Inbox.Expenses}}
     <h2 class="section-heading">{{.T "expenses.title"}}</h2>
-    <table class="entries">
+    <div class="grid-scroll"><table class="entries">
       <tbody>
         {{range .Inbox.Expenses}}
           <tr class="entry-row pending">
@@ -90,7 +90,7 @@
           </tr>
         {{end}}
       </tbody>
-    </table>
+    </table></div>
   {{end}}
 
   {{if eq .Inbox.Count 0}}
@@ -101,7 +101,7 @@
        silently is worse than one that is refused. */}}
   {{if .Proposed}}
     <h2 class="section-heading">{{.T "proxy.for"}}</h2>
-    <table class="admin-table">
+    <div class="grid-scroll"><table class="admin-table">
       <thead>
         <tr>
           <th>{{.T "entry.date"}}</th>
@@ -132,7 +132,7 @@
           </tr>
         {{end}}
       </tbody>
-    </table>
+    </table></div>
   {{end}}
 
 </section>

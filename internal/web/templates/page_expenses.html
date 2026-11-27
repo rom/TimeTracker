@@ -63,7 +63,7 @@
   <p class="field-help" id="quantity-help">{{.T "expense.quantity.help"}}</p>
 
   {{if .Expenses}}
-    <table class="entries">
+    <div class="grid-scroll"><table class="entries">
       <thead>
         <tr>
           <th scope="col">{{.T "expenses.date"}}</th>
@@ -161,7 +161,7 @@
           {{end}}
         {{end}}
       </tbody>
-    </table>
+    </table></div>
   {{else}}
     <p class="empty">{{.T "expenses.empty"}}</p>
   {{end}}

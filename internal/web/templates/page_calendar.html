@@ -85,7 +85,7 @@
              meetings would be worse than the extra bytes. */}}
         <input type="hidden" name="calendar" value="{{$.CalendarFile}}">
 
-        <table class="entries">
+        <div class="grid-scroll"><table class="entries">
           <thead>
             <tr>
               <th scope="col"><span class="visually-hidden">{{$.T "calendar.include"}}</span></th>
@@ -131,7 +131,7 @@
               </tr>
             {{end}}
           </tbody>
-        </table>
+        </table></div>
 
         <div class="form-actions">
           <button type="submit" class="btn btn-primary">{{$.T "calendar.import"}}</button>

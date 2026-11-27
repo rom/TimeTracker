@@ -78,7 +78,7 @@
   {{end}}
 
   {{if .Backups}}
-    <table class="admin-table">
+    <div class="grid-scroll"><table class="admin-table">
       <thead>
         <tr>
           <th>{{.T "backup.when"}}</th>
@@ -105,7 +105,7 @@
           </tr>
         {{end}}
       </tbody>
-    </table>
+    </table></div>
   {{else}}
     <p class="empty">{{.T "backup.none"}}</p>
   {{end}}
